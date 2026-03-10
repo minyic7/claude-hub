@@ -21,6 +21,16 @@ Thumbs.db
 dist/
 build/
 
+# Python
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+
 # Logs
 *.log
+*.jsonl
 npm-debug.log*
+
+# Data
+data/
