@@ -19,12 +19,13 @@ interface TicketCardProps {
   onOptimistic?: (ticketId: string, patch: Partial<Ticket>) => void
   depsBlocked?: boolean
   depLabels?: DepLabel[]
+  onDepClick?: (depId: string) => void
   deploying?: boolean
   mergeQueueLocked?: boolean
   onMergeInitiated?: () => void
 }
 
-export function TicketCard({ ticket, latestActivity, onClick, onOptimistic, depsBlocked, depLabels, deploying, mergeQueueLocked, onMergeInitiated }: TicketCardProps) {
+export function TicketCard({ ticket, latestActivity, onClick, onOptimistic, depsBlocked, depLabels, onDepClick, deploying, mergeQueueLocked, onMergeInitiated }: TicketCardProps) {
   const [actionError, setActionError] = useState<string | null>(null)
   const errorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -213,32 +214,48 @@ export function TicketCard({ ticket, latestActivity, onClick, onOptimistic, deps
       )}
 
       {/* Dependency labels for TODO tickets */}
-      {!editing && ticket.status === 'todo' && depLabels && depLabels.length > 0 && depLabels.some((d) => d.status !== 'merged') && (
-        <div className="mb-2 flex flex-wrap items-center gap-1 text-[11px] text-[var(--color-text-muted)]">
-          <Link size={10} className="shrink-0" />
-          {depLabels.filter((d) => d.status !== 'merged').map((d) => (
-            <span key={d.id} className="inline-flex items-center gap-0.5">
-              <span className="font-semibold">#{d.id.slice(0, 6)}</span>
-              <span className={statusColor(d.status as TicketStatus)}>({d.status.replace('_', ' ')})</span>
-            </span>
+      {!editing && ticket.status === 'todo' && depLabels && depLabels.length > 0 && (
+        <div className="mb-2 space-y-0.5 text-[11px]">
+          {depLabels.map((d) => (
+            <button
+              key={d.id}
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onDepClick?.(d.id) }}
+              className="flex w-full items-center gap-1.5 rounded px-0.5 text-left hover:bg-[var(--color-bg-secondary)] transition-colors"
+            >
+              <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${depDotColor(d.status as TicketStatus)}`} />
+              <span className="text-[var(--color-text-muted)]">Depends on:</span>
+              <span className={`truncate font-medium ${d.status === 'merged' ? 'text-[var(--color-text-muted)] line-through opacity-60' : 'text-[var(--color-text-secondary)]'}`}>
+                {d.title || `#${d.id.slice(0, 6)}`}
+              </span>
+            </button>
           ))}
         </div>
       )}
 
       {/* Status-specific content */}
       {!editing && ticket.status === 'todo' && (
-        <Button
-          size="sm"
-          onClick={depsBlocked ? undefined : handleStart}
-          disabled={depsBlocked}
-          className="w-full"
-        >
-          {depsBlocked ? (
-            <><Lock size={12} className="mr-1" /> Waiting</>
-          ) : (
-            <><Play size={12} className="mr-1" /> Start</>
+        <div className="relative group/start">
+          <Button
+            size="sm"
+            onClick={depsBlocked ? undefined : handleStart}
+            disabled={depsBlocked}
+            className="w-full"
+          >
+            {depsBlocked ? (
+              <><Lock size={12} className="mr-1" /> Waiting</>
+            ) : (
+              <><Play size={12} className="mr-1" /> Start</>
+            )}
+          </Button>
+          {depsBlocked && depLabels && (
+            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 hidden group-hover/start:block z-10">
+              <div className="whitespace-nowrap rounded bg-[var(--color-bg-secondary)] border border-[var(--color-border)] px-2 py-1 text-[11px] text-[var(--color-text-muted)] shadow-lg">
+                Waiting for {depLabels.filter((d) => d.status !== 'merged').map((d) => d.title || `#${d.id.slice(0, 6)}`).join(', ')} to be merged
+              </div>
+            </div>
           )}
-        </Button>
+        </div>
       )}
 
       {(ticket.status === 'in_progress' || ticket.status === 'verifying') && latestActivity && (
@@ -349,6 +366,16 @@ export function TicketCard({ ticket, latestActivity, onClick, onOptimistic, deps
       )}
     </div>
   )
+}
+
+function depDotColor(status: TicketStatus): string {
+  switch (status) {
+    case 'merged': return 'bg-[var(--color-accent-green)]'
+    case 'review': case 'merging': return 'bg-[var(--color-accent-yellow)]'
+    case 'in_progress': case 'verifying': return 'bg-[var(--color-accent-blue)]'
+    case 'blocked': case 'failed': return 'bg-[var(--color-accent-red)]'
+    default: return 'bg-[var(--color-accent-red)]/60'
+  }
 }
 
 function statusColor(status: TicketStatus): string {

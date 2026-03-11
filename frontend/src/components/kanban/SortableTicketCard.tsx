@@ -12,10 +12,11 @@ interface SortableTicketCardProps {
   allTickets: Map<string, Ticket>
   onClick: () => void
   onOptimistic?: (ticketId: string, patch: Partial<Ticket>) => void
+  onTicketClick?: (ticket: Ticket) => void
 }
 
 export function SortableTicketCard({
-  ticket, latestActivity, allTickets, onClick, onOptimistic,
+  ticket, latestActivity, allTickets, onClick, onOptimistic, onTicketClick,
 }: SortableTicketCardProps) {
   // Prevent layout animation flash after drop
   const skipPostDrop: AnimateLayoutChanges = (args) =>
@@ -55,6 +56,11 @@ export function SortableTicketCard({
     return { id: depId, title: dep?.title, status: dep?.status || 'unknown' }
   }) : []
 
+  const handleDepClick = (depId: string) => {
+    const dep = allTickets.get(depId)
+    if (dep && onTicketClick) onTicketClick(dep)
+  }
+
   return (
     <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
       <TicketCard
@@ -64,6 +70,7 @@ export function SortableTicketCard({
         onOptimistic={onOptimistic}
         depsBlocked={depsBlocked}
         depLabels={depLabels}
+        onDepClick={handleDepClick}
       />
     </div>
   )
