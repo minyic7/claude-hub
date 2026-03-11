@@ -36,11 +36,11 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
     && apt-get install -y gh \
     && rm -rf /var/lib/apt/lists/*
 
-# pnpm (for frontend projects Claude Code may work on)
-RUN corepack enable && corepack prepare pnpm@latest --activate
+# Claude Code CLI + pnpm (for frontend projects Claude Code may work on)
+RUN npm install -g @anthropic-ai/claude-code pnpm
 
-# Claude Code CLI
-RUN npm install -g @anthropic-ai/claude-code
+# Disable corepack strict mode (prevents download prompts in cloned repos)
+ENV COREPACK_ENABLE_STRICT=0
 
 # uv (Python package manager)
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
