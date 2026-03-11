@@ -29,10 +29,13 @@ export function LoginPage({ onLogin }: LoginPageProps) {
 
   return (
     <div className="flex h-screen items-center justify-center bg-[var(--color-bg-primary)]">
-      <form onSubmit={handleSubmit} className="w-80 space-y-4 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-panel)] p-6">
-        <div className="flex items-center justify-center gap-2 text-[var(--color-text-primary)]">
-          <Terminal size={20} />
-          <h1 className="text-lg font-bold">Claude Hub</h1>
+      <form onSubmit={handleSubmit} className="w-80 space-y-5 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-panel)] p-8">
+        <div className="flex flex-col items-center gap-2 text-[var(--color-text-primary)]">
+          <div className="flex items-center gap-2">
+            <Terminal size={20} />
+            <h1 className="text-lg font-bold">Claude Hub</h1>
+          </div>
+          <p className="text-xs text-[var(--color-text-muted)]">Orchestrate your Claude Code sessions</p>
         </div>
         <div className="space-y-3">
           <input
