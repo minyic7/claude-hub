@@ -111,7 +111,7 @@ function AuthedApp() {
   useEffect(() => {
     if (deployState === 'deploying') {
       setMergeQueueLocked(true)
-    } else if (mergeQueueLocked && deployState !== 'deploying') {
+    } else if (mergeQueueLocked) {
       // Deploy finished (or never started) — unlock
       setMergeQueueLocked(false)
       if (lockTimerRef.current) clearTimeout(lockTimerRef.current)
