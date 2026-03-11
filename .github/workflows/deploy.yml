@@ -78,7 +78,7 @@ jobs:
 
       - name: Deploy
         run: |
-          ssh ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} "cd C:/claude-hub; echo ${{ secrets.GH_PAT }} | docker login ghcr.io -u minyic7 --password-stdin; docker compose -f docker-compose.yml -f docker-compose.prod.yml pull claude-hub; docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --remove-orphans --force-recreate"
+          ssh ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} "cd C:/claude-hub; docker compose -f docker-compose.yml -f docker-compose.prod.yml pull; docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --remove-orphans --force-recreate"
 
       - name: Health check
         run: |
