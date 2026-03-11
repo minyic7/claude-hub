@@ -10,6 +10,17 @@
   --color-accent-green: #22c55e;
   --color-accent-red: #ef4444;
   --color-accent-yellow: #eab308;
+  --color-accent-purple: #a855f7;
+  --color-accent-orange: #f97316;
+
+  /* Status-specific tokens */
+  --color-status-todo: #64748b;
+  --color-status-active: #3b82f6;
+  --color-status-blocked: #ef4444;
+  --color-status-verifying: #a855f7;
+  --color-status-review: #eab308;
+  --color-status-merged: #22c55e;
+  --color-status-failed: #f97316;
 }
 
 [data-theme="dark"] {
@@ -20,8 +31,112 @@
   --color-text-secondary: #94a3b8;
   --color-text-muted: #64748b;
   --color-border: #1e293b;
-  --color-accent-blue: #3b82f6;
-  --color-accent-green: #22c55e;
-  --color-accent-red: #ef4444;
-  --color-accent-yellow: #eab308;
+  --color-accent-blue: #60a5fa;
+  --color-accent-green: #4ade80;
+  --color-accent-red: #f87171;
+  --color-accent-yellow: #facc15;
+  --color-accent-purple: #c084fc;
+  --color-accent-orange: #fb923c;
+
+  /* Status-specific tokens */
+  --color-status-todo: #64748b;
+  --color-status-active: #60a5fa;
+  --color-status-blocked: #f87171;
+  --color-status-verifying: #c084fc;
+  --color-status-review: #facc15;
+  --color-status-merged: #4ade80;
+  --color-status-failed: #fb923c;
+}
+
+/* ─── Animations ──────────────────────────────────────────────────────────── */
+
+/* Card entrance: rise from below with blur */
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(22px) scale(0.97);
+    filter: blur(3px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
+}
+
+/* Element pop-in */
+@keyframes pop {
+  from {
+    opacity: 0;
+    transform: scale(0.88);
+    filter: blur(2px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
+}
+
+/* Blocked card pulse glow */
+@keyframes blocked-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+  50% { box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.08); }
+}
+
+/* Detail panel slide-in from right */
+@keyframes slide-in-right {
+  from {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Notification bell shake */
+@keyframes bell-shake {
+  0%, 100% { transform: rotate(0); }
+  20% { transform: rotate(12deg); }
+  40% { transform: rotate(-10deg); }
+  60% { transform: rotate(6deg); }
+  80% { transform: rotate(-3deg); }
+}
+
+/* Utility classes */
+.rise {
+  animation: rise 0.5s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+
+.pop {
+  animation: pop 0.3s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* Ticket card base transitions */
+.ticket-card {
+  transition:
+    transform 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 0.2s ease,
+    border-color 0.15s ease;
+}
+
+.ticket-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
+}
+
+.ticket-card[data-blocked="true"] {
+  animation: blocked-pulse 2s ease-in-out infinite;
+}
+
+/* Detail panel entrance */
+.detail-panel {
+  animation: slide-in-right 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Stagger helper — use with style={{ animationDelay }} */
+.rise-stagger {
+  animation: rise 0.5s cubic-bezier(0.16, 1, 0.3, 1) backwards;
 }

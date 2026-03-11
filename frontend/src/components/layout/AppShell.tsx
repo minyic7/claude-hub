@@ -1,28 +1,50 @@
-import { useState, useEffect } from 'react'
-import { ChevronDown, FolderPlus, Plus, Wifi, WifiOff } from 'lucide-react'
+import { useState, useEffect, useMemo } from 'react'
+import { Bell, ChevronDown, FolderPlus, LogOut, Plus, Wifi, WifiOff } from 'lucide-react'
 import { ThemeToggle } from '../common/ThemeToggle'
 import { Button } from '../common/Button'
 import { CreateTicketModal } from '../tickets/CreateTicketModal'
 import { CreateProjectModal } from '../projects/CreateProjectModal'
-import { api } from '../../lib/api'
+import { api, clearToken, getToken } from '../../lib/api'
+import type { Notification } from '../../hooks/useNotifications'
 import type { ReactNode } from 'react'
-import type { Project } from '../../types/ticket'
+import type { Project, Ticket } from '../../types/ticket'
 
 interface AppShellProps {
   connected: boolean
   projects: Map<string, Project>
+  tickets: Map<string, Ticket>
   activeProjectId: string | null
   onProjectChange: (id: string | null) => void
+  notifications: Notification[]
+  onDismissNotification: (id: string) => void
   children: ReactNode
 }
 
-export function AppShell({ connected, projects, activeProjectId, onProjectChange, children }: AppShellProps) {
+export function AppShell({
+  connected, projects, tickets, activeProjectId, onProjectChange,
+  notifications, onDismissNotification, children,
+}: AppShellProps) {
   const [showCreateTicket, setShowCreateTicket] = useState(false)
   const [showCreateProject, setShowCreateProject] = useState(false)
   const [showProjectMenu, setShowProjectMenu] = useState(false)
+  const [showNotifications, setShowNotifications] = useState(false)
   const [dailyCost, setDailyCost] = useState(0)
 
   const activeProject = activeProjectId ? projects.get(activeProjectId) : null
+
+  // Compute ticket stats
+  const stats = useMemo(() => {
+    let running = 0
+    let blocked = 0
+    for (const [, t] of tickets) {
+      if (activeProjectId && t.project_id !== activeProjectId) continue
+      if (t.status === 'in_progress' || t.status === 'verifying') running++
+      if (t.status === 'blocked') blocked++
+    }
+    return { running, blocked }
+  }, [tickets, activeProjectId])
+
+  const unreadCount = notifications.filter((n) => n.type === 'error' || n.type === 'warning').length
 
   useEffect(() => {
     const fetchCost = async () => {
@@ -100,25 +122,109 @@ export function AppShell({ connected, projects, activeProjectId, onProjectChange
             )}
           </div>
 
-          <span className="flex items-center gap-1 text-xs text-[var(--color-text-muted)]">
+          <span className="flex items-center gap-1 text-xs">
             {connected ? (
               <Wifi size={12} className="text-[var(--color-accent-green)]" />
             ) : (
-              <WifiOff size={12} className="text-[var(--color-accent-red)]" />
+              <>
+                <WifiOff size={12} className="text-[var(--color-accent-red)] animate-pulse" />
+                <span className="text-[var(--color-accent-red)] animate-pulse">Reconnecting...</span>
+              </>
             )}
           </span>
+
+          {/* Stats */}
+          <div className="flex items-center gap-2 text-xs font-mono text-[var(--color-text-muted)]">
+            {stats.running > 0 && (
+              <span className="flex items-center gap-1">
+                <span className="inline-block h-2 w-2 rounded-full bg-[var(--color-accent-blue)] animate-pulse" />
+                {stats.running} running
+              </span>
+            )}
+            {stats.blocked > 0 && (
+              <span className="flex items-center gap-1 text-[var(--color-accent-red)]">
+                <span className="inline-block h-2 w-2 rounded-full bg-[var(--color-accent-red)]" />
+                {stats.blocked} blocked
+              </span>
+            )}
+          </div>
         </div>
 
         <div className="flex items-center gap-3">
           {dailyCost > 0 && (
-            <span className="text-xs text-[var(--color-text-muted)]">
-              Today: ${dailyCost.toFixed(2)}
+            <span className="text-xs font-mono text-[var(--color-text-muted)]">
+              ${dailyCost.toFixed(2)}
             </span>
           )}
+
+          {/* Notification bell */}
+          <div className="relative">
+            <button
+              onClick={() => setShowNotifications(!showNotifications)}
+              className="relative rounded-md p-1.5 text-[var(--color-text-muted)] hover:bg-[var(--color-bg-secondary)] hover:text-[var(--color-text-primary)]"
+            >
+              <Bell size={16} />
+              {unreadCount > 0 && (
+                <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-[var(--color-accent-red)] px-1 text-[10px] font-bold text-white">
+                  {unreadCount}
+                </span>
+              )}
+            </button>
+
+            {showNotifications && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setShowNotifications(false)} />
+                <div className="absolute right-0 top-full z-50 mt-1 w-80 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-panel)] shadow-lg">
+                  <div className="border-b border-[var(--color-border)] px-3 py-2">
+                    <span className="text-xs font-semibold text-[var(--color-text-primary)]">Notifications</span>
+                  </div>
+                  <div className="max-h-64 overflow-y-auto">
+                    {notifications.length === 0 ? (
+                      <p className="px-3 py-4 text-center text-xs text-[var(--color-text-muted)]">No notifications</p>
+                    ) : (
+                      notifications.slice().reverse().map((n) => (
+                        <button
+                          key={n.id}
+                          onClick={() => {
+                            onDismissNotification(n.id)
+                            setShowNotifications(false)
+                          }}
+                          className="flex w-full items-start gap-2 border-b border-[var(--color-border)]/50 px-3 py-2 text-left hover:bg-[var(--color-bg-secondary)]"
+                        >
+                          <span className={`mt-0.5 inline-block h-2 w-2 shrink-0 rounded-full ${
+                            n.type === 'error' ? 'bg-[var(--color-accent-red)]' :
+                            n.type === 'warning' ? 'bg-[var(--color-accent-yellow)]' :
+                            n.type === 'success' ? 'bg-[var(--color-accent-green)]' :
+                            'bg-[var(--color-accent-blue)]'
+                          }`} />
+                          <div className="min-w-0 flex-1">
+                            <p className="text-xs text-[var(--color-text-primary)] line-clamp-2">{n.message}</p>
+                            <p className="mt-0.5 text-[10px] text-[var(--color-text-muted)]">
+                              {new Date(n.timestamp).toLocaleTimeString()}
+                            </p>
+                          </div>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+
           <Button size="sm" onClick={() => setShowCreateTicket(true)} disabled={!activeProjectId}>
             <Plus size={14} className="mr-1" /> New Ticket
           </Button>
           <ThemeToggle />
+          {getToken() && (
+            <button
+              onClick={() => { clearToken(); window.location.reload() }}
+              className="rounded-md p-1.5 text-[var(--color-text-muted)] hover:bg-[var(--color-bg-secondary)] hover:text-[var(--color-text-primary)]"
+              title="Logout"
+            >
+              <LogOut size={16} />
+            </button>
+          )}
         </div>
       </header>
 
@@ -145,6 +251,7 @@ export function AppShell({ connected, projects, activeProjectId, onProjectChange
           open={showCreateTicket}
           onClose={() => setShowCreateTicket(false)}
           projectId={activeProjectId}
+          tickets={tickets}
         />
       )}
       <CreateProjectModal open={showCreateProject} onClose={() => setShowCreateProject(false)} />

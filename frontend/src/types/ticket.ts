@@ -45,6 +45,8 @@ export interface Ticket {
   clone_path: string | null
   pr_url: string | null
   pr_number: number | null
+  has_conflicts?: boolean
+  priority: number
   tmux_session: string | null
   agent_cost_usd: number
   created_at: string
@@ -58,4 +60,5 @@ export interface TicketCreate {
   description?: string
   branch_type?: BranchType
   role?: string
+  depends_on?: string[]
 }

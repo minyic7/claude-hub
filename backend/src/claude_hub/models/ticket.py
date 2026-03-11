@@ -79,9 +79,13 @@ class Ticket(BaseModel):
     clone_path: str | None = None
     pr_url: str | None = None
     pr_number: int | None = None
+    has_conflicts: bool = False
 
     # Session
     tmux_session: str | None = None
+
+    # Priority (lower = higher priority)
+    priority: int = 0
 
     # Cost
     agent_cost_usd: float = 0.0
@@ -107,3 +111,4 @@ class TicketCreate(BaseModel):
 class TicketUpdate(BaseModel):
     title: str | None = None
     description: str | None = None
+    priority: int | None = None

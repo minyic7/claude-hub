@@ -28,6 +28,16 @@ def _clean_env() -> dict[str, str]:
     }
 
 
+def active_session_count() -> int:
+    """Count currently alive tmux sessions."""
+    return sum(1 for tid in list(_active_sessions) if is_alive(tid))
+
+
+def has_active_session(ticket_id: str) -> bool:
+    """Check if a ticket already has a running session."""
+    return ticket_id in _active_sessions and is_alive(ticket_id)
+
+
 def _tmux_exists(name: str) -> bool:
     result = subprocess.run(["tmux", "has-session", "-t", name], capture_output=True)
     return result.returncode == 0

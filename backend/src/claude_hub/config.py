@@ -17,6 +17,14 @@ class Settings(BaseSettings):
     merged_ttl_days: int = 7
     disallowed_tools: str = "Bash(curl:*),Bash(wget:*),Bash(ssh:*)"
 
+    # Auth
+    auth_enabled: bool = True
+    auth_username: str = "admin"
+    auth_password: str = "changeme"
+    auth_secret: str = "change-this-to-a-random-string"
+    auth_token_hours: int = 24
+    dev_mode: bool = False  # Enable CORS for dev (frontend on different port)
+
     # GitHub
     gh_token: str = ""
 

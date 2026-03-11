@@ -1,0 +1,13 @@
+.git
+.env
+.claude
+spike/
+**/__pycache__
+**/.venv
+**/node_modules
+frontend/dist
+backend/.venv
+data/
+*.pyc
+*.log
+*.md

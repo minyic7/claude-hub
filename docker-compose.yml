@@ -1,11 +1,39 @@
+# Base compose — shared services, NO ports exposed
+# Use with: docker-compose.dev.yml (local) or docker-compose.prod.yml (production)
 services:
   redis:
-    image: redis:8-alpine
-    ports:
-      - "6379:6379"
+    image: redis:8.6-alpine
+    restart: unless-stopped
     volumes:
       - redis-data:/data
     command: redis-server --save 60 1 --loglevel warning
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  claude-hub:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    # NO ports here — dev and prod overrides handle access
+    volumes:
+      - clone-data:/data
+      - claude-auth:/root/.claude
+    env_file:
+      - .env
+    environment:
+      CLAUDE_HUB_REDIS_URL: redis://redis:6379/0
+      CLAUDE_HUB_HOST: "0.0.0.0"
+      CLAUDE_HUB_PORT: "7700"
+      CLAUDE_HUB_DATA_DIR: /data
 
 volumes:
   redis-data:
+  clone-data:
+  claude-auth:

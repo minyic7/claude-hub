@@ -7,9 +7,10 @@ interface KanbanColumnProps {
   tickets: Ticket[]
   activities: Map<string, ActivityEvent[]>
   onTicketClick: (ticket: Ticket) => void
+  onOptimistic?: (ticketId: string, patch: Partial<Ticket>) => void
 }
 
-export function KanbanColumn({ label, tickets, activities, onTicketClick }: KanbanColumnProps) {
+export function KanbanColumn({ label, tickets, activities, onTicketClick, onOptimistic }: KanbanColumnProps) {
   return (
     <div className="flex min-w-[280px] flex-1 flex-col">
       <div className="mb-3 flex items-center gap-2 px-1">
@@ -21,16 +22,22 @@ export function KanbanColumn({ label, tickets, activities, onTicketClick }: Kanb
         </span>
       </div>
       <div className="flex flex-col gap-2 overflow-y-auto px-1 pb-4">
-        {tickets.map((ticket) => {
+        {tickets.map((ticket, index) => {
           const ticketActivities = activities.get(ticket.id)
           const latest = ticketActivities?.[ticketActivities.length - 1]
           return (
-            <TicketCard
+            <div
               key={ticket.id}
-              ticket={ticket}
-              latestActivity={latest}
-              onClick={() => onTicketClick(ticket)}
-            />
+              className="rise-stagger"
+              style={{ animationDelay: `${60 + index * 50}ms` }}
+            >
+              <TicketCard
+                ticket={ticket}
+                latestActivity={latest}
+                onClick={() => onTicketClick(ticket)}
+                onOptimistic={onOptimistic}
+              />
+            </div>
           )
         })}
       </div>

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Brain, FileText, Terminal, MessageSquare, AlertTriangle, CheckCircle, Info, XCircle } from 'lucide-react'
 import type { ActivityEvent } from '../../types/activity'
 
@@ -18,11 +18,22 @@ const typeConfig: Record<string, { icon: typeof Brain; className: string }> = {
 }
 
 export function ActivityLog({ events }: ActivityLogProps) {
+  const containerRef = useRef<HTMLDivElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
+  const [userScrolledUp, setUserScrolledUp] = useState(false)
+
+  const handleScroll = useCallback(() => {
+    const el = containerRef.current
+    if (!el) return
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40
+    setUserScrolledUp(!atBottom)
+  }, [])
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [events.length])
+    if (!userScrolledUp) {
+      bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+    }
+  }, [events.length, userScrolledUp])
 
   if (events.length === 0) {
     return (
@@ -33,7 +44,7 @@ export function ActivityLog({ events }: ActivityLogProps) {
   }
 
   return (
-    <div className="flex flex-col gap-1 overflow-y-auto">
+    <div ref={containerRef} onScroll={handleScroll} className="flex flex-col gap-1 overflow-y-auto">
       {events.map((event, i) => {
         const config = typeConfig[event.type] || typeConfig.info
         const Icon = config.icon

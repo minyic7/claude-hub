@@ -2,7 +2,7 @@ import type { ActivityEvent } from './activity'
 import type { Project, Ticket } from './ticket'
 
 export type WSEvent =
-  | { type: 'init'; data: { tickets: Ticket[]; projects: Project[] } }
+  | { type: 'init'; data: { tickets: Ticket[]; projects: Project[]; activities?: Record<string, ActivityEvent[]> } }
   | { type: 'ticket_updated'; ticket_id: string; data: Ticket }
   | { type: 'ticket_deleted'; ticket_id: string }
   | { type: 'activity'; ticket_id: string; data: ActivityEvent }

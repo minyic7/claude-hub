@@ -1,0 +1,32 @@
+# Production overlay — GHCR image + Cloudflare Tunnel + Watchtower auto-deploy
+# Usage: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+services:
+  claude-hub:
+    image: ghcr.io/minyic7/claude-hub:latest
+    ports:
+      - "7700:7700"
+    labels:
+      - "com.centurylinklabs.watchtower.scope=claude-hub"
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    depends_on:
+      - claude-hub
+    command: tunnel run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN}
+
+  watchtower:
+    image: containrrr/watchtower
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      WATCHTOWER_POLL_INTERVAL: 300
+      WATCHTOWER_CLEANUP: "true"
+      WATCHTOWER_INCLUDE_STOPPED: "false"
+      WATCHTOWER_SCOPE: claude-hub
+    command: --scope claude-hub
+    labels:
+      - "com.centurylinklabs.watchtower.scope=claude-hub"

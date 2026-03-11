@@ -1,8 +1,11 @@
+import logging
 import re
 import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException, Query
+
+logger = logging.getLogger(__name__)
 
 from claude_hub import redis_client
 from claude_hub.config import settings
@@ -20,8 +23,9 @@ def _slugify(text: str, max_len: int = 60) -> str:
     return slug[:max_len]
 
 
-def _make_branch(branch_type: str, title: str) -> str:
-    return f"{branch_type}/{_slugify(title)}"
+def _make_branch(branch_type: str, title: str, ticket_id: str) -> str:
+    short_id = ticket_id[:6]
+    return f"{branch_type}/{_slugify(title, max_len=40)}-{short_id}"
 
 
 async def _get_project_for_ticket(ticket: dict) -> dict:
@@ -56,7 +60,7 @@ async def create_ticket(body: TicketCreate):
         title=body.title,
         description=body.description,
         branch_type=body.branch_type,
-        branch=_make_branch(body.branch_type.value, body.title),
+        branch=_make_branch(body.branch_type.value, body.title, ticket_id),
         repo_url=project["repo_url"],
         base_branch=project.get("base_branch", "main"),
         role=body.role,
@@ -141,17 +145,30 @@ async def start_ticket(ticket_id: str):
     if not ticket:
         raise HTTPException(404, "Ticket not found")
 
-    try:
-        updated = await transition(ticket_id, TicketStatus.IN_PROGRESS,
-                                   started_at=datetime.now(timezone.utc).isoformat())
-    except InvalidTransition as e:
-        raise HTTPException(409, str(e))
+    # Guard: check dependencies are all merged
+    depends_on = ticket.get("depends_on", [])
+    if depends_on:
+        for dep_id in depends_on:
+            dep = await redis_client.get_ticket(dep_id)
+            if not dep or dep.get("status") != "merged":
+                dep_title = dep.get("title", dep_id[:8]) if dep else dep_id[:8]
+                raise HTTPException(
+                    400, f"Cannot start: depends on '{dep_title}' ({dep.get('status', 'missing') if dep else 'not found'}). Must be merged first."
+                )
+
+    # Guard: prevent double-start and enforce max sessions
+    if session_manager.has_active_session(ticket_id):
+        raise HTTPException(409, "Ticket already has an active session")
+    if session_manager.active_session_count() >= settings.max_sessions:
+        raise HTTPException(
+            429, f"Max concurrent sessions ({settings.max_sessions}) reached. Wait for a session to finish."
+        )
 
     # Resolve project token
     project = await _get_project_for_ticket(ticket)
     gh_token = project.get("gh_token", "")
 
-    # Clone repo and create branch
+    # Clone repo BEFORE transitioning status (so failure doesn't leave ticket stuck)
     try:
         clone_manager.ensure_reference(ticket["repo_url"], gh_token=gh_token)
         clone_path = clone_manager.clone_for_ticket(
@@ -159,12 +176,16 @@ async def start_ticket(ticket_id: str):
             ticket["branch"], ticket["base_branch"],
             gh_token=gh_token,
         )
-        await redis_client.update_ticket_fields(ticket_id, {"clone_path": clone_path})
     except Exception as e:
-        await transition(ticket_id, TicketStatus.FAILED, failed_reason=f"Clone failed: {e}")
-        updated = await redis_client.get_ticket(ticket_id)
-        await broadcast({"type": "ticket_updated", "ticket_id": ticket_id, "data": updated})
         raise HTTPException(500, f"Clone failed: {e}")
+
+    try:
+        updated = await transition(ticket_id, TicketStatus.IN_PROGRESS,
+                                   started_at=datetime.now(timezone.utc).isoformat())
+    except InvalidTransition as e:
+        raise HTTPException(409, str(e))
+
+    await redis_client.update_ticket_fields(ticket_id, {"clone_path": clone_path})
 
     # Start Claude Code session
     role_prompt = get_role_prompt(ticket.get("role", "builder"), ticket["branch"])
@@ -237,7 +258,17 @@ async def answer_ticket(ticket_id: str, body: dict):
 
 @router.post("/{ticket_id}/retry")
 async def retry_ticket(ticket_id: str, body: dict | None = None):
+    from claude_hub.services import session_manager
     from claude_hub.services.ticket_service import InvalidTransition, transition
+
+    # Guard: prevent double-start and enforce max sessions
+    if session_manager.has_active_session(ticket_id):
+        raise HTTPException(409, "Ticket already has an active session")
+    if session_manager.active_session_count() >= settings.max_sessions:
+        raise HTTPException(
+            429, f"Max concurrent sessions ({settings.max_sessions}) reached. Wait for a session to finish."
+        )
+
     try:
         updated = await transition(ticket_id, TicketStatus.IN_PROGRESS,
                                    failed_reason="",
@@ -249,7 +280,7 @@ async def retry_ticket(ticket_id: str, body: dict | None = None):
 
     # Re-spawn session
     import asyncio
-    from claude_hub.services import clone_manager, session_manager
+    from claude_hub.services import clone_manager
     from claude_hub.services.context_engine import get_role_prompt
 
     ticket = await redis_client.get_ticket(ticket_id)
@@ -358,6 +389,22 @@ async def _tail_and_broadcast(ticket_id: str, log_path: str) -> None:
 
     except Exception as e:
         logger.error("Error tailing log for ticket %s: %s", ticket_id, e)
+        # If session errored out and ticket is still in_progress, mark as failed
+        try:
+            ticket = await redis_client.get_ticket(ticket_id)
+            if ticket and ticket.get("status") in ("in_progress", "verifying"):
+                from claude_hub.services.ticket_service import transition as _transition
+                updated = await _transition(
+                    ticket_id, TicketStatus.FAILED,
+                    failed_reason=f"Session error: {e}",
+                )
+                await broadcast({
+                    "type": "ticket_updated",
+                    "ticket_id": ticket_id,
+                    "data": updated,
+                })
+        except Exception:
+            logger.error("Failed to mark ticket %s as failed after error", ticket_id)
 
 
 @router.post("/{ticket_id}/mark-review")
@@ -376,6 +423,195 @@ async def mark_review(ticket_id: str):
         "data": updated,
     })
     return updated
+
+
+@router.post("/{ticket_id}/resolve-conflicts")
+async def resolve_conflicts(ticket_id: str):
+    """Auto-trigger a Claude Code session to rebase and resolve merge conflicts."""
+    CONFLICT_FEEDBACK = (
+        "The PR has merge conflicts with the base branch. You must:\n"
+        "1. Run `git fetch origin` to get the latest changes\n"
+        "2. Run `git rebase origin/main` (or the correct base branch)\n"
+        "3. Resolve any merge conflicts\n"
+        "4. Run `git push --force-with-lease` to update the PR\n"
+        "Do NOT create a new PR. Fix conflicts on this branch."
+    )
+    # Delegate to request_changes with pre-filled conflict feedback
+    return await request_changes(ticket_id, {"feedback": CONFLICT_FEEDBACK})
+
+
+@router.post("/{ticket_id}/request-changes")
+async def request_changes(ticket_id: str, body: dict):
+    """Send ticket back to IN_PROGRESS with review feedback for a new Claude Code session."""
+    import asyncio
+    from claude_hub.services import clone_manager, session_manager
+    from claude_hub.services.context_engine import get_role_prompt
+    from claude_hub.services.ticket_service import InvalidTransition, transition
+
+    feedback = body.get("feedback", "")
+    if not feedback:
+        raise HTTPException(400, "feedback required")
+
+    # Guard: enforce max sessions
+    if session_manager.active_session_count() >= settings.max_sessions:
+        raise HTTPException(
+            429, f"Max concurrent sessions ({settings.max_sessions}) reached."
+        )
+
+    try:
+        updated = await transition(ticket_id, TicketStatus.IN_PROGRESS,
+                                   started_at=datetime.now(timezone.utc).isoformat())
+    except ValueError:
+        raise HTTPException(404, "Ticket not found")
+    except InvalidTransition as e:
+        raise HTTPException(409, str(e))
+
+    ticket = await redis_client.get_ticket(ticket_id)
+    project = await _get_project_for_ticket(ticket)
+    gh_token = project.get("gh_token", "")
+
+    clone_path = ticket.get("clone_path")
+    if not clone_path:
+        clone_manager.ensure_reference(ticket["repo_url"], gh_token=gh_token)
+        clone_path = clone_manager.clone_for_ticket(
+            ticket["repo_url"], ticket_id,
+            ticket["branch"], ticket["base_branch"],
+            gh_token=gh_token,
+        )
+        await redis_client.update_ticket_fields(ticket_id, {"clone_path": clone_path})
+
+    # Build task with original description + review feedback
+    original_task = ticket.get("description") or ticket["title"]
+    pr_number = ticket.get("pr_number", "")
+    task = (
+        f"{original_task}\n\n"
+        f"## Review Feedback — Address These Issues:\n{feedback}\n\n"
+        f"You are on branch {ticket['branch']} which already has your previous work.\n"
+        f"Read the existing code, address the review feedback above, commit, push, "
+        f"and update the PR."
+    )
+    if pr_number:
+        task += f"\nDo NOT create a new PR — push to the same branch so the existing PR #{pr_number} is updated."
+
+    role_prompt = get_role_prompt(ticket.get("role", "builder"), ticket["branch"])
+    try:
+        session_name, log_path = session_manager.start_session(
+            ticket_id, clone_path, task, role_prompt, gh_token=gh_token,
+        )
+    except Exception as e:
+        from claude_hub.services.ticket_service import transition as _tr
+        await _tr(ticket_id, TicketStatus.FAILED, failed_reason=f"Session start failed: {e}")
+        updated = await redis_client.get_ticket(ticket_id)
+        await broadcast({"type": "ticket_updated", "ticket_id": ticket_id, "data": updated})
+        raise HTTPException(500, f"Session start failed: {e}")
+
+    await redis_client.update_ticket_fields(ticket_id, {"tmux_session": session_name})
+    asyncio.create_task(_tail_and_broadcast(ticket_id, log_path))
+
+    updated = await redis_client.get_ticket(ticket_id)
+    await broadcast({
+        "type": "ticket_updated",
+        "ticket_id": ticket_id,
+        "data": updated,
+    })
+    return updated
+
+
+@router.post("/reorder")
+async def reorder_tickets(body: dict):
+    """Reorder TODO tickets by setting priority based on position in the list."""
+    project_id = body.get("project_id")
+    ticket_ids = body.get("ticket_ids", [])
+    if not ticket_ids or not isinstance(ticket_ids, list):
+        raise HTTPException(400, "ticket_ids required (array)")
+
+    # Validate all ticket_ids exist and belong to the project
+    for tid in ticket_ids:
+        if not isinstance(tid, str):
+            raise HTTPException(400, "ticket_ids must be strings")
+        t = await redis_client.get_ticket(tid)
+        if not t:
+            raise HTTPException(404, f"Ticket {tid[:8]} not found")
+        if project_id and t.get("project_id") != project_id:
+            raise HTTPException(400, f"Ticket {tid[:8]} does not belong to project")
+
+    for index, tid in enumerate(ticket_ids):
+        await redis_client.update_ticket_fields(tid, {"priority": str(index)})
+
+    return {"ok": True}
+
+
+@router.post("/sync-review-status")
+async def sync_review_status():
+    """Check GitHub for any review tickets whose PRs have been merged externally."""
+    import json as _json
+    import os
+    import subprocess
+    from claude_hub.services.ticket_service import transition
+
+    review_tickets = await redis_client.list_tickets("review")
+    synced = []
+    for ticket in review_tickets:
+        pr_number = ticket.get("pr_number")
+        clone_path = ticket.get("clone_path", "")
+        if not pr_number or not clone_path:
+            continue
+
+        project = await _get_project_for_ticket(ticket)
+        gh_token = project.get("gh_token", "") or settings.gh_token
+        env = {**os.environ, "GH_TOKEN": gh_token} if gh_token else None
+
+        result = subprocess.run(
+            ["gh", "pr", "view", str(pr_number), "--json", "state,mergedAt,mergeable"],
+            cwd=clone_path, capture_output=True, text=True, env=env,
+        )
+        if result.returncode != 0:
+            continue
+
+        try:
+            pr_data = _json.loads(result.stdout)
+        except _json.JSONDecodeError:
+            continue
+
+        if pr_data.get("state") == "MERGED":
+            try:
+                updated = await transition(
+                    ticket["id"], TicketStatus.MERGED,
+                    completed_at=pr_data.get("mergedAt") or datetime.now(timezone.utc).isoformat(),
+                )
+                await broadcast({
+                    "type": "ticket_updated",
+                    "ticket_id": ticket["id"],
+                    "data": updated,
+                })
+                synced.append(ticket["id"])
+            except Exception:
+                pass
+        else:
+            # Check for merge conflicts (mergeable = "CONFLICTING")
+            mergeable = pr_data.get("mergeable", "")
+            has_conflicts = mergeable == "CONFLICTING"
+            old_conflicts = ticket.get("has_conflicts", False)
+            if has_conflicts != old_conflicts:
+                await redis_client.update_ticket_fields(
+                    ticket["id"], {"has_conflicts": str(has_conflicts)}
+                )
+                updated = await redis_client.get_ticket(ticket["id"])
+                await broadcast({
+                    "type": "ticket_updated",
+                    "ticket_id": ticket["id"],
+                    "data": updated,
+                })
+
+                # Auto-trigger conflict resolution when conflicts are newly detected
+                if has_conflicts and not old_conflicts:
+                    try:
+                        await resolve_conflicts(ticket["id"])
+                        logger.info("Auto-triggered conflict resolution for ticket %s", ticket["id"])
+                    except Exception as e:
+                        logger.warning("Auto-resolve failed for %s: %s", ticket["id"], e)
+
+    return {"synced": synced}
 
 
 @router.post("/{ticket_id}/merge")
@@ -398,6 +634,12 @@ async def merge_ticket(ticket_id: str):
             import os
             env = {**os.environ, "GH_TOKEN": gh_token}
 
+        # Mark PR as ready (in case it's a draft)
+        subprocess.run(
+            ["gh", "pr", "ready", str(pr_number)],
+            cwd=clone_path, capture_output=True, text=True, env=env,
+        )
+        # Merge PR
         result = subprocess.run(
             ["gh", "pr", "merge", str(pr_number), "--squash", "--delete-branch"],
             cwd=clone_path, capture_output=True, text=True, env=env,
@@ -410,6 +652,12 @@ async def merge_ticket(ticket_id: str):
                                    completed_at=datetime.now(timezone.utc).isoformat())
     except InvalidTransition as e:
         raise HTTPException(409, str(e))
+
+    # Cleanup clone directory after merge
+    from claude_hub.services import clone_manager
+    clone_manager.cleanup_clone(ticket_id)
+    await redis_client.update_ticket_fields(ticket_id, {"clone_path": ""})
+    updated = await redis_client.get_ticket(ticket_id)
 
     await broadcast({
         "type": "ticket_updated",

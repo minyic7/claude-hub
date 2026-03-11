@@ -34,8 +34,13 @@ export function useTickets(ticketMap: Map<string, Ticket>): KanbanColumn[] {
       columns[col]?.push(ticket)
     }
 
-    // Sort: newest first in TODO, oldest first elsewhere
-    columns.todo.sort((a, b) => b.created_at.localeCompare(a.created_at))
+    // Sort: by priority (lower = higher), then newest first in TODO
+    columns.todo.sort((a, b) => {
+      const pa = a.priority ?? 0
+      const pb = b.priority ?? 0
+      if (pa !== pb) return pa - pb
+      return b.created_at.localeCompare(a.created_at)
+    })
     columns.in_progress.sort((a, b) => (a.started_at || a.created_at).localeCompare(b.started_at || b.created_at))
     columns.review.sort((a, b) => (a.started_at || a.created_at).localeCompare(b.started_at || b.created_at))
     columns.merged.sort((a, b) => (b.completed_at || b.created_at).localeCompare(a.completed_at || a.created_at))

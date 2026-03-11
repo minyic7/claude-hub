@@ -2,12 +2,15 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Project, Ticket } from '../types/ticket'
 import type { ActivityEvent } from '../types/activity'
 import type { WSEvent } from '../types/ws'
+import { api } from '../lib/api'
 
 interface UseWebSocketReturn {
   projects: Map<string, Project>
   tickets: Map<string, Ticket>
   activities: Map<string, ActivityEvent[]>
   connected: boolean
+  lastEscalation: { ticketId: string; question: string } | null
+  patchTicket: (ticketId: string, patch: Partial<Ticket>) => void
 }
 
 export function useWebSocket(url: string): UseWebSocketReturn {
@@ -15,6 +18,7 @@ export function useWebSocket(url: string): UseWebSocketReturn {
   const [tickets, setTickets] = useState<Map<string, Ticket>>(new Map())
   const [activities, setActivities] = useState<Map<string, ActivityEvent[]>>(new Map())
   const [connected, setConnected] = useState(false)
+  const [lastEscalation, setLastEscalation] = useState<{ ticketId: string; question: string } | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
   const reconnectTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
 
@@ -26,6 +30,8 @@ export function useWebSocket(url: string): UseWebSocketReturn {
 
     ws.onopen = () => {
       setConnected(true)
+      // Sync review ticket PR statuses with GitHub on (re)connect
+      api.tickets.syncReviewStatus().catch(() => {})
     }
 
     ws.onclose = () => {
@@ -52,6 +58,12 @@ export function useWebSocket(url: string): UseWebSocketReturn {
       case 'init':
         setProjects(new Map((msg.data.projects || []).map((p) => [p.id, p])))
         setTickets(new Map(msg.data.tickets.map((t) => [t.id, t])))
+        // Restore activities for active tickets on (re)connect
+        if (msg.data.activities) {
+          setActivities(new Map(
+            Object.entries(msg.data.activities).filter(([, events]) => events.length > 0)
+          ))
+        }
         break
 
       case 'project_created':
@@ -102,6 +114,8 @@ export function useWebSocket(url: string): UseWebSocketReturn {
         break
 
       case 'escalation':
+        setLastEscalation({ ticketId: msg.ticket_id, question: msg.data.question })
+        break
       case 'cost_update':
         break
     }
@@ -115,5 +129,15 @@ export function useWebSocket(url: string): UseWebSocketReturn {
     }
   }, [connect])
 
-  return { projects, tickets, activities, connected }
+  const patchTicket = useCallback((ticketId: string, patch: Partial<Ticket>) => {
+    setTickets((prev) => {
+      const existing = prev.get(ticketId)
+      if (!existing) return prev
+      const next = new Map(prev)
+      next.set(ticketId, { ...existing, ...patch })
+      return next
+    })
+  }, [])
+
+  return { projects, tickets, activities, connected, lastEscalation, patchTicket }
 }

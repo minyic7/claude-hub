@@ -184,6 +184,13 @@ async def get_activity(ticket_id: str, since: int = 0) -> list[dict]:
     return [json.loads(item) for item in raw]
 
 
+async def get_recent_activity(ticket_id: str, count: int = 50) -> list[dict]:
+    """Get the most recent N activity events for a ticket."""
+    r = _r()
+    raw = await r.lrange(f"ticket:{ticket_id}:activity", -count, -1)
+    return [json.loads(item) for item in raw]
+
+
 # ─── Cost helpers ────────────────────────────────────────────────────────────
 
 async def get_cost_summary() -> dict:
@@ -204,6 +211,8 @@ async def get_cost_summary() -> dict:
 _JSON_FIELDS = {"metadata", "depends_on"}
 _FLOAT_FIELDS = {"agent_cost_usd"}
 _INT_FIELDS = {"pr_number"}
+_INT_FIELDS_DEFAULT_ZERO = {"priority"}
+_BOOL_FIELDS = {"has_conflicts"}
 _NULLABLE_FIELDS = {
     "blocked_question", "failed_reason", "clone_path", "pr_url",
     "pr_number", "tmux_session", "started_at", "completed_at", "external_id",
@@ -222,6 +231,10 @@ def _deserialize_ticket(data: dict) -> dict:
             result[k] = float(v) if v else 0.0
         elif k in _INT_FIELDS:
             result[k] = int(v) if v and v != "" else None
+        elif k in _INT_FIELDS_DEFAULT_ZERO:
+            result[k] = int(v) if v and v != "" else 0
+        elif k in _BOOL_FIELDS:
+            result[k] = v.lower() in ("true", "1") if v else False
         elif k in _NULLABLE_FIELDS and v == "":
             result[k] = None
         else:
