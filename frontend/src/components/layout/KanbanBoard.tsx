@@ -156,6 +156,7 @@ export function KanbanBoard({
                           allTickets={allTickets}
                           onClick={() => onTicketClick(ticket)}
                           onOptimistic={onOptimistic}
+                          onTicketClick={onTicketClick}
                         />
                       )
                     })}

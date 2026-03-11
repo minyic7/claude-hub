@@ -160,6 +160,11 @@ export function TicketDetail({ ticket, activities, allTickets, onClose, onDelete
     return { id: depId, ticket: dep }
   })
 
+  // Reverse dependencies: tickets that depend on this one
+  const reverseDeps = [...allTickets.values()].filter(
+    (t) => t.depends_on.includes(ticket.id)
+  )
+
   // Available deps for picker (other tickets in same project, not this ticket)
   const availableDeps = [...allTickets.values()]
     .filter((t) => t.project_id === ticket.project_id && t.id !== ticket.id)
@@ -489,6 +494,35 @@ export function TicketDetail({ ticket, activities, allTickets, onClose, onDelete
                 </span>
                 <span className={`text-[10px] ${depStatusColor((dep?.status || 'todo') as TicketStatus)}`}>
                   {dep?.status?.replace('_', ' ') || 'missing'}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Reverse dependencies */}
+      {reverseDeps.length > 0 && (
+        <div className="border-b border-[var(--color-border)] p-3">
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
+            Required by
+          </h3>
+          <div className="space-y-1">
+            {reverseDeps.map((rdep) => (
+              <button
+                key={rdep.id}
+                onClick={() => onTicketClick(rdep)}
+                className="flex w-full items-center gap-2 rounded px-2 py-1 text-left text-xs hover:bg-[var(--color-bg-secondary)]"
+              >
+                {depStatusIcon(rdep.status as TicketStatus)}
+                <span className="font-semibold text-[var(--color-text-primary)]">
+                  #{rdep.id.slice(0, 6)}
+                </span>
+                <span className="flex-1 truncate text-[var(--color-text-secondary)]">
+                  {rdep.title}
+                </span>
+                <span className={`text-[10px] ${depStatusColor(rdep.status as TicketStatus)}`}>
+                  {rdep.status.replace('_', ' ')}
                 </span>
               </button>
             ))}
