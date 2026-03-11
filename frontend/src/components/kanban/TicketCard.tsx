@@ -356,6 +356,12 @@ export function TicketCard({ ticket, latestActivity, activityEvents, onClick, on
               <AlertCircle size={12} className="shrink-0" /> Merge conflicts detected
             </div>
           )}
+          {mergeQueueLocked && (
+            <div className="flex items-center gap-1.5 rounded bg-[var(--color-accent-yellow)]/10 px-2 py-1 text-xs text-[var(--color-accent-yellow)]">
+              <Loader2 size={12} className="animate-spin shrink-0" />
+              <span>Deploy in progress — merge queued</span>
+            </div>
+          )}
           <div className="flex items-center justify-between gap-2">
             {ticket.pr_url && (
               <a
@@ -368,22 +374,9 @@ export function TicketCard({ ticket, latestActivity, activityEvents, onClick, on
                 PR #{ticket.pr_number} <ExternalLink size={10} />
               </a>
             )}
-            <div className="relative group">
-              <Button size="sm" onClick={handleMerge} disabled={ticket.has_conflicts || mergeQueueLocked}>
-                {mergeQueueLocked ? (
-                  <><Loader2 size={12} className="mr-1 animate-spin" /> Merge</>
-                ) : (
-                  <><GitMerge size={12} className="mr-1" /> Merge</>
-                )}
-              </Button>
-              {mergeQueueLocked && (
-                <div className="absolute bottom-full right-0 mb-1.5 hidden group-hover:block z-10">
-                  <div className="whitespace-nowrap rounded bg-[var(--color-bg-secondary)] border border-[var(--color-border)] px-2 py-1 text-[11px] text-[var(--color-text-muted)] shadow-lg">
-                    Waiting for deploy to complete...
-                  </div>
-                </div>
-              )}
-            </div>
+            <Button size="sm" onClick={handleMerge} disabled={ticket.has_conflicts || mergeQueueLocked}>
+              <GitMerge size={12} className="mr-1" /> Merge
+            </Button>
           </div>
         </div>
       )}

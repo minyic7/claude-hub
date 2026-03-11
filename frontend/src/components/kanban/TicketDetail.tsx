@@ -201,22 +201,9 @@ export function TicketDetail({ ticket, activities, allTickets, onClose, onDelete
               <Button size="sm" variant="secondary" onClick={() => setShowChangesForm(!showChangesForm)}>
                 <MessageSquareWarning size={12} className="mr-1" /> Changes
               </Button>
-              <div className="relative group">
-                <Button size="sm" onClick={handleMerge} disabled={ticket.has_conflicts || mergeQueueLocked}>
-                  {mergeQueueLocked ? (
-                    <><Loader2 size={12} className="mr-1 animate-spin" /> Merge</>
-                  ) : (
-                    <><GitMerge size={12} className="mr-1" /> Merge</>
-                  )}
-                </Button>
-                {mergeQueueLocked && (
-                  <div className="absolute bottom-full right-0 mb-1.5 hidden group-hover:block z-10">
-                    <div className="whitespace-nowrap rounded bg-[var(--color-bg-secondary)] border border-[var(--color-border)] px-2 py-1 text-[11px] text-[var(--color-text-muted)] shadow-lg">
-                      Waiting for deploy to complete...
-                    </div>
-                  </div>
-                )}
-              </div>
+              <Button size="sm" onClick={handleMerge} disabled={ticket.has_conflicts || mergeQueueLocked}>
+                <GitMerge size={12} className="mr-1" /> Merge
+              </Button>
             </>
           )}
           {ticket.status === 'merging' && (
@@ -250,6 +237,16 @@ export function TicketDetail({ ticket, activities, allTickets, onClose, onDelete
           )}
         </div>
       </div>
+
+      {/* Deploy queue banner */}
+      {mergeQueueLocked && ticket.status === 'review' && (
+        <div className="border-b border-[var(--color-border)] p-3">
+          <div className="flex items-center gap-2 rounded-lg border border-[var(--color-accent-yellow)]/30 bg-[var(--color-accent-yellow)]/5 px-3 py-2 text-xs text-[var(--color-accent-yellow)]">
+            <Loader2 size={14} className="animate-spin shrink-0" />
+            <span>Deploy in progress — merge is queued until current deploy completes</span>
+          </div>
+        </div>
+      )}
 
       {/* Edit form (TODO only) */}
       {editing && ticket.status === 'todo' && (
