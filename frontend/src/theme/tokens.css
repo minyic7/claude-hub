@@ -140,3 +140,24 @@
 .rise-stagger {
   animation: rise 0.5s cubic-bezier(0.16, 1, 0.3, 1) backwards;
 }
+
+/* Status indicator scale+fade transition */
+.status-icon {
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1),
+              opacity 0.25s ease;
+}
+
+.status-icon.status-icon--enter {
+  transform: scale(0.5);
+  opacity: 0;
+}
+
+/* Card border highlight flash on status change */
+@keyframes status-flash {
+  0% { border-color: var(--flash-color, var(--color-accent-blue)); box-shadow: 0 0 0 2px color-mix(in srgb, var(--flash-color, var(--color-accent-blue)) 25%, transparent); }
+  100% { border-color: var(--color-border); box-shadow: none; }
+}
+
+.ticket-card--flash {
+  animation: status-flash 0.6s ease-out;
+}
