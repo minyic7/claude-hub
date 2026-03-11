@@ -7,6 +7,8 @@ services:
       - "7700:7700"
     volumes:
       - claude-config:/home/claude/.claude
+      - claude-data:/data
 
 volumes:
   claude-config:
+  claude-data:
