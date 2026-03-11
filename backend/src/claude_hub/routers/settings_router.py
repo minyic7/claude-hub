@@ -145,12 +145,13 @@ async def test_connection():
         if provider == "anthropic":
             import anthropic
             client = anthropic.Anthropic(api_key=api_key)
+            # Always use cheapest model for test — just verifying the key works
             resp = client.messages.create(
-                model=model or "claude-haiku-4-5-20251001",
-                max_tokens=10,
-                messages=[{"role": "user", "content": "Say hi"}],
+                model="claude-haiku-4-5-20251001",
+                max_tokens=5,
+                messages=[{"role": "user", "content": "hi"}],
             )
-            return {"ok": True, "model": resp.model, "message": "Connection successful"}
+            return {"ok": True, "model": model or resp.model, "message": "Connection successful"}
         else:
             import openai
             kwargs = {"api_key": api_key}
@@ -159,10 +160,10 @@ async def test_connection():
             client = openai.OpenAI(**kwargs)
             resp = client.chat.completions.create(
                 model=model or "gpt-4o-mini",
-                max_tokens=10,
-                messages=[{"role": "user", "content": "Say hi"}],
+                max_tokens=5,
+                messages=[{"role": "user", "content": "hi"}],
             )
-            return {"ok": True, "model": resp.model, "message": "Connection successful"}
+            return {"ok": True, "model": model or resp.model, "message": "Connection successful"}
     except Exception as e:
         err = str(e)
         # Extract useful part of error
