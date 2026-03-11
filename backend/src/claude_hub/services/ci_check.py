@@ -105,6 +105,34 @@ def _evaluate_checks(checks: list[dict], key_status: str, key_conclusion: str) -
     return {"status": "passed", "checks": checks, "summary": summary}
 
 
+def get_failed_log(clone_path: str, gh_token: str = "", max_lines: int = 80) -> str:
+    """Fetch the failed CI run log for the most recent failed workflow run."""
+    # Find the most recent failed run
+    result = _run_gh(
+        ["gh", "run", "list", "--status", "failure", "--limit", "1",
+         "--json", "databaseId,name", "--jq", ".[0].databaseId"],
+        cwd=clone_path, gh_token=gh_token,
+    )
+    run_id = result.stdout.strip()
+    if not run_id:
+        return ""
+
+    # Get the failed log
+    result = _run_gh(
+        ["gh", "run", "view", run_id, "--log-failed"],
+        cwd=clone_path, gh_token=gh_token,
+    )
+    if result.returncode != 0:
+        return ""
+
+    log = result.stdout.strip()
+    # Truncate to last N lines (the error is usually at the end)
+    lines = log.split("\n")
+    if len(lines) > max_lines:
+        lines = lines[-max_lines:]
+    return "\n".join(lines)
+
+
 async def merge_pr(ticket_id: str, clone_path: str, pr_number: int, gh_token: str = "") -> None:
     """Actually merge the PR on GitHub."""
     env = None
@@ -166,10 +194,14 @@ async def wait_for_ci_and_merge(
             return
 
         if ci["status"] == "failed":
+            # Fetch detailed failure logs
+            fail_log = get_failed_log(clone_path, gh_token)
             reason = ci["summary"]
+            if fail_log:
+                reason = f"{reason}\n\n--- CI Log (last 80 lines) ---\n{fail_log}"
             updated = await transition(ticket_id, TicketStatus.FAILED, failed_reason=reason)
             await broadcast({"type": "ticket_updated", "ticket_id": ticket_id, "data": updated})
-            logger.warning("CI failed for %s: %s", ticket_id, reason)
+            logger.warning("CI failed for %s: %s", ticket_id, ci["summary"])
             return
 
     # Timeout

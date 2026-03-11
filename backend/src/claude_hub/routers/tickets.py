@@ -310,6 +310,13 @@ async def retry_ticket(ticket_id: str, body: dict | None = None):
 
     guidance = (body or {}).get("guidance", "")
     task = ticket.get("description") or ticket["title"]
+
+    # Auto-include CI failure reason as context for retry
+    failed_reason = ticket.get("failed_reason", "")
+    if failed_reason and "CI failed" in failed_reason:
+        ci_context = f"\n\n## Previous CI Failure\nThe previous attempt failed CI checks. Fix the issues below:\n{failed_reason}"
+        task = f"{task}{ci_context}"
+
     if guidance:
         task = f"{task}\n\nAdditional guidance: {guidance}"
 
@@ -683,6 +690,13 @@ async def merge_ticket(ticket_id: str):
     ci = get_ci_status(clone_path, branch, gh_token)
 
     if ci["status"] == "failed":
+        from claude_hub.services.ci_check import get_failed_log
+        fail_log = get_failed_log(clone_path, gh_token)
+        reason = ci["summary"]
+        if fail_log:
+            reason = f"{reason}\n\n--- CI Log (last 80 lines) ---\n{fail_log}"
+        # Store failure reason so retry can use it
+        await redis_client.update_ticket_fields(ticket_id, {"failed_reason": reason})
         raise HTTPException(400, f"CI check failed: {ci['summary']}")
 
     if ci["status"] == "pending":
