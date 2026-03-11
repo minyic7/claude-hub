@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useWebSocket } from './hooks/useWebSocket'
 import { useTickets } from './hooks/useTickets'
 import { useNotifications } from './hooks/useNotifications'
+import { useDeployStatus } from './hooks/useDeployStatus'
 import { AppShell } from './components/layout/AppShell'
 import { KanbanBoard } from './components/layout/KanbanBoard'
 import { TicketDetail } from './components/kanban/TicketDetail'
@@ -83,6 +84,13 @@ function AuthedApp() {
     return new Map([...tickets].filter(([, t]) => t.project_id === activeProjectId))
   }, [tickets, activeProjectId])
 
+  const onDeployComplete = useCallback((run: { conclusion: string | null; name: string }) => {
+    const label = run.conclusion === 'success' ? 'Deploy complete' : 'Deploy failed'
+    addNotification(run.conclusion === 'success' ? 'success' : 'error', `${label}: ${run.name}`)
+  }, [addNotification])
+
+  const { runs: deployRuns, state: deployState, deployingBranches } = useDeployStatus(activeProjectId, onDeployComplete)
+
   const columns = useTickets(filteredTickets)
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null)
 
@@ -98,6 +106,8 @@ function AuthedApp() {
       onProjectChange={handleProjectChange}
       notifications={notifications}
       onDismissNotification={dismiss}
+      deployState={deployState}
+      deployRuns={deployRuns}
     >
       <KanbanBoard
         columns={columns}
@@ -106,6 +116,7 @@ function AuthedApp() {
         activeProjectId={activeProjectId}
         onTicketClick={setSelectedTicket}
         onOptimistic={patchTicket}
+        deployingBranches={deployingBranches}
       />
       {currentTicket && (
         <TicketDetail

@@ -8,9 +8,10 @@ interface KanbanColumnProps {
   activities: Map<string, ActivityEvent[]>
   onTicketClick: (ticket: Ticket) => void
   onOptimistic?: (ticketId: string, patch: Partial<Ticket>) => void
+  deployingBranches?: Set<string>
 }
 
-export function KanbanColumn({ label, tickets, activities, onTicketClick, onOptimistic }: KanbanColumnProps) {
+export function KanbanColumn({ label, tickets, activities, onTicketClick, onOptimistic, deployingBranches }: KanbanColumnProps) {
   return (
     <div className="flex min-w-[280px] flex-1 flex-col">
       <div className="mb-3 flex items-center gap-2 px-1">
@@ -36,6 +37,7 @@ export function KanbanColumn({ label, tickets, activities, onTicketClick, onOpti
                 latestActivity={latest}
                 onClick={() => onTicketClick(ticket)}
                 onOptimistic={onOptimistic}
+                deploying={ticket.status === 'merged' && deployingBranches ? deployingBranches.has(ticket.branch) ? true : false : undefined}
               />
             </div>
           )
