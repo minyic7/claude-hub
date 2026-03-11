@@ -9,9 +9,11 @@ interface KanbanColumnProps {
   onTicketClick: (ticket: Ticket) => void
   onOptimistic?: (ticketId: string, patch: Partial<Ticket>) => void
   deployingBranches?: Set<string>
+  mergeQueueLocked?: boolean
+  onMergeInitiated?: () => void
 }
 
-export function KanbanColumn({ label, tickets, activities, onTicketClick, onOptimistic, deployingBranches }: KanbanColumnProps) {
+export function KanbanColumn({ label, tickets, activities, onTicketClick, onOptimistic, deployingBranches, mergeQueueLocked, onMergeInitiated }: KanbanColumnProps) {
   return (
     <div className="flex min-w-[280px] flex-1 flex-col">
       <div className="mb-3 flex items-center gap-2 px-1">
@@ -38,6 +40,8 @@ export function KanbanColumn({ label, tickets, activities, onTicketClick, onOpti
                 onClick={() => onTicketClick(ticket)}
                 onOptimistic={onOptimistic}
                 deploying={ticket.status === 'merged' && deployingBranches ? deployingBranches.has(ticket.branch) ? true : false : undefined}
+                mergeQueueLocked={mergeQueueLocked}
+                onMergeInitiated={onMergeInitiated}
               />
             </div>
           )
