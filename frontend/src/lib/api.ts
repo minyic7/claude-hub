@@ -156,8 +156,13 @@ export interface WorkflowRun {
   name: string
 }
 
+export type AgentProvider = 'anthropic' | 'openai' | 'openai_compatible'
+
 export interface AgentSettings {
   enabled: boolean
+  provider: AgentProvider
+  api_key: string
+  endpoint_url: string
   model: string
   batch_size: number
   max_context_messages: number

@@ -1,11 +1,23 @@
 import { useEffect, useState } from 'react'
 import { Modal } from '../common/Modal'
-import { api, type AgentSettings } from '../../lib/api'
+import { api, type AgentSettings, type AgentProvider } from '../../lib/api'
 
-const MODELS = [
+const PROVIDERS: { id: AgentProvider; label: string; description: string }[] = [
+  { id: 'anthropic', label: 'Anthropic', description: 'Claude models via Anthropic API' },
+  { id: 'openai', label: 'OpenAI', description: 'GPT models via OpenAI API' },
+  { id: 'openai_compatible', label: 'OpenAI Compatible', description: 'Custom endpoint (vLLM, Ollama, etc.)' },
+]
+
+const ANTHROPIC_MODELS = [
   { id: 'claude-haiku-4-5-20251001', label: 'Haiku 4.5', cost: '$' },
   { id: 'claude-sonnet-4-6', label: 'Sonnet 4.6', cost: '$$' },
   { id: 'claude-opus-4-6', label: 'Opus 4.6', cost: '$$$' },
+]
+
+const OPENAI_MODELS = [
+  { id: 'gpt-4o-mini', label: 'GPT-4o mini', cost: '$' },
+  { id: 'gpt-4o', label: 'GPT-4o', cost: '$$' },
+  { id: 'o3', label: 'o3', cost: '$$$' },
 ]
 
 interface Props {
@@ -52,6 +64,10 @@ export function AgentSettingsModal({ open, onClose }: Props) {
     )
   }
 
+  const models = settings.provider === 'anthropic' ? ANTHROPIC_MODELS
+    : settings.provider === 'openai' ? OPENAI_MODELS
+    : [] // openai_compatible: free-form model input
+
   return (
     <Modal open={open} onClose={onClose} title="TicketAgent Settings">
       <div className="space-y-4">
@@ -70,25 +86,85 @@ export function AgentSettingsModal({ open, onClose }: Props) {
           </button>
         </label>
 
-        {/* Model selector */}
+        {/* Provider selector */}
         <div>
-          <label className="mb-1 block text-sm text-[var(--color-text-primary)]">Model</label>
+          <label className="mb-1 block text-sm text-[var(--color-text-primary)]">Provider</label>
           <div className="grid grid-cols-3 gap-2">
-            {MODELS.map((m) => (
+            {PROVIDERS.map((p) => (
               <button
-                key={m.id}
-                onClick={() => setSettings({ ...settings, model: m.id })}
+                key={p.id}
+                onClick={() => setSettings({ ...settings, provider: p.id })}
                 className={`rounded-md border px-3 py-2 text-xs transition-colors ${
-                  settings.model === m.id
+                  settings.provider === p.id
                     ? 'border-[var(--color-accent-blue)] bg-[var(--color-accent-blue)]/10 text-[var(--color-accent-blue)]'
                     : 'border-[var(--color-border)] text-[var(--color-text-muted)] hover:border-[var(--color-text-muted)]'
                 }`}
               >
-                <div className="font-medium">{m.label}</div>
-                <div className="mt-0.5 text-[10px]">{m.cost}</div>
+                <div className="font-medium">{p.label}</div>
+                <div className="mt-0.5 text-[10px] leading-tight">{p.description}</div>
               </button>
             ))}
           </div>
+        </div>
+
+        {/* API Key */}
+        <div>
+          <label className="mb-1 block text-sm text-[var(--color-text-primary)]">API Key</label>
+          <input
+            type="password"
+            value={settings.api_key}
+            onChange={(e) => setSettings({ ...settings, api_key: e.target.value })}
+            placeholder="sk-..."
+            className="w-full rounded border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2 py-1.5 text-xs text-[var(--color-text-primary)] font-mono"
+          />
+          <p className="mt-0.5 text-[10px] text-[var(--color-text-muted)]">
+            Required for TicketAgent supervision. Not used by Claude Code CLI.
+          </p>
+        </div>
+
+        {/* Endpoint URL (only for openai_compatible) */}
+        {settings.provider === 'openai_compatible' && (
+          <div>
+            <label className="mb-1 block text-sm text-[var(--color-text-primary)]">Endpoint URL</label>
+            <input
+              type="url"
+              value={settings.endpoint_url}
+              onChange={(e) => setSettings({ ...settings, endpoint_url: e.target.value })}
+              placeholder="https://your-endpoint.com/v1"
+              className="w-full rounded border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2 py-1.5 text-xs text-[var(--color-text-primary)] font-mono"
+            />
+          </div>
+        )}
+
+        {/* Model selector */}
+        <div>
+          <label className="mb-1 block text-sm text-[var(--color-text-primary)]">Model</label>
+          {models.length > 0 ? (
+            <div className="grid grid-cols-3 gap-2">
+              {models.map((m) => (
+                <button
+                  key={m.id}
+                  onClick={() => setSettings({ ...settings, model: m.id })}
+                  className={`rounded-md border px-3 py-2 text-xs transition-colors ${
+                    settings.model === m.id
+                      ? 'border-[var(--color-accent-blue)] bg-[var(--color-accent-blue)]/10 text-[var(--color-accent-blue)]'
+                      : 'border-[var(--color-border)] text-[var(--color-text-muted)] hover:border-[var(--color-text-muted)]'
+                  }`}
+                >
+                  <div className="font-medium">{m.label}</div>
+                  <div className="mt-0.5 text-[10px]">{m.cost}</div>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <input
+              type="text"
+              value={settings.model}
+              onChange={(e) => setSettings({ ...settings, model: e.target.value })}
+              placeholder="model-name"
+              className="w-full rounded border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2 py-1.5 text-xs text-[var(--color-text-primary)] font-mono"
+            />
+          )}
         </div>
 
         {/* Batch size */}

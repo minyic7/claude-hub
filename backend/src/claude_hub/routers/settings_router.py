@@ -1,7 +1,7 @@
 import json
 import logging
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 
 from claude_hub import redis_client
 from claude_hub.config import settings
@@ -12,9 +12,14 @@ router = APIRouter(prefix="/api/settings", tags=["settings"])
 
 REDIS_KEY = "settings:agent"
 
-# Default values (from env/config as initial defaults)
+VALID_PROVIDERS = ["anthropic", "openai", "openai_compatible"]
+
+# Default values
 _DEFAULTS = {
     "enabled": True,
+    "provider": "anthropic",
+    "api_key": "",
+    "endpoint_url": "",
     "model": "claude-haiku-4-5-20251001",
     "batch_size": 8,
     "max_context_messages": 25,
@@ -24,12 +29,12 @@ _DEFAULTS = {
     "budget_monthly_usd": 500.00,
 }
 
-# Valid model choices
-VALID_MODELS = [
-    "claude-haiku-4-5-20251001",
-    "claude-sonnet-4-6",
-    "claude-opus-4-6",
-]
+
+def _mask_key(key: str) -> str:
+    """Mask API key for display: show first 8 and last 4 chars."""
+    if not key or len(key) < 16:
+        return "***" if key else ""
+    return key[:8] + "..." + key[-4:]
 
 
 async def get_agent_settings() -> dict:
@@ -38,13 +43,20 @@ async def get_agent_settings() -> dict:
     raw = await r.get(REDIS_KEY)
     if raw:
         try:
-            return {**_DEFAULTS, **json.loads(raw)}
+            stored = json.loads(raw)
+            result = {**_DEFAULTS, **stored}
+            # If no API key in Redis, fall back to env
+            if not result.get("api_key"):
+                result["api_key"] = settings.anthropic_api_key
+            return result
         except json.JSONDecodeError:
             pass
 
     # First time: seed from env vars
     return {
+        **_DEFAULTS,
         "enabled": settings.agent_enabled,
+        "api_key": settings.anthropic_api_key,
         "model": settings.agent_model,
         "batch_size": settings.agent_batch_size,
         "max_context_messages": settings.agent_max_context_messages,
@@ -57,18 +69,30 @@ async def get_agent_settings() -> dict:
 
 @router.get("/agent")
 async def get_settings():
-    return await get_agent_settings()
+    cfg = await get_agent_settings()
+    # Mask API key in response
+    return {**cfg, "api_key": _mask_key(cfg.get("api_key", ""))}
 
 
 @router.put("/agent")
 async def update_settings(body: dict):
     current = await get_agent_settings()
 
-    # Validate and merge
+    if "provider" in body:
+        if body["provider"] not in VALID_PROVIDERS:
+            raise HTTPException(400, f"Invalid provider. Choose from: {VALID_PROVIDERS}")
+        current["provider"] = body["provider"]
+
+    if "api_key" in body:
+        key = body["api_key"]
+        # Don't overwrite with masked value
+        if key and "..." not in key:
+            current["api_key"] = key
+
+    if "endpoint_url" in body:
+        current["endpoint_url"] = body["endpoint_url"].strip()
+
     if "model" in body:
-        if body["model"] not in VALID_MODELS:
-            from fastapi import HTTPException
-            raise HTTPException(400, f"Invalid model. Choose from: {VALID_MODELS}")
         current["model"] = body["model"]
 
     if "enabled" in body:
@@ -97,5 +121,9 @@ async def update_settings(body: dict):
     r = redis_client.get_pool()
     await r.set(REDIS_KEY, json.dumps(current))
 
-    logger.info("Agent settings updated: %s", current)
-    return current
+    # Log without exposing full key
+    log_cfg = {**current, "api_key": _mask_key(current.get("api_key", ""))}
+    logger.info("Agent settings updated: %s", log_cfg)
+
+    # Return with masked key
+    return {**current, "api_key": _mask_key(current.get("api_key", ""))}

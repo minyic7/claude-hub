@@ -5,6 +5,7 @@ import os
 import subprocess
 
 import anthropic
+import openai
 
 from claude_hub import redis_client
 from claude_hub.config import settings
@@ -178,11 +179,9 @@ class TicketAgent:
         self.ticket_id = ticket_id
         self.ticket = ticket
         self.verbose = verbose
-        self.client = anthropic.Anthropic(
-            api_key=settings.anthropic_api_key or os.environ.get("ANTHROPIC_API_KEY", ""),
-        )
         # Use hot-reloadable settings from Redis, fallback to env
         self._settings = agent_settings or {}
+        self.provider = self._settings.get("provider", "anthropic")
         self.model = self._settings.get("model", settings.agent_model)
         self.batch_size = self._settings.get("batch_size", settings.agent_batch_size)
         self.max_context = self._settings.get("max_context_messages", settings.agent_max_context_messages)
@@ -195,6 +194,21 @@ class TicketAgent:
             role=ticket.get("role", "builder"),
         )
         self._stopped = False
+
+        # Initialize client based on provider
+        api_key = self._settings.get("api_key") or settings.anthropic_api_key or os.environ.get("ANTHROPIC_API_KEY", "")
+        endpoint_url = self._settings.get("endpoint_url", "")
+
+        if self.provider == "anthropic":
+            self._anthropic = anthropic.Anthropic(api_key=api_key)
+            self._openai = None
+        else:
+            # openai or openai_compatible
+            kwargs = {"api_key": api_key}
+            if endpoint_url:
+                kwargs["base_url"] = endpoint_url
+            self._openai = openai.OpenAI(**kwargs)
+            self._anthropic = None
 
     def stop(self):
         self._stopped = True
@@ -260,8 +274,14 @@ class TicketAgent:
             await self._record_activity("warning", f"Budget exceeded: {reason}")
             return
 
+        if self._anthropic:
+            await self._call_anthropic()
+        else:
+            await self._call_openai()
+
+    async def _call_anthropic(self) -> None:
         try:
-            response = self.client.messages.create(
+            response = self._anthropic.messages.create(
                 model=self.model,
                 max_tokens=1024,
                 system=self.system_prompt,
@@ -269,7 +289,7 @@ class TicketAgent:
                 messages=self.messages,
             )
         except Exception as e:
-            logger.error("API call failed for %s: %s", self.ticket_id, e)
+            logger.error("Anthropic API call failed for %s: %s", self.ticket_id, e)
             return
 
         # Record cost
@@ -318,9 +338,135 @@ class TicketAgent:
                 })
             self.messages.append({"role": "user", "content": tool_results})
 
-            # If there were tool uses and stop_reason is tool_use, continue the loop
             if response.stop_reason == "tool_use":
-                await self._call_api()  # Recursive, with safety limit below
+                await self._call_api()
+
+    async def _call_openai(self) -> None:
+        # Convert Anthropic-style tools to OpenAI function calling format
+        oai_tools = []
+        for t in self.tools:
+            oai_tools.append({
+                "type": "function",
+                "function": {
+                    "name": t["name"],
+                    "description": t["description"],
+                    "parameters": t["input_schema"],
+                },
+            })
+
+        # Convert Anthropic-style messages to OpenAI format
+        oai_messages = [{"role": "system", "content": self.system_prompt}]
+        for msg in self.messages:
+            if msg["role"] == "assistant":
+                # Anthropic content blocks → OpenAI format
+                content = msg.get("content", [])
+                if isinstance(content, list):
+                    text_parts = []
+                    tool_calls = []
+                    for block in content:
+                        if isinstance(block, dict) and block.get("type") == "text":
+                            text_parts.append(block["text"])
+                        elif isinstance(block, dict) and block.get("type") == "tool_use":
+                            tool_calls.append({
+                                "id": block["id"],
+                                "type": "function",
+                                "function": {
+                                    "name": block["name"],
+                                    "arguments": json.dumps(block["input"]),
+                                },
+                            })
+                    oai_msg = {"role": "assistant", "content": "\n".join(text_parts) or None}
+                    if tool_calls:
+                        oai_msg["tool_calls"] = tool_calls
+                    oai_messages.append(oai_msg)
+                else:
+                    oai_messages.append({"role": "assistant", "content": str(content)})
+            elif msg["role"] == "user":
+                content = msg.get("content", "")
+                if isinstance(content, list):
+                    # Tool results
+                    for block in content:
+                        if isinstance(block, dict) and block.get("type") == "tool_result":
+                            oai_messages.append({
+                                "role": "tool",
+                                "tool_call_id": block["tool_use_id"],
+                                "content": block["content"],
+                            })
+                        else:
+                            oai_messages.append({"role": "user", "content": str(block)})
+                else:
+                    oai_messages.append({"role": "user", "content": content})
+
+        try:
+            response = self._openai.chat.completions.create(
+                model=self.model,
+                max_tokens=1024,
+                messages=oai_messages,
+                tools=oai_tools if oai_tools else openai.NOT_GIVEN,
+            )
+        except Exception as e:
+            logger.error("OpenAI API call failed for %s: %s", self.ticket_id, e)
+            return
+
+        # Record cost
+        usage = response.usage
+        input_tokens = usage.prompt_tokens or 0
+        output_tokens = usage.completion_tokens or 0
+        cost = cost_tracker.calculate_cost({
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "cache_read_input_tokens": 0,
+        }, self.model)
+        total_tokens = input_tokens + output_tokens
+        await cost_tracker.record_spend(self.ticket_id, cost, tokens=total_tokens)
+
+        # Process response
+        choice = response.choices[0]
+        message = choice.message
+
+        assistant_content = []
+        tool_uses = []
+
+        if message.content:
+            assistant_content.append({"type": "text", "text": message.content})
+            if self.verbose:
+                logger.info("Agent [%s]: %s", self.ticket_id, message.content[:100])
+            await self._record_activity("decision", message.content[:200])
+
+        if message.tool_calls:
+            for tc in message.tool_calls:
+                try:
+                    args = json.loads(tc.function.arguments)
+                except json.JSONDecodeError:
+                    args = {}
+                assistant_content.append({
+                    "type": "tool_use",
+                    "id": tc.id,
+                    "name": tc.function.name,
+                    "input": args,
+                })
+                tool_uses.append(tc)
+
+        self.messages.append({"role": "assistant", "content": assistant_content})
+
+        # Execute tools
+        if tool_uses:
+            tool_results = []
+            for tc in tool_uses:
+                try:
+                    args = json.loads(tc.function.arguments)
+                except json.JSONDecodeError:
+                    args = {}
+                result = await self._execute_tool(tc.function.name, args)
+                tool_results.append({
+                    "type": "tool_result",
+                    "tool_use_id": tc.id,
+                    "content": result,
+                })
+            self.messages.append({"role": "user", "content": tool_results})
+
+            if choice.finish_reason == "tool_calls":
+                await self._call_api()
 
     async def _execute_tool(self, name: str, input_data: dict) -> str:
         clone_path = self.ticket.get("clone_path", "")
@@ -396,17 +542,26 @@ class TicketAgent:
         elif name == "web_search":
             query = input_data.get("query", "")
             try:
-                # Use Anthropic's built-in web search via server-side tool
-                response = self.client.messages.create(
-                    model=self.model,
-                    max_tokens=1024,
-                    messages=[{"role": "user", "content": f"Search the web for: {query}. Summarize the key findings."}],
-                    tools=[{"type": "web_search_20250305", "name": "web_search", "max_uses": 3}],
-                )
-                result_text = ""
-                for block in response.content:
-                    if hasattr(block, "text"):
-                        result_text += block.text
+                if self._anthropic:
+                    response = self._anthropic.messages.create(
+                        model=self.model,
+                        max_tokens=1024,
+                        messages=[{"role": "user", "content": f"Search the web for: {query}. Summarize the key findings."}],
+                        tools=[{"type": "web_search_20250305", "name": "web_search", "max_uses": 3}],
+                    )
+                    result_text = ""
+                    for block in response.content:
+                        if hasattr(block, "text"):
+                            result_text += block.text
+                else:
+                    # OpenAI providers: use web_search_preview tool
+                    response = self._openai.chat.completions.create(
+                        model=self.model,
+                        max_tokens=1024,
+                        messages=[{"role": "user", "content": f"Search the web for: {query}. Summarize the key findings."}],
+                        tools=[{"type": "web_search_preview"}],
+                    )
+                    result_text = response.choices[0].message.content or ""
                 await self._record_activity("info", f"Web search: {query[:60]}")
                 return result_text[:3000]
             except Exception as e:
