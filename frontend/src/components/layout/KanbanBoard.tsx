@@ -39,10 +39,12 @@ interface KanbanBoardProps {
   onTicketClick: (ticket: Ticket) => void
   onOptimistic?: (ticketId: string, patch: Partial<Ticket>) => void
   deployingBranches?: Set<string>
+  mergeQueueLocked?: boolean
+  onMergeInitiated?: () => void
 }
 
 export function KanbanBoard({
-  columns, activities, allTickets, activeProjectId, onTicketClick, onOptimistic, deployingBranches,
+  columns, activities, allTickets, activeProjectId, onTicketClick, onOptimistic, deployingBranches, mergeQueueLocked, onMergeInitiated,
 }: KanbanBoardProps) {
   const [activeId, setActiveId] = useState<string | null>(null)
   const [todoOrder, setTodoOrder] = useState<string[] | null>(null)
@@ -171,6 +173,8 @@ export function KanbanBoard({
               onTicketClick={onTicketClick}
               onOptimistic={onOptimistic}
               deployingBranches={deployingBranches}
+              mergeQueueLocked={mergeQueueLocked}
+              onMergeInitiated={onMergeInitiated}
             />
           )
         })}

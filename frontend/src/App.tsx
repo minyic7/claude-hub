@@ -84,12 +84,30 @@ function AuthedApp() {
     return new Map([...tickets].filter(([, t]) => t.project_id === activeProjectId))
   }, [tickets, activeProjectId])
 
+  // Merge queue: lock merge buttons while a deploy is in progress
+  const [mergeQueueLocked, setMergeQueueLocked] = useState(false)
+
+  const onMergeInitiated = useCallback(() => {
+    setMergeQueueLocked(true)
+  }, [])
+
   const onDeployComplete = useCallback((run: { conclusion: string | null; name: string }) => {
-    const label = run.conclusion === 'success' ? 'Deploy complete' : 'Deploy failed'
-    addNotification(run.conclusion === 'success' ? 'success' : 'error', `${label}: ${run.name}`)
+    setMergeQueueLocked(false)
+    if (run.conclusion === 'success') {
+      addNotification('success', `Deploy complete - safe to merge next ticket`)
+    } else {
+      addNotification('error', `Deploy failed - check GitHub Actions`)
+    }
   }, [addNotification])
 
   const { runs: deployRuns, state: deployState, deployingBranches } = useDeployStatus(activeProjectId, onDeployComplete)
+
+  // Also lock when GHA monitor detects deploying (covers page reload during deploy)
+  useEffect(() => {
+    if (deployState === 'deploying') {
+      setMergeQueueLocked(true)
+    }
+  }, [deployState])
 
   const columns = useTickets(filteredTickets)
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null)
@@ -117,6 +135,8 @@ function AuthedApp() {
         onTicketClick={setSelectedTicket}
         onOptimistic={patchTicket}
         deployingBranches={deployingBranches}
+        mergeQueueLocked={mergeQueueLocked}
+        onMergeInitiated={onMergeInitiated}
       />
       {currentTicket && (
         <TicketDetail
@@ -126,6 +146,8 @@ function AuthedApp() {
           onClose={() => setSelectedTicket(null)}
           onDelete={() => setSelectedTicket(null)}
           onTicketClick={setSelectedTicket}
+          mergeQueueLocked={mergeQueueLocked}
+          onMergeInitiated={onMergeInitiated}
         />
       )}
     </AppShell>

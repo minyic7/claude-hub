@@ -20,9 +20,11 @@ interface TicketCardProps {
   depsBlocked?: boolean
   depLabels?: DepLabel[]
   deploying?: boolean
+  mergeQueueLocked?: boolean
+  onMergeInitiated?: () => void
 }
 
-export function TicketCard({ ticket, latestActivity, onClick, onOptimistic, depsBlocked, depLabels, deploying }: TicketCardProps) {
+export function TicketCard({ ticket, latestActivity, onClick, onOptimistic, depsBlocked, depLabels, deploying, mergeQueueLocked, onMergeInitiated }: TicketCardProps) {
   const [actionError, setActionError] = useState<string | null>(null)
   const errorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -58,7 +60,10 @@ export function TicketCard({ ticket, latestActivity, onClick, onOptimistic, deps
     { status: 'failed', failed_reason: ticket.failed_reason },
   )
   const handleMerge = safeAction(
-    () => api.tickets.merge(ticket.id),
+    () => {
+      onMergeInitiated?.()
+      return api.tickets.merge(ticket.id)
+    },
     { status: 'merged' },
     { status: 'review' },
   )
@@ -295,9 +300,22 @@ export function TicketCard({ ticket, latestActivity, onClick, onOptimistic, deps
                 PR #{ticket.pr_number} <ExternalLink size={10} />
               </a>
             )}
-            <Button size="sm" onClick={handleMerge} disabled={ticket.has_conflicts}>
-              <GitMerge size={12} className="mr-1" /> Merge
-            </Button>
+            <div className="relative group">
+              <Button size="sm" onClick={handleMerge} disabled={ticket.has_conflicts || mergeQueueLocked}>
+                {mergeQueueLocked ? (
+                  <><Loader2 size={12} className="mr-1 animate-spin" /> Merge</>
+                ) : (
+                  <><GitMerge size={12} className="mr-1" /> Merge</>
+                )}
+              </Button>
+              {mergeQueueLocked && (
+                <div className="absolute bottom-full right-0 mb-1.5 hidden group-hover:block z-10">
+                  <div className="whitespace-nowrap rounded bg-[var(--color-bg-secondary)] border border-[var(--color-border)] px-2 py-1 text-[11px] text-[var(--color-text-muted)] shadow-lg">
+                    Waiting for deploy to complete...
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}

@@ -15,6 +15,8 @@ interface TicketDetailProps {
   onClose: () => void
   onDelete: () => void
   onTicketClick: (ticket: Ticket) => void
+  mergeQueueLocked?: boolean
+  onMergeInitiated?: () => void
 }
 
 function depStatusIcon(status: TicketStatus) {
@@ -40,7 +42,7 @@ function depStatusColor(status: TicketStatus): string {
   }
 }
 
-export function TicketDetail({ ticket, activities, allTickets, onClose, onDelete, onTicketClick }: TicketDetailProps) {
+export function TicketDetail({ ticket, activities, allTickets, onClose, onDelete, onTicketClick, mergeQueueLocked, onMergeInitiated }: TicketDetailProps) {
   const [showChangesForm, setShowChangesForm] = useState(false)
   const [feedback, setFeedback] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -84,6 +86,7 @@ export function TicketDetail({ ticket, activities, allTickets, onClose, onDelete
   }
 
   const handleMerge = async () => {
+    onMergeInitiated?.()
     try { await api.tickets.merge(ticket.id) } catch { /* global handler */ }
   }
 
@@ -193,9 +196,22 @@ export function TicketDetail({ ticket, activities, allTickets, onClose, onDelete
               <Button size="sm" variant="secondary" onClick={() => setShowChangesForm(!showChangesForm)}>
                 <MessageSquareWarning size={12} className="mr-1" /> Changes
               </Button>
-              <Button size="sm" onClick={handleMerge} disabled={ticket.has_conflicts}>
-                <GitMerge size={12} className="mr-1" /> Merge
-              </Button>
+              <div className="relative group">
+                <Button size="sm" onClick={handleMerge} disabled={ticket.has_conflicts || mergeQueueLocked}>
+                  {mergeQueueLocked ? (
+                    <><Loader2 size={12} className="mr-1 animate-spin" /> Merge</>
+                  ) : (
+                    <><GitMerge size={12} className="mr-1" /> Merge</>
+                  )}
+                </Button>
+                {mergeQueueLocked && (
+                  <div className="absolute bottom-full right-0 mb-1.5 hidden group-hover:block z-10">
+                    <div className="whitespace-nowrap rounded bg-[var(--color-bg-secondary)] border border-[var(--color-border)] px-2 py-1 text-[11px] text-[var(--color-text-muted)] shadow-lg">
+                      Waiting for deploy to complete...
+                    </div>
+                  </div>
+                )}
+              </div>
             </>
           )}
           {ticket.status === 'merging' && (
