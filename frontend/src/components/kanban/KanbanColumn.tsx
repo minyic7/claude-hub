@@ -37,6 +37,7 @@ export function KanbanColumn({ label, tickets, activities, onTicketClick, onOpti
               <TicketCard
                 ticket={ticket}
                 latestActivity={latest}
+                activityEvents={ticketActivities}
                 onClick={() => onTicketClick(ticket)}
                 onOptimistic={onOptimistic}
                 deploying={ticket.status === 'merged' && deployingBranches ? deployingBranches.has(ticket.branch) ? true : false : undefined}

@@ -9,6 +9,7 @@ import { TicketCard } from './TicketCard'
 interface SortableTicketCardProps {
   ticket: Ticket
   latestActivity?: ActivityEvent
+  activityEvents?: ActivityEvent[]
   allTickets: Map<string, Ticket>
   onClick: () => void
   onOptimistic?: (ticketId: string, patch: Partial<Ticket>) => void
@@ -16,7 +17,7 @@ interface SortableTicketCardProps {
 }
 
 export function SortableTicketCard({
-  ticket, latestActivity, allTickets, onClick, onOptimistic, onTicketClick,
+  ticket, latestActivity, activityEvents, allTickets, onClick, onOptimistic, onTicketClick,
 }: SortableTicketCardProps) {
   // Prevent layout animation flash after drop
   const skipPostDrop: AnimateLayoutChanges = (args) =>
@@ -66,6 +67,7 @@ export function SortableTicketCard({
       <TicketCard
         ticket={ticket}
         latestActivity={latestActivity}
+        activityEvents={activityEvents}
         onClick={onClick}
         onOptimistic={onOptimistic}
         depsBlocked={depsBlocked}
