@@ -38,10 +38,11 @@ interface KanbanBoardProps {
   activeProjectId: string | null
   onTicketClick: (ticket: Ticket) => void
   onOptimistic?: (ticketId: string, patch: Partial<Ticket>) => void
+  deployingBranches?: Set<string>
 }
 
 export function KanbanBoard({
-  columns, activities, allTickets, activeProjectId, onTicketClick, onOptimistic,
+  columns, activities, allTickets, activeProjectId, onTicketClick, onOptimistic, deployingBranches,
 }: KanbanBoardProps) {
   const [activeId, setActiveId] = useState<string | null>(null)
   const [todoOrder, setTodoOrder] = useState<string[] | null>(null)
@@ -169,6 +170,7 @@ export function KanbanBoard({
               activities={activities}
               onTicketClick={onTicketClick}
               onOptimistic={onOptimistic}
+              deployingBranches={deployingBranches}
             />
           )
         })}

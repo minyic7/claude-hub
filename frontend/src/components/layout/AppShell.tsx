@@ -1,11 +1,14 @@
 import { useState, useEffect, useMemo } from 'react'
 import { Bell, ChevronDown, FolderPlus, LogOut, Plus, Settings, Wifi, WifiOff } from 'lucide-react'
+import { DeployStatusWidget } from '../common/DeployStatusWidget'
 import { ThemeToggle } from '../common/ThemeToggle'
 import { Button } from '../common/Button'
 import { CreateTicketModal } from '../tickets/CreateTicketModal'
 import { CreateProjectModal } from '../projects/CreateProjectModal'
 import { AgentSettingsModal } from '../settings/AgentSettingsModal'
-import { clearToken, getToken } from '../../lib/api'
+import { api, clearToken, getToken } from '../../lib/api'
+import type { DeployState } from '../../hooks/useDeployStatus'
+import type { WorkflowRun } from '../../lib/api'
 import type { Notification } from '../../hooks/useNotifications'
 import type { ReactNode } from 'react'
 import type { Project, Ticket } from '../../types/ticket'
@@ -18,12 +21,14 @@ interface AppShellProps {
   onProjectChange: (id: string | null) => void
   notifications: Notification[]
   onDismissNotification: (id: string) => void
+  deployState: DeployState
+  deployRuns: WorkflowRun[]
   children: ReactNode
 }
 
 export function AppShell({
   connected, projects, tickets, activeProjectId, onProjectChange,
-  notifications, onDismissNotification, children,
+  notifications, onDismissNotification, deployState, deployRuns, children,
 }: AppShellProps) {
   const [showCreateTicket, setShowCreateTicket] = useState(false)
   const [showCreateProject, setShowCreateProject] = useState(false)
@@ -119,6 +124,8 @@ export function AppShell({
               </>
             )}
           </span>
+
+          <DeployStatusWidget state={deployState} runs={deployRuns} />
 
           {/* Stats */}
           <div className="flex items-center gap-2 text-xs font-mono text-[var(--color-text-muted)]">

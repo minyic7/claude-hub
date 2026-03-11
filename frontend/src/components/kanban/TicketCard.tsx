@@ -1,5 +1,5 @@
 import { type FormEvent, type MouseEvent, useEffect, useRef, useState } from 'react'
-import { AlertCircle, Check, CircleDot, GitMerge, Link, Loader2, Lock, MessageCircleQuestion, Play, RotateCcw, ExternalLink, Send } from 'lucide-react'
+import { AlertCircle, Check, CircleDot, GitMerge, Link, Loader2, Lock, MessageCircleQuestion, Play, Rocket, RotateCcw, ExternalLink, Send } from 'lucide-react'
 import type { Ticket, TicketStatus } from '../../types/ticket'
 import type { ActivityEvent } from '../../types/activity'
 import { Badge } from '../common/Badge'
@@ -19,9 +19,10 @@ interface TicketCardProps {
   onOptimistic?: (ticketId: string, patch: Partial<Ticket>) => void
   depsBlocked?: boolean
   depLabels?: DepLabel[]
+  deploying?: boolean
 }
 
-export function TicketCard({ ticket, latestActivity, onClick, onOptimistic, depsBlocked, depLabels }: TicketCardProps) {
+export function TicketCard({ ticket, latestActivity, onClick, onOptimistic, depsBlocked, depLabels, deploying }: TicketCardProps) {
   const [actionError, setActionError] = useState<string | null>(null)
   const errorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -216,6 +217,22 @@ export function TicketCard({ ticket, latestActivity, onClick, onOptimistic, deps
               <GitMerge size={12} className="mr-1" /> Merge
             </Button>
           </div>
+        </div>
+      )}
+
+      {ticket.status === 'merged' && deploying !== undefined && (
+        <div className="flex items-center gap-1.5 text-xs">
+          {deploying ? (
+            <>
+              <Loader2 size={12} className="text-[var(--color-accent-blue)] animate-spin" />
+              <span className="text-[var(--color-accent-blue)]">Deploying...</span>
+            </>
+          ) : (
+            <>
+              <Rocket size={12} className="text-[var(--color-accent-green)]" />
+              <span className="text-[var(--color-accent-green)]">Deployed</span>
+            </>
+          )}
         </div>
       )}
 

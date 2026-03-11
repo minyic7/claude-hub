@@ -137,9 +137,23 @@ export const api = {
     updateAgent: (data: Partial<AgentSettings>) =>
       request<AgentSettings>('/settings/agent', { method: 'PUT', body: JSON.stringify(data) }),
   },
+  github: {
+    actions: (projectId: string) =>
+      request<{ runs: WorkflowRun[] }>(`/github/actions?project_id=${encodeURIComponent(projectId)}`),
+  },
   health: () => request<{ status: string; redis: boolean }>('/health'),
   cost: () => request<{ daily: number; monthly: number }>('/cost'),
   roles: () => request<Record<string, unknown>>('/roles'),
+}
+
+export interface WorkflowRun {
+  id: number
+  status: string
+  conclusion: string | null
+  created_at: string
+  html_url: string
+  head_branch: string
+  name: string
 }
 
 export interface AgentSettings {
