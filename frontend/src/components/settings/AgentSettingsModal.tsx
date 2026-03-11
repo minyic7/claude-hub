@@ -30,6 +30,8 @@ export function AgentSettingsModal({ open, onClose }: Props) {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [saved, setSaved] = useState(false)
+  const [testing, setTesting] = useState(false)
+  const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null)
 
   useEffect(() => {
     if (open) {
@@ -53,6 +55,19 @@ export function AgentSettingsModal({ open, onClose }: Props) {
       setError('Failed to save settings')
     } finally {
       setSaving(false)
+    }
+  }
+
+  const handleTest = async () => {
+    setTesting(true)
+    setTestResult(null)
+    try {
+      const result = await api.settings.testConnection()
+      setTestResult({ ok: true, message: `${result.model}` })
+    } catch (e) {
+      setTestResult({ ok: false, message: e instanceof Error ? e.message : 'Connection failed' })
+    } finally {
+      setTesting(false)
     }
   }
 
@@ -117,6 +132,20 @@ export function AgentSettingsModal({ open, onClose }: Props) {
             placeholder="sk-..."
             className="w-full rounded border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2 py-1.5 text-xs text-[var(--color-text-primary)] font-mono"
           />
+          <div className="mt-1.5 flex items-center gap-2">
+            <button
+              onClick={handleTest}
+              disabled={testing}
+              className="rounded border border-[var(--color-border)] px-2.5 py-1 text-[11px] text-[var(--color-text-muted)] hover:border-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] disabled:opacity-50"
+            >
+              {testing ? 'Testing...' : 'Test Connection'}
+            </button>
+            {testResult && (
+              <span className={`text-[11px] ${testResult.ok ? 'text-[var(--color-accent-green)]' : 'text-[var(--color-accent-red)]'}`}>
+                {testResult.ok ? `OK (${testResult.message})` : testResult.message}
+              </span>
+            )}
+          </div>
           <p className="mt-0.5 text-[10px] text-[var(--color-text-muted)]">
             Required for TicketAgent supervision. Not used by Claude Code CLI.
           </p>

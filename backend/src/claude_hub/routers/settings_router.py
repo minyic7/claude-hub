@@ -127,3 +127,47 @@ async def update_settings(body: dict):
 
     # Return with masked key
     return {**current, "api_key": _mask_key(current.get("api_key", ""))}
+
+
+@router.post("/agent/test")
+async def test_connection():
+    """Test if the configured API key works by making a minimal API call."""
+    cfg = await get_agent_settings()
+    api_key = cfg.get("api_key", "")
+    if not api_key:
+        raise HTTPException(400, "No API key configured")
+
+    provider = cfg.get("provider", "anthropic")
+    model = cfg.get("model", "")
+    endpoint_url = cfg.get("endpoint_url", "")
+
+    try:
+        if provider == "anthropic":
+            import anthropic
+            client = anthropic.Anthropic(api_key=api_key)
+            resp = client.messages.create(
+                model=model or "claude-haiku-4-5-20251001",
+                max_tokens=10,
+                messages=[{"role": "user", "content": "Say hi"}],
+            )
+            return {"ok": True, "model": resp.model, "message": "Connection successful"}
+        else:
+            import openai
+            kwargs = {"api_key": api_key}
+            if endpoint_url:
+                kwargs["base_url"] = endpoint_url
+            client = openai.OpenAI(**kwargs)
+            resp = client.chat.completions.create(
+                model=model or "gpt-4o-mini",
+                max_tokens=10,
+                messages=[{"role": "user", "content": "Say hi"}],
+            )
+            return {"ok": True, "model": resp.model, "message": "Connection successful"}
+    except Exception as e:
+        err = str(e)
+        # Extract useful part of error
+        if "authentication" in err.lower() or "api key" in err.lower() or "unauthorized" in err.lower():
+            raise HTTPException(401, f"Authentication failed: {err[:200]}")
+        if "not found" in err.lower() or "does not exist" in err.lower():
+            raise HTTPException(404, f"Model not found: {err[:200]}")
+        raise HTTPException(502, f"Connection failed: {err[:200]}")

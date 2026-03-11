@@ -138,6 +138,8 @@ export const api = {
     getAgent: () => request<AgentSettings>('/settings/agent'),
     updateAgent: (data: Partial<AgentSettings>) =>
       request<AgentSettings>('/settings/agent', { method: 'PUT', body: JSON.stringify(data) }),
+    testConnection: () =>
+      request<{ ok: boolean; model: string; message: string }>('/settings/agent/test', { method: 'POST' }),
   },
   github: {
     actions: (projectId: string) =>
