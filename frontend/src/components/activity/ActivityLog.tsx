@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Brain, FileText, Terminal, MessageSquare, AlertTriangle, CheckCircle, Info, XCircle } from 'lucide-react'
 import type { ActivityEvent } from '../../types/activity'
+import { relativeTime } from '../../utils/relativeTime'
 
 interface ActivityLogProps {
   events: ActivityEvent[]
@@ -21,6 +22,12 @@ export function ActivityLog({ events }: ActivityLogProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const [userScrolledUp, setUserScrolledUp] = useState(false)
+  const [, setTick] = useState(0)
+
+  useEffect(() => {
+    const id = setInterval(() => setTick((t) => t + 1), 30000)
+    return () => clearInterval(id)
+  }, [])
 
   const handleScroll = useCallback(() => {
     const el = containerRef.current
@@ -48,13 +55,14 @@ export function ActivityLog({ events }: ActivityLogProps) {
       {events.map((event, i) => {
         const config = typeConfig[event.type] || typeConfig.info
         const Icon = config.icon
-        const time = new Date(event.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+        const fullTime = new Date(event.timestamp).toLocaleString()
+        const time = relativeTime(event.timestamp)
         const isAgent = event.source === 'ticket_agent'
 
         return (
           <div key={i} className={`flex items-start gap-2 rounded px-2 py-1 text-xs ${isAgent ? 'bg-[var(--color-accent-blue)]/5' : ''}`}>
             <Icon size={12} className={`mt-0.5 shrink-0 ${config.className}`} />
-            <span className="shrink-0 text-[var(--color-text-muted)]">{time}</span>
+            <span className="shrink-0 cursor-default text-[var(--color-text-muted)]" title={fullTime}>{time}</span>
             <span className={`min-w-0 break-words ${event.type === 'error' ? 'text-[var(--color-accent-red)]' : 'text-[var(--color-text-secondary)]'}`}>
               {isAgent && <span className="font-medium text-[var(--color-accent-blue)]">Agent: </span>}
               {event.summary}
