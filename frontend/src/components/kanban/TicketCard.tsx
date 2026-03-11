@@ -227,7 +227,7 @@ export function TicketCard({ ticket, latestActivity, onClick, onOptimistic, deps
 
       {ticket.agent_cost_usd > 0 && (
         <p className="mt-1 text-right text-xs text-[var(--color-text-muted)]">
-          ${ticket.agent_cost_usd.toFixed(2)}
+          ~${ticket.agent_cost_usd.toFixed(2)}
         </p>
       )}
     </div>
