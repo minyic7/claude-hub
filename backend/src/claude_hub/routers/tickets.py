@@ -276,7 +276,16 @@ async def retry_ticket(ticket_id: str, body: dict | None = None):
     except ValueError:
         raise HTTPException(404, "Ticket not found")
     except InvalidTransition as e:
-        raise HTTPException(409, str(e))
+        # Orphan recovery: ticket stuck in IN_PROGRESS with no live session
+        ticket = await redis_client.get_ticket(ticket_id)
+        if ticket and ticket.get("status") == "in_progress" and not session_manager.has_active_session(ticket_id):
+            await redis_client.update_ticket_fields(ticket_id, {
+                "failed_reason": "",
+                "started_at": datetime.now(timezone.utc).isoformat(),
+            })
+            updated = await redis_client.get_ticket(ticket_id)
+        else:
+            raise HTTPException(409, str(e))
 
     # Re-spawn session
     import asyncio
