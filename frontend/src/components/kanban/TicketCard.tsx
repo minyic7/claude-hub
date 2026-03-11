@@ -1,10 +1,20 @@
-import { type FormEvent, type MouseEvent, useEffect, useRef, useState } from 'react'
+import { type FormEvent, type MouseEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { AlertCircle, Check, CircleDot, GitMerge, Loader2, Lock, MessageCircleQuestion, Pencil, Play, Rocket, RotateCcw, ExternalLink, Send, X } from 'lucide-react'
 import type { Ticket, TicketStatus } from '../../types/ticket'
 import type { ActivityEvent } from '../../types/activity'
 import { Badge } from '../common/Badge'
 import { Button } from '../common/Button'
 import { api } from '../../lib/api'
+
+function derivePhase(summary: string): string {
+  const lower = summary.toLowerCase()
+  if (/clone|cloning|checkout|setup|install|initializ/.test(lower)) return 'Setup'
+  if (/read|reading|analyz|review|understand|examin|inspect|explor/.test(lower)) return 'Analyzing'
+  if (/writ|writing|edit|creat|implement|add|modif|refactor|cod/.test(lower)) return 'Coding'
+  if (/test|testing|run.*test|spec|assert|verify|check/.test(lower)) return 'Testing'
+  if (/pr\b|pull request|creating pr|push|commit|finaliz/.test(lower)) return 'Finalizing'
+  return 'Working'
+}
 
 interface DepLabel {
   id: string
@@ -15,6 +25,7 @@ interface DepLabel {
 interface TicketCardProps {
   ticket: Ticket
   latestActivity?: ActivityEvent
+  activityEvents?: ActivityEvent[]
   onClick: () => void
   onOptimistic?: (ticketId: string, patch: Partial<Ticket>) => void
   depsBlocked?: boolean
@@ -25,7 +36,7 @@ interface TicketCardProps {
   onMergeInitiated?: () => void
 }
 
-export function TicketCard({ ticket, latestActivity, onClick, onOptimistic, depsBlocked, depLabels, onDepClick, deploying, mergeQueueLocked, onMergeInitiated }: TicketCardProps) {
+export function TicketCard({ ticket, latestActivity, activityEvents, onClick, onOptimistic, depsBlocked, depLabels, onDepClick, deploying, mergeQueueLocked, onMergeInitiated }: TicketCardProps) {
   const [actionError, setActionError] = useState<string | null>(null)
   const errorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -138,6 +149,15 @@ export function TicketCard({ ticket, latestActivity, onClick, onOptimistic, deps
     const timer = setInterval(checkIdle, 10_000)
     return () => clearInterval(timer)
   }, [ticket.status, latestActivity])
+
+  const stepInfo = useMemo(() => {
+    if (ticket.status !== 'in_progress' || !latestActivity) return null
+    const stepCount = activityEvents
+      ? activityEvents.filter((e) => e.type === 'tool_use').length
+      : 0
+    const phase = derivePhase(latestActivity.summary)
+    return { stepCount, phase }
+  }, [ticket.status, latestActivity, activityEvents])
 
   const isBlocked = ticket.status === 'blocked'
 
@@ -259,9 +279,19 @@ export function TicketCard({ ticket, latestActivity, onClick, onOptimistic, deps
       )}
 
       {(ticket.status === 'in_progress' || ticket.status === 'verifying') && latestActivity && (
-        <p className="truncate text-xs text-[var(--color-text-muted)]">
-          {latestActivity.summary}
-        </p>
+        <div className="space-y-0.5">
+          {stepInfo && (
+            <div className="flex items-center gap-1.5 text-[11px] text-[var(--color-text-muted)]">
+              <span className="inline-block h-1.5 w-1.5 rounded-full bg-[var(--color-accent-blue)] animate-pulse" />
+              <span>Step {stepInfo.stepCount || 1}</span>
+              <span className="opacity-50">&middot;</span>
+              <span>{stepInfo.phase}</span>
+            </div>
+          )}
+          <p className="truncate text-xs text-[var(--color-text-muted)]">
+            {latestActivity.summary}
+          </p>
+        </div>
       )}
 
       {isBlocked && ticket.blocked_question && (

@@ -153,6 +153,7 @@ export function KanbanBoard({
                           key={ticket.id}
                           ticket={ticket}
                           latestActivity={latest}
+                          activityEvents={ticketActivities}
                           allTickets={allTickets}
                           onClick={() => onTicketClick(ticket)}
                           onOptimistic={onOptimistic}
@@ -195,6 +196,7 @@ export function KanbanBoard({
             <TicketCard
               ticket={activeTicket}
               latestActivity={activeLatest}
+              activityEvents={activeActivity}
               onClick={() => {}}
               onOptimistic={onOptimistic}
             />
