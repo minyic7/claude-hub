@@ -6,6 +6,7 @@ export type TicketStatus =
   | 'blocked'
   | 'verifying'
   | 'review'
+  | 'merging'
   | 'merged'
   | 'failed'
 

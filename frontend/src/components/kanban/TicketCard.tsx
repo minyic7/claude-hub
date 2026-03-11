@@ -256,6 +256,7 @@ function statusColor(status: TicketStatus): string {
     case 'in_progress': return 'text-[var(--color-accent-blue)]'
     case 'blocked': return 'text-[var(--color-accent-red)]'
     case 'review': return 'text-[var(--color-accent-yellow)]'
+    case 'merging': return 'text-[var(--color-accent-green)]'
     case 'merged': return 'text-[var(--color-accent-green)]'
     case 'failed': return 'text-[var(--color-accent-red)]'
     default: return 'text-[var(--color-text-muted)]'
@@ -274,6 +275,8 @@ function StatusIndicator({ status }: { status: string }) {
       return <AlertCircle size={14} className="shrink-0 text-[var(--color-accent-red)]" />
     case 'review':
       return <CircleDot size={14} className="shrink-0 text-[var(--color-accent-yellow)]" />
+    case 'merging':
+      return <Loader2 size={14} className="shrink-0 text-[var(--color-accent-green)] animate-spin" />
     case 'merged':
       return <Check size={14} className="shrink-0 text-[var(--color-accent-green)]" />
     default:

@@ -634,36 +634,54 @@ async def sync_review_status():
 
 @router.post("/{ticket_id}/merge")
 async def merge_ticket(ticket_id: str):
-    import subprocess
+    import asyncio
     from claude_hub.services.ticket_service import InvalidTransition, transition
+    from claude_hub.services.ci_check import get_ci_status, merge_pr, wait_for_ci_and_merge
 
     ticket = await redis_client.get_ticket(ticket_id)
     if not ticket:
         raise HTTPException(404, "Ticket not found")
 
-    # Merge PR on GitHub if we have a PR number
     pr_number = ticket.get("pr_number")
     clone_path = ticket.get("clone_path", "")
-    if pr_number and clone_path:
-        project = await _get_project_for_ticket(ticket)
-        gh_token = project.get("gh_token", "") or settings.gh_token
-        env = None
-        if gh_token:
-            import os
-            env = {**os.environ, "GH_TOKEN": gh_token}
+    branch = ticket.get("branch", "")
 
-        # Mark PR as ready (in case it's a draft)
-        subprocess.run(
-            ["gh", "pr", "ready", str(pr_number)],
-            cwd=clone_path, capture_output=True, text=True, env=env,
+    if not pr_number or not clone_path:
+        # No PR — just merge directly (legacy behavior)
+        try:
+            updated = await transition(ticket_id, TicketStatus.MERGED,
+                                       completed_at=datetime.now(timezone.utc).isoformat())
+        except InvalidTransition as e:
+            raise HTTPException(409, str(e))
+        await broadcast({"type": "ticket_updated", "ticket_id": ticket_id, "data": updated})
+        return updated
+
+    project = await _get_project_for_ticket(ticket)
+    gh_token = project.get("gh_token", "") or settings.gh_token
+
+    # Check CI status before merging
+    ci = get_ci_status(clone_path, branch, gh_token)
+
+    if ci["status"] == "failed":
+        raise HTTPException(400, f"CI check failed: {ci['summary']}")
+
+    if ci["status"] == "pending":
+        # CI still running — transition to MERGING and poll in background
+        try:
+            updated = await transition(ticket_id, TicketStatus.MERGING)
+        except InvalidTransition as e:
+            raise HTTPException(409, str(e))
+        await broadcast({"type": "ticket_updated", "ticket_id": ticket_id, "data": updated})
+        asyncio.create_task(
+            wait_for_ci_and_merge(ticket_id, clone_path, branch, pr_number, gh_token)
         )
-        # Merge PR
-        result = subprocess.run(
-            ["gh", "pr", "merge", str(pr_number), "--squash", "--delete-branch"],
-            cwd=clone_path, capture_output=True, text=True, env=env,
-        )
-        if result.returncode != 0:
-            raise HTTPException(500, f"GitHub merge failed: {result.stderr.strip()}")
+        return updated
+
+    # CI passed or no CI — merge immediately
+    try:
+        await merge_pr(ticket_id, clone_path, pr_number, gh_token)
+    except RuntimeError as e:
+        raise HTTPException(500, str(e))
 
     try:
         updated = await transition(ticket_id, TicketStatus.MERGED,
@@ -677,9 +695,5 @@ async def merge_ticket(ticket_id: str):
     await redis_client.update_ticket_fields(ticket_id, {"clone_path": ""})
     updated = await redis_client.get_ticket(ticket_id)
 
-    await broadcast({
-        "type": "ticket_updated",
-        "ticket_id": ticket_id,
-        "data": updated,
-    })
+    await broadcast({"type": "ticket_updated", "ticket_id": ticket_id, "data": updated})
     return updated

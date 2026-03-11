@@ -6,7 +6,8 @@ VALID_TRANSITIONS: dict[TicketStatus, list[TicketStatus]] = {
     TicketStatus.IN_PROGRESS: [TicketStatus.BLOCKED, TicketStatus.VERIFYING, TicketStatus.FAILED],
     TicketStatus.BLOCKED: [TicketStatus.IN_PROGRESS, TicketStatus.FAILED],
     TicketStatus.VERIFYING: [TicketStatus.REVIEW, TicketStatus.FAILED],
-    TicketStatus.REVIEW: [TicketStatus.MERGED, TicketStatus.IN_PROGRESS],
+    TicketStatus.REVIEW: [TicketStatus.MERGING, TicketStatus.MERGED, TicketStatus.IN_PROGRESS],
+    TicketStatus.MERGING: [TicketStatus.MERGED, TicketStatus.FAILED],
     TicketStatus.FAILED: [TicketStatus.IN_PROGRESS, TicketStatus.REVIEW],
     TicketStatus.MERGED: [],
 }

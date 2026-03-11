@@ -36,6 +36,9 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
     && apt-get install -y gh \
     && rm -rf /var/lib/apt/lists/*
 
+# pnpm (for frontend projects Claude Code may work on)
+RUN corepack enable && corepack prepare pnpm@latest --activate
+
 # Claude Code CLI
 RUN npm install -g @anthropic-ai/claude-code
 
@@ -58,6 +61,10 @@ RUN useradd -m -s /bin/bash claude && \
     chown -R claude:claude /data /app
 
 USER claude
+
+# Git identity for Claude Code commits
+RUN git config --global user.name "Claude Hub" && \
+    git config --global user.email "claude-hub@noreply.github.com"
 
 # ─── Environment defaults ─────────────────────────────────
 ENV CLAUDE_HUB_HOST=0.0.0.0

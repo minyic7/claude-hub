@@ -47,6 +47,7 @@ class TicketStatus(str, Enum):
     BLOCKED = "blocked"
     VERIFYING = "verifying"
     REVIEW = "review"
+    MERGING = "merging"
     MERGED = "merged"
     FAILED = "failed"
 

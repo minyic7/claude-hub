@@ -24,6 +24,7 @@ function depStatusIcon(status: TicketStatus) {
     case 'blocked': return <AlertCircle size={12} className="text-[var(--color-accent-red)]" />
     case 'verifying': return <Loader2 size={12} className="text-[var(--color-accent-yellow)] animate-spin" />
     case 'review': return <CircleDot size={12} className="text-[var(--color-accent-yellow)]" />
+    case 'merging': return <Loader2 size={12} className="text-[var(--color-accent-green)] animate-spin" />
     case 'failed': return <AlertCircle size={12} className="text-[var(--color-accent-red)]" />
     default: return <CircleDot size={12} className="text-[var(--color-text-muted)]" />
   }
@@ -177,6 +178,11 @@ export function TicketDetail({ ticket, activities, allTickets, onClose, onDelete
                 <GitMerge size={12} className="mr-1" /> Merge
               </Button>
             </>
+          )}
+          {ticket.status === 'merging' && (
+            <span className="flex items-center gap-1.5 text-xs text-[var(--color-accent-green)]">
+              <Loader2 size={12} className="animate-spin" /> Waiting for CI...
+            </span>
           )}
           {ticket.status === 'todo' && !editing && (
             <Button size="sm" variant="secondary" onClick={handleStartEdit}>
