@@ -112,3 +112,4 @@ class TicketUpdate(BaseModel):
     title: str | None = None
     description: str | None = None
     priority: int | None = None
+    depends_on: list[str] | None = None

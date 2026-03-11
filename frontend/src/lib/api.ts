@@ -93,7 +93,7 @@ export const api = {
       request<Ticket>('/tickets', { method: 'POST', body: JSON.stringify(data) }),
     get: (id: string) =>
       request<Ticket>(`/tickets/${id}`),
-    update: (id: string, data: { title?: string; description?: string; priority?: number }) =>
+    update: (id: string, data: { title?: string; description?: string; priority?: number; depends_on?: string[] }) =>
       request<Ticket>(`/tickets/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
     delete: (id: string) =>
       request<void>(`/tickets/${id}`, { method: 'DELETE' }),

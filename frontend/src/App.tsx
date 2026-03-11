@@ -113,6 +113,7 @@ function AuthedApp() {
           activities={activities.get(currentTicket.id) || []}
           allTickets={filteredTickets}
           onClose={() => setSelectedTicket(null)}
+          onDelete={() => setSelectedTicket(null)}
           onTicketClick={setSelectedTicket}
         />
       )}
