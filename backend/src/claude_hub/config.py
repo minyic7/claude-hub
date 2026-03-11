@@ -19,8 +19,8 @@ class Settings(BaseSettings):
 
     # Auth
     auth_enabled: bool = True
-    auth_username: str = "admin"
-    auth_password: str = "admin"
+    auth_username: str = "minyic"
+    auth_password: str = "minyic"
     auth_secret: str = "change-this-to-a-random-string"
     auth_token_hours: int = 24
     dev_mode: bool = False  # Enable CORS for dev (frontend on different port)
