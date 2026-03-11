@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useWebSocket } from './hooks/useWebSocket'
 import { useTickets } from './hooks/useTickets'
 import { useNotifications } from './hooks/useNotifications'
@@ -86,13 +86,18 @@ function AuthedApp() {
 
   // Merge queue: lock merge buttons while a deploy is in progress
   const [mergeQueueLocked, setMergeQueueLocked] = useState(false)
+  const lockTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const onMergeInitiated = useCallback(() => {
     setMergeQueueLocked(true)
+    // Safety timeout: unlock after 5 min in case deploy detection fails
+    if (lockTimerRef.current) clearTimeout(lockTimerRef.current)
+    lockTimerRef.current = setTimeout(() => setMergeQueueLocked(false), 5 * 60_000)
   }, [])
 
   const onDeployComplete = useCallback((run: { conclusion: string | null; name: string }) => {
     setMergeQueueLocked(false)
+    if (lockTimerRef.current) clearTimeout(lockTimerRef.current)
     if (run.conclusion === 'success') {
       addNotification('success', `Deploy complete - safe to merge next ticket`)
     } else {
@@ -102,12 +107,16 @@ function AuthedApp() {
 
   const { runs: deployRuns, state: deployState, deployingBranches } = useDeployStatus(activeProjectId, onDeployComplete)
 
-  // Also lock when GHA monitor detects deploying (covers page reload during deploy)
+  // Sync lock with actual deploy state: lock when deploying, unlock when not
   useEffect(() => {
     if (deployState === 'deploying') {
       setMergeQueueLocked(true)
+    } else if (mergeQueueLocked && deployState !== 'deploying') {
+      // Deploy finished (or never started) — unlock
+      setMergeQueueLocked(false)
+      if (lockTimerRef.current) clearTimeout(lockTimerRef.current)
     }
-  }, [deployState])
+  }, [deployState]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const columns = useTickets(filteredTickets)
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null)
