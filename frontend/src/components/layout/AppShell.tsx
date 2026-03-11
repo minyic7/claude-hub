@@ -5,7 +5,7 @@ import { Button } from '../common/Button'
 import { CreateTicketModal } from '../tickets/CreateTicketModal'
 import { CreateProjectModal } from '../projects/CreateProjectModal'
 import { AgentSettingsModal } from '../settings/AgentSettingsModal'
-import { api, clearToken, getToken } from '../../lib/api'
+import { clearToken, getToken } from '../../lib/api'
 import type { Notification } from '../../hooks/useNotifications'
 import type { ReactNode } from 'react'
 import type { Project, Ticket } from '../../types/ticket'
@@ -30,7 +30,6 @@ export function AppShell({
   const [showProjectMenu, setShowProjectMenu] = useState(false)
   const [showNotifications, setShowNotifications] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
-  const [dailyCost, setDailyCost] = useState(0)
 
   const activeProject = activeProjectId ? projects.get(activeProjectId) : null
 
@@ -47,20 +46,6 @@ export function AppShell({
   }, [tickets, activeProjectId])
 
   const unreadCount = notifications.filter((n) => n.type === 'error' || n.type === 'warning').length
-
-  useEffect(() => {
-    const fetchCost = async () => {
-      try {
-        const data = await api.cost()
-        setDailyCost(data.daily)
-      } catch {
-        // ignore
-      }
-    }
-    fetchCost()
-    const interval = setInterval(fetchCost, 30000)
-    return () => clearInterval(interval)
-  }, [])
 
   // Auto-select first project if none selected and projects exist
   useEffect(() => {
@@ -153,12 +138,6 @@ export function AppShell({
         </div>
 
         <div className="flex items-center gap-3">
-          {dailyCost > 0 && (
-            <span className="text-xs font-mono text-[var(--color-text-muted)]">
-              ${dailyCost.toFixed(2)}
-            </span>
-          )}
-
           {/* Notification bell */}
           <div className="relative">
             <button
