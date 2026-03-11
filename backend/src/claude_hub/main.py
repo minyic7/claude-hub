@@ -32,33 +32,51 @@ async def _pr_poll_loop() -> None:
 
 
 async def _recover_orphaned_tickets() -> None:
-    """On startup, find IN_PROGRESS/BLOCKED tickets with dead tmux sessions → mark FAILED."""
-    from claude_hub.services import session_manager
-    from claude_hub.services.ticket_service import transition
-    from claude_hub.models.ticket import TicketStatus
+    """On startup, find IN_PROGRESS/BLOCKED tickets with dead tmux sessions → auto-restart."""
+    from claude_hub.services import session_manager, clone_manager
+    from claude_hub.services.context_engine import get_role_prompt
 
     for status in ("in_progress", "blocked", "verifying"):
         tickets_list = await redis_client.list_tickets(status)
         for ticket in tickets_list:
             tid = ticket["id"]
-            if not session_manager.is_alive(tid):
-                try:
-                    updated = await transition(
-                        tid, TicketStatus.FAILED,
-                        failed_reason=(
-                            "Session lost — container restarted. "
-                            "Your work is saved in the clone directory. "
-                            "Click Retry to resume where the agent left off."
-                        ),
+            if session_manager.is_alive(tid):
+                continue
+            if session_manager.active_session_count() >= settings.max_sessions:
+                logger.warning("Max sessions reached, skipping recovery for %s", tid[:8])
+                break
+
+            try:
+                project = await redis_client.get_project(ticket.get("project_id", ""))
+                gh_token = project.get("gh_token", "") if project else ""
+
+                clone_path = ticket.get("clone_path", "")
+                if not clone_path or not os.path.exists(clone_path):
+                    clone_manager.ensure_reference(ticket["repo_url"], gh_token=gh_token)
+                    clone_path = clone_manager.clone_for_ticket(
+                        ticket["repo_url"], tid,
+                        ticket["branch"], ticket["base_branch"],
+                        gh_token=gh_token,
                     )
-                    await ws.broadcast({
-                        "type": "ticket_updated",
-                        "ticket_id": tid,
-                        "data": updated,
-                    })
-                    logger.warning("Recovered orphaned ticket %s (was %s)", tid[:8], status)
-                except Exception as e:
-                    logger.error("Failed to recover orphan %s: %s", tid[:8], e)
+                    await redis_client.update_ticket_fields(tid, {"clone_path": clone_path})
+
+                task = ticket.get("description") or ticket["title"]
+                role_prompt = get_role_prompt(ticket.get("role", "builder"), ticket["branch"])
+                session_name, log_path = session_manager.start_session(
+                    tid, clone_path, task, role_prompt, gh_token=gh_token,
+                )
+                await redis_client.update_ticket_fields(tid, {"tmux_session": session_name})
+                asyncio.create_task(
+                    tickets._tail_and_broadcast(tid, log_path)
+                )
+                await ws.broadcast({
+                    "type": "ticket_updated",
+                    "ticket_id": tid,
+                    "data": await redis_client.get_ticket(tid),
+                })
+                logger.info("Auto-restarted orphaned ticket %s (was %s)", tid[:8], status)
+            except Exception as e:
+                logger.error("Failed to recover orphan %s: %s", tid[:8], e)
 
 
 @asynccontextmanager
