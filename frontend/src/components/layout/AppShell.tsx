@@ -1,9 +1,10 @@
 import { useState, useEffect, useMemo } from 'react'
-import { Bell, ChevronDown, FolderPlus, LogOut, Plus, Wifi, WifiOff } from 'lucide-react'
+import { Bell, ChevronDown, FolderPlus, LogOut, Plus, Settings, Wifi, WifiOff } from 'lucide-react'
 import { ThemeToggle } from '../common/ThemeToggle'
 import { Button } from '../common/Button'
 import { CreateTicketModal } from '../tickets/CreateTicketModal'
 import { CreateProjectModal } from '../projects/CreateProjectModal'
+import { AgentSettingsModal } from '../settings/AgentSettingsModal'
 import { api, clearToken, getToken } from '../../lib/api'
 import type { Notification } from '../../hooks/useNotifications'
 import type { ReactNode } from 'react'
@@ -28,6 +29,7 @@ export function AppShell({
   const [showCreateProject, setShowCreateProject] = useState(false)
   const [showProjectMenu, setShowProjectMenu] = useState(false)
   const [showNotifications, setShowNotifications] = useState(false)
+  const [showSettings, setShowSettings] = useState(false)
   const [dailyCost, setDailyCost] = useState(0)
 
   const activeProject = activeProjectId ? projects.get(activeProjectId) : null
@@ -215,6 +217,13 @@ export function AppShell({
           <Button size="sm" onClick={() => setShowCreateTicket(true)} disabled={!activeProjectId}>
             <Plus size={14} className="mr-1" /> New Ticket
           </Button>
+          <button
+            onClick={() => setShowSettings(true)}
+            className="rounded-md p-1.5 text-[var(--color-text-muted)] hover:bg-[var(--color-bg-secondary)] hover:text-[var(--color-text-primary)]"
+            title="Agent Settings"
+          >
+            <Settings size={16} />
+          </button>
           <ThemeToggle />
           {getToken() && (
             <button
@@ -255,6 +264,7 @@ export function AppShell({
         />
       )}
       <CreateProjectModal open={showCreateProject} onClose={() => setShowCreateProject(false)} />
+      <AgentSettingsModal open={showSettings} onClose={() => setShowSettings(false)} />
     </div>
   )
 }

@@ -28,25 +28,37 @@ def calculate_cost(usage: dict, model: str) -> float:
     return round(cost, 6)
 
 
+async def _get_budgets() -> dict:
+    """Get budget limits from Redis settings (hot-reloadable), fallback to env."""
+    from claude_hub.routers.settings_router import get_agent_settings
+    cfg = await get_agent_settings()
+    return {
+        "per_ticket": cfg.get("budget_per_ticket_usd", settings.agent_budget_per_ticket_usd),
+        "daily": cfg.get("budget_daily_usd", settings.agent_budget_daily_usd),
+        "monthly": cfg.get("budget_monthly_usd", settings.agent_budget_monthly_usd),
+    }
+
+
 async def can_spend(ticket_id: str, estimated: float) -> tuple[bool, str]:
     r = redis_client.get_pool()
     today = datetime.now().strftime("%Y-%m-%d")
     month = datetime.now().strftime("%Y-%m")
+    budgets = await _get_budgets()
 
     ticket_cost = await r.get(f"agent:cost:ticket:{ticket_id}")
     ticket_cost = float(ticket_cost) if ticket_cost else 0.0
-    if ticket_cost + estimated > settings.agent_budget_per_ticket_usd:
-        return False, f"Ticket budget exceeded (${ticket_cost:.2f}/${settings.agent_budget_per_ticket_usd:.2f})"
+    if ticket_cost + estimated > budgets["per_ticket"]:
+        return False, f"Ticket budget exceeded (${ticket_cost:.2f}/${budgets['per_ticket']:.2f})"
 
     daily_cost = await r.get(f"agent:cost:daily:{today}")
     daily_cost = float(daily_cost) if daily_cost else 0.0
-    if daily_cost + estimated > settings.agent_budget_daily_usd:
-        return False, f"Daily budget exceeded (${daily_cost:.2f}/${settings.agent_budget_daily_usd:.2f})"
+    if daily_cost + estimated > budgets["daily"]:
+        return False, f"Daily budget exceeded (${daily_cost:.2f}/${budgets['daily']:.2f})"
 
     monthly_cost = await r.get(f"agent:cost:monthly:{month}")
     monthly_cost = float(monthly_cost) if monthly_cost else 0.0
-    if monthly_cost + estimated > settings.agent_budget_monthly_usd:
-        return False, f"Monthly budget exceeded (${monthly_cost:.2f}/${settings.agent_budget_monthly_usd:.2f})"
+    if monthly_cost + estimated > budgets["monthly"]:
+        return False, f"Monthly budget exceeded (${monthly_cost:.2f}/${budgets['monthly']:.2f})"
 
     return True, ""
 

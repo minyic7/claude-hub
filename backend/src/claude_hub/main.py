@@ -10,6 +10,7 @@ from claude_hub.auth import require_auth
 from claude_hub.config import settings
 from claude_hub.routers import projects, tickets, webhooks, ws
 from claude_hub.routers.auth_router import router as auth_router
+from claude_hub.routers.settings_router import router as settings_router
 
 logging.basicConfig(
     level=getattr(logging, settings.log_level.upper(), logging.INFO),
@@ -98,6 +99,7 @@ app.include_router(webhooks.router)
 auth_dep = [Depends(require_auth)] if settings.auth_enabled else []
 app.include_router(projects.router, dependencies=auth_dep)
 app.include_router(tickets.router, dependencies=auth_dep)
+app.include_router(settings_router, dependencies=auth_dep)
 # WS auth is handled inside the endpoint (query param), not via router dependency
 app.include_router(ws.router)
 

@@ -132,7 +132,23 @@ export const api = {
     syncReviewStatus: () =>
       request<{ synced: string[] }>('/tickets/sync-review-status', { method: 'POST' }),
   },
+  settings: {
+    getAgent: () => request<AgentSettings>('/settings/agent'),
+    updateAgent: (data: Partial<AgentSettings>) =>
+      request<AgentSettings>('/settings/agent', { method: 'PUT', body: JSON.stringify(data) }),
+  },
   health: () => request<{ status: string; redis: boolean }>('/health'),
   cost: () => request<{ daily: number; monthly: number }>('/cost'),
   roles: () => request<Record<string, unknown>>('/roles'),
+}
+
+export interface AgentSettings {
+  enabled: boolean
+  model: string
+  batch_size: number
+  max_context_messages: number
+  web_search: boolean
+  budget_per_ticket_usd: number
+  budget_daily_usd: number
+  budget_monthly_usd: number
 }

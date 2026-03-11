@@ -325,11 +325,16 @@ async def _tail_and_broadcast(ticket_id: str, log_path: str) -> None:
 
     logger = logging.getLogger(__name__)
     try:
-        if settings.agent_enabled and settings.anthropic_api_key:
+        # Load agent settings from Redis (hot-reloadable)
+        from claude_hub.routers.settings_router import get_agent_settings
+        agent_cfg = await get_agent_settings()
+        agent_enabled = agent_cfg.get("enabled", settings.agent_enabled)
+
+        if agent_enabled and settings.anthropic_api_key:
             # Agent mode: TicketAgent handles tailing + broadcasting + intervention
             from claude_hub.services.ticket_agent import TicketAgent
             ticket = await redis_client.get_ticket(ticket_id)
-            agent = TicketAgent(ticket_id, ticket)
+            agent = TicketAgent(ticket_id, ticket, agent_settings=agent_cfg)
             await agent.run(log_path)
         else:
             # Simple mode: just tail and broadcast

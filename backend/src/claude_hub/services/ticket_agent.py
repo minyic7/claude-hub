@@ -59,7 +59,7 @@ Claude Code runs with full permissions (--dangerously-skip-permissions). You CAN
 Be concise. Don't over-supervise. Let Claude Code work unless there's a real problem."""
 
 
-def _build_tools() -> list[dict]:
+def _build_tools(agent_settings: dict | None = None) -> list[dict]:
     tools = [
         {
             "name": "tmux_send",
@@ -134,7 +134,8 @@ def _build_tools() -> list[dict]:
         },
     ]
 
-    if settings.agent_web_search:
+    web_search = agent_settings.get("web_search", settings.agent_web_search) if agent_settings else settings.agent_web_search
+    if web_search:
         tools.append({
             "name": "web_search",
             "description": "Search the web for information. Use to research solutions when Claude Code is stuck.",
@@ -172,16 +173,21 @@ def _is_critical(events: list[dict]) -> bool:
 
 
 class TicketAgent:
-    def __init__(self, ticket_id: str, ticket: dict, verbose: bool = False):
+    def __init__(self, ticket_id: str, ticket: dict, verbose: bool = False,
+                 agent_settings: dict | None = None):
         self.ticket_id = ticket_id
         self.ticket = ticket
         self.verbose = verbose
         self.client = anthropic.Anthropic(
             api_key=settings.anthropic_api_key or os.environ.get("ANTHROPIC_API_KEY", ""),
         )
-        self.model = settings.agent_model
+        # Use hot-reloadable settings from Redis, fallback to env
+        self._settings = agent_settings or {}
+        self.model = self._settings.get("model", settings.agent_model)
+        self.batch_size = self._settings.get("batch_size", settings.agent_batch_size)
+        self.max_context = self._settings.get("max_context_messages", settings.agent_max_context_messages)
         self.messages: list[dict] = []
-        self.tools = _build_tools()
+        self.tools = _build_tools(self._settings)
         self.system_prompt = SYSTEM_PROMPT_TEMPLATE.format(
             title=ticket.get("title", ""),
             description=ticket.get("description", ""),
@@ -216,7 +222,7 @@ class TicketAgent:
 
             should_call = (
                 _is_critical(event_buffer)
-                or len(event_buffer) >= settings.agent_batch_size
+                or len(event_buffer) >= self.batch_size
             )
 
             if should_call:
@@ -241,8 +247,8 @@ class TicketAgent:
         })
 
         # Trim context
-        if len(self.messages) > settings.agent_max_context_messages:
-            self.messages = self.messages[-settings.agent_max_context_messages:]
+        if len(self.messages) > self.max_context:
+            self.messages = self.messages[-self.max_context:]
 
         await self._call_api()
 
