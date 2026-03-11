@@ -17,7 +17,7 @@ _connections: set[WebSocket] = set()
 async def broadcast(event: dict) -> None:
     msg = json.dumps(event)
     dead: list[WebSocket] = []
-    for ws in _connections:
+    for ws in set(_connections):
         try:
             await ws.send_text(msg)
         except Exception:
