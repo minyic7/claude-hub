@@ -88,6 +88,12 @@ async def record_spend(ticket_id: str, cost: float, tokens: int = 0) -> None:
         "agent_tokens": int(ticket_tokens) if ticket_tokens else tokens,
     })
 
+    # Broadcast updated ticket so frontend gets real-time cost updates
+    from claude_hub.routers.ws import broadcast
+    updated = await redis_client.get_ticket(ticket_id)
+    if updated:
+        await broadcast({"type": "ticket_updated", "ticket_id": ticket_id, "data": updated})
+
     logger.debug("Recorded $%.4f for ticket %s (today: $%.2f)",
                  cost, ticket_id,
                  float(await r.get(f"agent:cost:daily:{today}") or 0))

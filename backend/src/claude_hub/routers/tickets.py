@@ -660,7 +660,8 @@ async def get_ticket_ci_status(ticket_id: str):
     project = await _get_project_for_ticket(ticket)
     gh_token = project.get("gh_token", "") or settings.gh_token
 
-    return get_ci_status(clone_path, branch, gh_token)
+    pr_number = ticket.get("pr_number") or 0
+    return get_ci_status(clone_path, branch, gh_token, pr_number=pr_number)
 
 
 @router.post("/{ticket_id}/merge")
@@ -691,7 +692,7 @@ async def merge_ticket(ticket_id: str):
     gh_token = project.get("gh_token", "") or settings.gh_token
 
     # Check CI status before merging
-    ci = get_ci_status(clone_path, branch, gh_token)
+    ci = get_ci_status(clone_path, branch, gh_token, pr_number=pr_number)
 
     if ci["status"] == "failed":
         from claude_hub.services.ci_check import get_failed_log

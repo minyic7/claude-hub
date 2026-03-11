@@ -24,7 +24,7 @@ def _run_gh(args: list[str], cwd: str, gh_token: str = "") -> subprocess.Complet
     return subprocess.run(args, cwd=cwd, capture_output=True, text=True, env=env)
 
 
-def get_ci_status(clone_path: str, branch: str, gh_token: str = "") -> dict:
+def get_ci_status(clone_path: str, branch: str, gh_token: str = "", pr_number: int = 0) -> dict:
     """Get CI check status for a branch.
 
     Returns:
@@ -34,8 +34,9 @@ def get_ci_status(clone_path: str, branch: str, gh_token: str = "") -> dict:
             "summary": "human readable summary"
         }
     """
+    pr_ref = str(pr_number) if pr_number else branch
     result = _run_gh(
-        ["gh", "pr", "checks", "--json", "name,state,conclusion,detailsUrl"],
+        ["gh", "pr", "checks", pr_ref, "--json", "name,state,conclusion,detailsUrl"],
         cwd=clone_path, gh_token=gh_token,
     )
 
@@ -172,7 +173,7 @@ async def wait_for_ci_and_merge(
         await asyncio.sleep(CI_POLL_INTERVAL)
         elapsed += CI_POLL_INTERVAL
 
-        ci = get_ci_status(clone_path, branch, gh_token)
+        ci = get_ci_status(clone_path, branch, gh_token, pr_number=pr_number)
         logger.info("CI status for %s: %s", ticket_id, ci["summary"])
 
         if ci["status"] == "passed":

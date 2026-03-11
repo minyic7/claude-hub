@@ -1,5 +1,5 @@
 import { type FormEvent, type MouseEvent, useEffect, useRef, useState } from 'react'
-import { AlertCircle, Check, CircleDot, GitMerge, Link, Loader2, Lock, MessageCircleQuestion, Pencil, Play, Rocket, RotateCcw, ExternalLink, Send, X } from 'lucide-react'
+import { AlertCircle, Check, CircleDot, GitMerge, Loader2, Lock, MessageCircleQuestion, Pencil, Play, Rocket, RotateCcw, ExternalLink, Send, X } from 'lucide-react'
 import type { Ticket, TicketStatus } from '../../types/ticket'
 import type { ActivityEvent } from '../../types/activity'
 import { Badge } from '../common/Badge'
@@ -375,18 +375,6 @@ function depDotColor(status: TicketStatus): string {
     case 'in_progress': case 'verifying': return 'bg-[var(--color-accent-blue)]'
     case 'blocked': case 'failed': return 'bg-[var(--color-accent-red)]'
     default: return 'bg-[var(--color-accent-red)]/60'
-  }
-}
-
-function statusColor(status: TicketStatus): string {
-  switch (status) {
-    case 'in_progress': return 'text-[var(--color-accent-blue)]'
-    case 'blocked': return 'text-[var(--color-accent-red)]'
-    case 'review': return 'text-[var(--color-accent-yellow)]'
-    case 'merging': return 'text-[var(--color-accent-green)]'
-    case 'merged': return 'text-[var(--color-accent-green)]'
-    case 'failed': return 'text-[var(--color-accent-red)]'
-    default: return 'text-[var(--color-text-muted)]'
   }
 }
 

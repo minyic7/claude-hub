@@ -211,7 +211,7 @@ async def get_cost_summary() -> dict:
 _JSON_FIELDS = {"metadata", "depends_on"}
 _FLOAT_FIELDS = {"agent_cost_usd"}
 _INT_FIELDS = {"pr_number"}
-_INT_FIELDS_DEFAULT_ZERO = {"priority"}
+_INT_FIELDS_DEFAULT_ZERO = {"priority", "agent_tokens"}
 _BOOL_FIELDS = {"has_conflicts"}
 _NULLABLE_FIELDS = {
     "blocked_question", "failed_reason", "clone_path", "pr_url",
