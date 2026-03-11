@@ -96,10 +96,8 @@ def start_session(
 
     # Create tmux session with clean env
     env = _clean_env()
-    # Pass through required env vars
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "") or settings.anthropic_api_key
-    if api_key:
-        env["ANTHROPIC_API_KEY"] = api_key
+    # Do NOT pass ANTHROPIC_API_KEY — Claude Code CLI should use Max plan (OAuth login),
+    # not the API key (which is for TicketAgent only and may have low balance).
     token = gh_token or settings.gh_token
     if token:
         env["GH_TOKEN"] = token
