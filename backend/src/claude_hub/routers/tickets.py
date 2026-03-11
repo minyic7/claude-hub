@@ -2,6 +2,7 @@ import logging
 import re
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Query
 
@@ -297,7 +298,7 @@ async def retry_ticket(ticket_id: str, body: dict | None = None):
     gh_token = project.get("gh_token", "")
 
     clone_path = ticket.get("clone_path")
-    if not clone_path:
+    if not clone_path or not Path(clone_path).exists():
         clone_manager.ensure_reference(ticket["repo_url"], gh_token=gh_token)
         clone_path = clone_manager.clone_for_ticket(
             ticket["repo_url"], ticket_id,
@@ -485,7 +486,7 @@ async def request_changes(ticket_id: str, body: dict):
     gh_token = project.get("gh_token", "")
 
     clone_path = ticket.get("clone_path")
-    if not clone_path:
+    if not clone_path or not Path(clone_path).exists():
         clone_manager.ensure_reference(ticket["repo_url"], gh_token=gh_token)
         clone_path = clone_manager.clone_for_ticket(
             ticket["repo_url"], ticket_id,
