@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { AlertCircle, ArrowLeft, Check, CircleDot, ExternalLink, GitBranch, GitMerge, Loader2, MessageSquareWarning, RefreshCw, RotateCcw, Square } from 'lucide-react'
+import { AlertCircle, ArrowLeft, Check, CircleDot, ExternalLink, GitBranch, GitMerge, Loader2, MessageSquareWarning, Pencil, RefreshCw, RotateCcw, Square, Trash2, X } from 'lucide-react'
 import type { Ticket, TicketStatus } from '../../types/ticket'
 import type { ActivityEvent } from '../../types/activity'
 import { Badge } from '../common/Badge'
@@ -13,6 +13,7 @@ interface TicketDetailProps {
   activities: ActivityEvent[]
   allTickets: Map<string, Ticket>
   onClose: () => void
+  onDelete: () => void
   onTicketClick: (ticket: Ticket) => void
 }
 
@@ -38,10 +39,17 @@ function depStatusColor(status: TicketStatus): string {
   }
 }
 
-export function TicketDetail({ ticket, activities, allTickets, onClose, onTicketClick }: TicketDetailProps) {
+export function TicketDetail({ ticket, activities, allTickets, onClose, onDelete, onTicketClick }: TicketDetailProps) {
   const [showChangesForm, setShowChangesForm] = useState(false)
   const [feedback, setFeedback] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [editing, setEditing] = useState(false)
+  const [editTitle, setEditTitle] = useState(ticket.title)
+  const [editDescription, setEditDescription] = useState(ticket.description)
+  const [editDependsOn, setEditDependsOn] = useState<string[]>(ticket.depends_on)
+  const [saving, setSaving] = useState(false)
 
   const handleStop = async () => {
     try { await api.tickets.stop(ticket.id) } catch { /* global handler */ }
@@ -79,6 +87,48 @@ export function TicketDetail({ ticket, activities, allTickets, onClose, onTicket
     }
   }
 
+  const handleDelete = async () => {
+    setDeleting(true)
+    try {
+      await api.tickets.delete(ticket.id)
+      onDelete()
+    } catch { /* global handler */ } finally {
+      setDeleting(false)
+      setConfirmDelete(false)
+    }
+  }
+
+  const handleStartEdit = () => {
+    setEditTitle(ticket.title)
+    setEditDescription(ticket.description)
+    setEditDependsOn([...ticket.depends_on])
+    setEditing(true)
+  }
+
+  const handleCancelEdit = () => {
+    setEditing(false)
+  }
+
+  const handleSaveEdit = async () => {
+    setSaving(true)
+    try {
+      await api.tickets.update(ticket.id, {
+        title: editTitle.trim() || ticket.title,
+        description: editDescription.trim(),
+        depends_on: editDependsOn,
+      })
+      setEditing(false)
+    } catch { /* global handler */ } finally {
+      setSaving(false)
+    }
+  }
+
+  const toggleEditDep = (id: string) => {
+    setEditDependsOn((prev) =>
+      prev.includes(id) ? prev.filter((d) => d !== id) : [...prev, id]
+    )
+  }
+
   const isRunning = ticket.status === 'in_progress' || ticket.status === 'verifying'
 
   // Resolve dependencies
@@ -86,6 +136,11 @@ export function TicketDetail({ ticket, activities, allTickets, onClose, onTicket
     const dep = allTickets.get(depId)
     return { id: depId, ticket: dep }
   })
+
+  // Available deps for picker (other tickets in same project, not this ticket)
+  const availableDeps = [...allTickets.values()]
+    .filter((t) => t.project_id === ticket.project_id && t.id !== ticket.id)
+    .sort((a, b) => a.title.localeCompare(b.title))
 
   return (
     <div className="detail-panel flex w-[420px] shrink-0 flex-col border-l border-[var(--color-border)] bg-[var(--color-bg-panel)]">
@@ -123,8 +178,118 @@ export function TicketDetail({ ticket, activities, allTickets, onClose, onTicket
               </Button>
             </>
           )}
+          {ticket.status === 'todo' && !editing && (
+            <Button size="sm" variant="secondary" onClick={handleStartEdit}>
+              <Pencil size={12} className="mr-1" /> Edit
+            </Button>
+          )}
+          {!confirmDelete ? (
+            <button
+              onClick={() => setConfirmDelete(true)}
+              className="rounded p-1 text-[var(--color-text-muted)] hover:bg-[var(--color-accent-red)]/10 hover:text-[var(--color-accent-red)]"
+              title="Delete ticket"
+            >
+              <Trash2 size={14} />
+            </button>
+          ) : (
+            <div className="flex items-center gap-1">
+              <span className="text-xs text-[var(--color-text-muted)]">Delete?</span>
+              <Button size="sm" variant="danger" onClick={handleDelete} disabled={deleting}>
+                {deleting ? '...' : 'Yes'}
+              </Button>
+              <Button size="sm" variant="secondary" onClick={() => setConfirmDelete(false)}>
+                <X size={12} />
+              </Button>
+            </div>
+          )}
         </div>
       </div>
+
+      {/* Edit form (TODO only) */}
+      {editing && ticket.status === 'todo' && (
+        <div className="border-b border-[var(--color-border)] p-3 space-y-3">
+          <div>
+            <label className="mb-1 block text-xs font-medium text-[var(--color-text-secondary)]">Title</label>
+            <input
+              type="text"
+              value={editTitle}
+              onChange={(e) => setEditTitle(e.target.value)}
+              className="w-full rounded border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-3 py-1.5 text-sm text-[var(--color-text-primary)] focus:border-[var(--color-accent-blue)] focus:outline-none"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-[var(--color-text-secondary)]">Description</label>
+            <textarea
+              value={editDescription}
+              onChange={(e) => setEditDescription(e.target.value)}
+              rows={3}
+              className="w-full resize-none rounded border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-3 py-1.5 text-sm text-[var(--color-text-primary)] focus:border-[var(--color-accent-blue)] focus:outline-none"
+            />
+          </div>
+          {/* Dependency picker */}
+          <div>
+            <label className="mb-1 block text-xs font-medium text-[var(--color-text-secondary)]">
+              Depends on
+            </label>
+            {/* Selected deps as chips */}
+            {editDependsOn.length > 0 && (
+              <div className="mb-2 flex flex-wrap gap-1">
+                {editDependsOn.map((depId) => {
+                  const dep = allTickets.get(depId)
+                  return (
+                    <span
+                      key={depId}
+                      className="inline-flex items-center gap-1 rounded-full border border-[var(--color-accent-blue)]/30 bg-[var(--color-accent-blue)]/10 px-2 py-0.5 text-xs text-[var(--color-accent-blue)]"
+                    >
+                      <span className="max-w-[120px] truncate">{dep?.title || `#${depId.slice(0, 6)}`}</span>
+                      <button
+                        type="button"
+                        onClick={() => toggleEditDep(depId)}
+                        className="shrink-0 hover:text-[var(--color-accent-red)]"
+                      >
+                        <X size={10} />
+                      </button>
+                    </span>
+                  )
+                })}
+              </div>
+            )}
+            {availableDeps.length > 0 && (
+              <div className="max-h-32 overflow-y-auto rounded border border-[var(--color-border)] bg-[var(--color-bg-primary)]">
+                {availableDeps.map((dep) => {
+                  const selected = editDependsOn.includes(dep.id)
+                  return (
+                    <button
+                      key={dep.id}
+                      type="button"
+                      onClick={() => toggleEditDep(dep.id)}
+                      className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-[var(--color-bg-secondary)] ${selected ? 'bg-[var(--color-accent-blue)]/5' : ''}`}
+                    >
+                      <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
+                        selected
+                          ? 'border-[var(--color-accent-blue)] bg-[var(--color-accent-blue)] text-white'
+                          : 'border-[var(--color-border)]'
+                      }`}>
+                        {selected && <Check size={10} />}
+                      </span>
+                      <span className="flex-1 truncate text-[var(--color-text-primary)]">{dep.title}</span>
+                      <span className="shrink-0 text-[10px] text-[var(--color-text-muted)]">
+                        {dep.status.replace('_', ' ')}
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button size="sm" variant="secondary" onClick={handleCancelEdit}>Cancel</Button>
+            <Button size="sm" onClick={handleSaveEdit} disabled={saving || !editTitle.trim()}>
+              {saving ? 'Saving...' : 'Save'}
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* Request Changes form */}
       {showChangesForm && ticket.status === 'review' && (
