@@ -3,13 +3,20 @@ name: Build and Deploy
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - '*.md'
+      - '.gitignore'
+      - '.claude/**'
+      - 'spike/**'
 
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
+  DEPLOY_PATH: C:\claude-hub
 
 jobs:
-  build-and-push:
+  # ─── Build Docker image and push to GHCR ───────────
+  build:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -39,3 +46,50 @@ jobs:
             ghcr.io/${{ github.repository }}:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  # ─── Deploy to Windows via Tailscale SSH ───────────
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Connect Tailscale
+        uses: tailscale/github-action@v4
+        with:
+          authkey: ${{ secrets.TS_AUTHKEY }}
+          tags: tag:ci
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H ${{ secrets.DEPLOY_HOST }} >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Copy compose files
+        run: |
+          scp docker-compose.yml ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:${{ env.DEPLOY_PATH }}/docker-compose.yml
+          scp docker-compose.prod.yml ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:${{ env.DEPLOY_PATH }}/docker-compose.prod.yml
+
+      - name: Deploy
+        run: |
+          ssh ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} @'
+            cd C:\claude-hub
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml pull claude-hub
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --remove-orphans --force-recreate
+          '@
+
+      - name: Health check
+        run: |
+          for i in $(seq 1 6); do
+            if curl -sf http://${{ secrets.DEPLOY_HOST }}:7700/api/health > /dev/null 2>&1; then
+              echo "Deploy successful - health check passed"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "Health check failed after 60s"
+          exit 1
