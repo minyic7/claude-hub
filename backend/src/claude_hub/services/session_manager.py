@@ -21,10 +21,16 @@ def _session_name(ticket_id: str) -> str:
 
 
 def _clean_env() -> dict[str, str]:
-    """Return env dict with CLAUDE* vars removed to avoid nested session detection."""
+    """Return env dict with CLAUDE* and ANTHROPIC* vars removed.
+
+    CLAUDE* — avoids nested session detection.
+    ANTHROPIC* — prevents Claude Code CLI from using the API key
+    (it should use Max plan OAuth login, not the API key which is for TicketAgent only).
+    """
     return {
         k: v for k, v in os.environ.items()
         if not k.startswith("CLAUDE") and k != "CLAUDECODE"
+        and not k.startswith("ANTHROPIC")
     }
 
 
