@@ -5,3 +5,8 @@ services:
     image: ghcr.io/minyic7/claude-hub:latest
     ports:
       - "7700:7700"
+    volumes:
+      - claude-config:/home/claude/.claude
+
+volumes:
+  claude-config:

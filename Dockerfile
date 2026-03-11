@@ -52,8 +52,12 @@ COPY backend/ ./
 # ─── Frontend build → served by FastAPI as static files ───
 COPY --from=frontend-build /app/frontend/dist /app/backend/static
 
-# ─── Data directories ─────────────────────────────────────
-RUN mkdir -p /data/clones /data/references /data/logs
+# ─── Non-root user (Claude Code refuses --dangerously-skip-permissions as root)
+RUN useradd -m -s /bin/bash claude && \
+    mkdir -p /data/clones /data/references /data/logs && \
+    chown -R claude:claude /data /app
+
+USER claude
 
 # ─── Environment defaults ─────────────────────────────────
 ENV CLAUDE_HUB_HOST=0.0.0.0
