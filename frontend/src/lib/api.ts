@@ -131,6 +131,8 @@ export const api = {
       request<Record<string, unknown>[]>(`/tickets/${id}/activity?since=${since}`),
     syncReviewStatus: () =>
       request<{ synced: string[] }>('/tickets/sync-review-status', { method: 'POST' }),
+    ciStatus: (id: string) =>
+      request<CIStatus>(`/tickets/${id}/ci-status`),
   },
   settings: {
     getAgent: () => request<AgentSettings>('/settings/agent'),
@@ -154,6 +156,21 @@ export interface WorkflowRun {
   html_url: string
   head_branch: string
   name: string
+}
+
+export interface CICheck {
+  name: string
+  status?: string
+  state?: string
+  conclusion?: string | null
+  html_url?: string
+  detailsUrl?: string
+}
+
+export interface CIStatus {
+  status: 'passed' | 'failed' | 'pending' | 'no_ci'
+  checks: CICheck[]
+  summary: string
 }
 
 export type AgentProvider = 'anthropic' | 'openai' | 'openai_compatible'

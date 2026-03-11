@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { AlertCircle, ArrowLeft, Check, CircleDot, ExternalLink, GitBranch, GitMerge, Loader2, MessageSquareWarning, Pencil, RefreshCw, RotateCcw, Square, Trash2, X } from 'lucide-react'
 import type { Ticket, TicketStatus } from '../../types/ticket'
 import type { ActivityEvent } from '../../types/activity'
@@ -6,7 +6,7 @@ import { Badge } from '../common/Badge'
 import { Button } from '../common/Button'
 import { ActivityLog } from '../activity/ActivityLog'
 import { EscalationBanner } from '../activity/EscalationBanner'
-import { api } from '../../lib/api'
+import { api, type CIStatus } from '../../lib/api'
 
 interface TicketDetailProps {
   ticket: Ticket
@@ -51,6 +51,25 @@ export function TicketDetail({ ticket, activities, allTickets, onClose, onDelete
   const [editDescription, setEditDescription] = useState(ticket.description)
   const [editDependsOn, setEditDependsOn] = useState<string[]>(ticket.depends_on)
   const [saving, setSaving] = useState(false)
+  const [ciStatus, setCiStatus] = useState<CIStatus | null>(null)
+
+  // Poll CI status when ticket is merging or in review
+  useEffect(() => {
+    if (ticket.status !== 'merging' && ticket.status !== 'review') {
+      setCiStatus(null)
+      return
+    }
+    let cancelled = false
+    const poll = async () => {
+      try {
+        const status = await api.tickets.ciStatus(ticket.id)
+        if (!cancelled) setCiStatus(status)
+      } catch { /* ignore */ }
+    }
+    poll()
+    const interval = setInterval(poll, 10_000)
+    return () => { cancelled = true; clearInterval(interval) }
+  }, [ticket.id, ticket.status])
 
   const handleStop = async () => {
     try { await api.tickets.stop(ticket.id) } catch { /* global handler */ }
@@ -342,6 +361,54 @@ export function TicketDetail({ ticket, activities, allTickets, onClose, onDelete
                 Request Changes
               </Button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* CI Status panel */}
+      {ciStatus && ciStatus.status !== 'no_ci' && (
+        <div className="border-b border-[var(--color-border)] p-3">
+          <div className={`rounded-lg border p-3 ${
+            ciStatus.status === 'passed' ? 'border-[var(--color-accent-green)]/30 bg-[var(--color-accent-green)]/5' :
+            ciStatus.status === 'failed' ? 'border-[var(--color-accent-red)]/30 bg-[var(--color-accent-red)]/5' :
+            'border-[var(--color-accent-blue)]/30 bg-[var(--color-accent-blue)]/5'
+          }`}>
+            <div className="flex items-center gap-2 text-xs font-medium">
+              {ciStatus.status === 'passed' && <Check size={14} className="text-[var(--color-accent-green)]" />}
+              {ciStatus.status === 'failed' && <AlertCircle size={14} className="text-[var(--color-accent-red)]" />}
+              {ciStatus.status === 'pending' && <Loader2 size={14} className="text-[var(--color-accent-blue)] animate-spin" />}
+              <span className={
+                ciStatus.status === 'passed' ? 'text-[var(--color-accent-green)]' :
+                ciStatus.status === 'failed' ? 'text-[var(--color-accent-red)]' :
+                'text-[var(--color-accent-blue)]'
+              }>
+                {ciStatus.summary}
+              </span>
+            </div>
+            {ciStatus.checks.length > 0 && (
+              <div className="mt-2 space-y-1">
+                {ciStatus.checks.map((check, i) => {
+                  const conclusion = (check.conclusion || '').toUpperCase()
+                  const state = (check.state || check.status || '').toUpperCase()
+                  const isPassed = conclusion === 'SUCCESS' || state === 'SUCCESS' || state === 'PASS'
+                  const isFailed = conclusion === 'FAILURE' || conclusion === 'TIMED_OUT' || conclusion === 'CANCELLED'
+                  const url = check.html_url || check.detailsUrl
+                  return (
+                    <div key={i} className="flex items-center gap-2 text-[11px] text-[var(--color-text-secondary)]">
+                      {isPassed && <Check size={11} className="text-[var(--color-accent-green)]" />}
+                      {isFailed && <X size={11} className="text-[var(--color-accent-red)]" />}
+                      {!isPassed && !isFailed && <Loader2 size={11} className="text-[var(--color-accent-blue)] animate-spin" />}
+                      <span>{check.name}</span>
+                      {url && (
+                        <a href={url} target="_blank" rel="noopener noreferrer" className="ml-auto text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]">
+                          <ExternalLink size={10} />
+                        </a>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
           </div>
         </div>
       )}

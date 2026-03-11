@@ -632,6 +632,26 @@ async def sync_review_status():
     return {"synced": synced}
 
 
+@router.get("/{ticket_id}/ci-status")
+async def get_ticket_ci_status(ticket_id: str):
+    """Get CI check status for a ticket's branch."""
+    from claude_hub.services.ci_check import get_ci_status
+
+    ticket = await redis_client.get_ticket(ticket_id)
+    if not ticket:
+        raise HTTPException(404, "Ticket not found")
+
+    clone_path = ticket.get("clone_path", "")
+    branch = ticket.get("branch", "")
+    if not clone_path or not branch:
+        return {"status": "no_ci", "checks": [], "summary": "No branch or clone path"}
+
+    project = await _get_project_for_ticket(ticket)
+    gh_token = project.get("gh_token", "") or settings.gh_token
+
+    return get_ci_status(clone_path, branch, gh_token)
+
+
 @router.post("/{ticket_id}/merge")
 async def merge_ticket(ticket_id: str):
     import asyncio
