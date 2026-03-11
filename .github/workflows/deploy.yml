@@ -76,18 +76,22 @@ jobs:
           scp docker-compose.yml "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:C:/claude-hub/docker-compose.yml"
           scp docker-compose.prod.yml "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:C:/claude-hub/docker-compose.prod.yml"
 
-      - name: Deploy
+      - name: Deploy via scheduled task
         run: |
-          ssh ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} "cd C:/claude-hub; docker compose -f docker-compose.yml -f docker-compose.prod.yml pull; docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --remove-orphans --force-recreate"
+          # Windows Docker Desktop credential helper doesn't work in SSH sessions.
+          # Use a Windows scheduled task to run deploy in the user's logon session.
+          ssh ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} "schtasks /run /tn claude-hub-deploy"
+          echo "Triggered deploy task, waiting for containers..."
+          sleep 30
 
       - name: Health check
         run: |
-          for i in $(seq 1 6); do
+          for i in $(seq 1 12); do
             if curl -sf http://${{ secrets.DEPLOY_HOST }}:7700/api/health > /dev/null 2>&1; then
               echo "Deploy successful - health check passed"
               exit 0
             fi
             sleep 10
           done
-          echo "Health check failed after 60s"
+          echo "Health check failed after 120s"
           exit 1
