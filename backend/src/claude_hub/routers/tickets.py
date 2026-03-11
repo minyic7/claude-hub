@@ -312,7 +312,11 @@ async def _tail_and_broadcast(ticket_id: str, log_path: str) -> None:
                     "data": event_dict,
                 })
 
-        # Session ended — verify agent work
+        # Session ended — clean up tmux session
+        from claude_hub.services import session_manager
+        session_manager.cleanup_session(ticket_id)
+
+        # Verify agent work
         logger.info("Session ended for ticket %s, running verification", ticket_id)
         ticket = await redis_client.get_ticket(ticket_id)
         if not ticket or ticket.get("status") == "blocked":
@@ -376,12 +380,34 @@ async def mark_review(ticket_id: str):
 
 @router.post("/{ticket_id}/merge")
 async def merge_ticket(ticket_id: str):
+    import subprocess
     from claude_hub.services.ticket_service import InvalidTransition, transition
+
+    ticket = await redis_client.get_ticket(ticket_id)
+    if not ticket:
+        raise HTTPException(404, "Ticket not found")
+
+    # Merge PR on GitHub if we have a PR number
+    pr_number = ticket.get("pr_number")
+    clone_path = ticket.get("clone_path", "")
+    if pr_number and clone_path:
+        project = await _get_project_for_ticket(ticket)
+        gh_token = project.get("gh_token", "") or settings.gh_token
+        env = None
+        if gh_token:
+            import os
+            env = {**os.environ, "GH_TOKEN": gh_token}
+
+        result = subprocess.run(
+            ["gh", "pr", "merge", str(pr_number), "--squash", "--delete-branch"],
+            cwd=clone_path, capture_output=True, text=True, env=env,
+        )
+        if result.returncode != 0:
+            raise HTTPException(500, f"GitHub merge failed: {result.stderr.strip()}")
+
     try:
         updated = await transition(ticket_id, TicketStatus.MERGED,
                                    completed_at=datetime.now(timezone.utc).isoformat())
-    except ValueError:
-        raise HTTPException(404, "Ticket not found")
     except InvalidTransition as e:
         raise HTTPException(409, str(e))
 

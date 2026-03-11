@@ -138,6 +138,15 @@ def stop_session(ticket_id: str) -> None:
     _active_sessions.pop(ticket_id, None)
 
 
+def cleanup_session(ticket_id: str) -> None:
+    """Kill tmux session after it has finished (no Ctrl+C needed)."""
+    name = _session_name(ticket_id)
+    if _tmux_exists(name):
+        subprocess.run(["tmux", "kill-session", "-t", name], capture_output=True)
+        logger.info("Cleaned up session %s", name)
+    _active_sessions.pop(ticket_id, None)
+
+
 def is_alive(ticket_id: str) -> bool:
     name = _session_name(ticket_id)
     return _tmux_exists(name) and not _tmux_is_dead(name)

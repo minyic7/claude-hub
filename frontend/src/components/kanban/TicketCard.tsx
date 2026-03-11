@@ -1,5 +1,5 @@
 import type { MouseEvent } from 'react'
-import { AlertCircle, Check, CircleDot, Loader2, Play, RotateCcw, ExternalLink } from 'lucide-react'
+import { AlertCircle, Check, CircleDot, GitMerge, Loader2, Play, RotateCcw, ExternalLink } from 'lucide-react'
 import type { Ticket } from '../../types/ticket'
 import type { ActivityEvent } from '../../types/activity'
 import { Badge } from '../common/Badge'
@@ -21,6 +21,11 @@ export function TicketCard({ ticket, latestActivity, onClick }: TicketCardProps)
   const handleRetry = async (e: MouseEvent) => {
     e.stopPropagation()
     await api.tickets.retry(ticket.id)
+  }
+
+  const handleMerge = async (e: MouseEvent) => {
+    e.stopPropagation()
+    await api.tickets.merge(ticket.id)
   }
 
   return (
@@ -76,16 +81,23 @@ export function TicketCard({ ticket, latestActivity, onClick }: TicketCardProps)
         </div>
       )}
 
-      {ticket.status === 'review' && ticket.pr_url && (
-        <a
-          href={ticket.pr_url}
-          target="_blank"
-          rel="noopener noreferrer"
-          onClick={(e) => e.stopPropagation()}
-          className="inline-flex items-center gap-1 text-xs text-[var(--color-accent-blue)] hover:underline"
-        >
-          PR #{ticket.pr_number} <ExternalLink size={10} />
-        </a>
+      {ticket.status === 'review' && (
+        <div className="flex items-center justify-between gap-2">
+          {ticket.pr_url && (
+            <a
+              href={ticket.pr_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className="inline-flex items-center gap-1 text-xs text-[var(--color-accent-blue)] hover:underline"
+            >
+              PR #{ticket.pr_number} <ExternalLink size={10} />
+            </a>
+          )}
+          <Button size="sm" onClick={handleMerge}>
+            <GitMerge size={12} className="mr-1" /> Merge
+          </Button>
+        </div>
       )}
 
       {ticket.agent_cost_usd > 0 && (
