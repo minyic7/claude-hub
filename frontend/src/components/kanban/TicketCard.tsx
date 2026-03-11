@@ -227,7 +227,7 @@ export function TicketCard({ ticket, latestActivity, onClick, onOptimistic, deps
 
       {ticket.agent_cost_usd > 0 && (
         <p className="mt-1 text-right text-xs text-[var(--color-text-muted)]">
-          ~${ticket.agent_cost_usd.toFixed(2)}
+          ~${ticket.agent_cost_usd.toFixed(2)}{ticket.agent_tokens > 0 && ` (${ticket.agent_tokens >= 1_000_000 ? `${(ticket.agent_tokens / 1_000_000).toFixed(1)}M` : ticket.agent_tokens >= 1_000 ? `${(ticket.agent_tokens / 1_000).toFixed(0)}k` : ticket.agent_tokens} tokens)`}
         </p>
       )}
     </div>

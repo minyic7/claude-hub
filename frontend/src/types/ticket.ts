@@ -49,6 +49,7 @@ export interface Ticket {
   priority: number
   tmux_session: string | null
   agent_cost_usd: number
+  agent_tokens: number
   created_at: string
   started_at: string | null
   completed_at: string | null

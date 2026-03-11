@@ -274,12 +274,16 @@ class TicketAgent:
 
         # Record cost
         usage = response.usage
+        input_tokens = usage.input_tokens
+        output_tokens = usage.output_tokens
+        cache_tokens = getattr(usage, "cache_read_input_tokens", 0) or 0
         cost = cost_tracker.calculate_cost({
-            "input_tokens": usage.input_tokens,
-            "output_tokens": usage.output_tokens,
-            "cache_read_input_tokens": getattr(usage, "cache_read_input_tokens", 0) or 0,
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "cache_read_input_tokens": cache_tokens,
         }, self.model)
-        await cost_tracker.record_spend(self.ticket_id, cost)
+        total_tokens = input_tokens + output_tokens + cache_tokens
+        await cost_tracker.record_spend(self.ticket_id, cost, tokens=total_tokens)
 
         # Process response
         assistant_content = []

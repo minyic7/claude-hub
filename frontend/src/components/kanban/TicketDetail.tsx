@@ -191,7 +191,7 @@ export function TicketDetail({ ticket, activities, allTickets, onClose, onTicket
           <p className="mt-2 text-xs text-[var(--color-text-secondary)]">{ticket.description}</p>
         )}
         <div className="mt-2 flex flex-wrap gap-3 text-xs text-[var(--color-text-muted)]">
-          {ticket.agent_cost_usd > 0 && <span>Cost: ~${ticket.agent_cost_usd.toFixed(2)}</span>}
+          {ticket.agent_cost_usd > 0 && <span>Cost: ~${ticket.agent_cost_usd.toFixed(2)}{ticket.agent_tokens > 0 && ` (${ticket.agent_tokens >= 1_000_000 ? `${(ticket.agent_tokens / 1_000_000).toFixed(1)}M` : ticket.agent_tokens >= 1_000 ? `${(ticket.agent_tokens / 1_000).toFixed(0)}k` : ticket.agent_tokens} tokens)`}</span>}
           {ticket.tmux_session && <span>tmux: {ticket.tmux_session}</span>}
         </div>
       </div>

@@ -63,7 +63,7 @@ async def can_spend(ticket_id: str, estimated: float) -> tuple[bool, str]:
     return True, ""
 
 
-async def record_spend(ticket_id: str, cost: float) -> None:
+async def record_spend(ticket_id: str, cost: float, tokens: int = 0) -> None:
     r = redis_client.get_pool()
     today = datetime.now().strftime("%Y-%m-%d")
     month = datetime.now().strftime("%Y-%m")
@@ -76,10 +76,16 @@ async def record_spend(ticket_id: str, cost: float) -> None:
     await r.expire(f"agent:cost:daily:{today}", 2 * 86400)
     await r.expire(f"agent:cost:monthly:{month}", 35 * 86400)
 
-    # Update ticket's agent_cost_usd
+    # Accumulate token count for ticket
+    if tokens > 0:
+        await r.incrby(f"agent:tokens:ticket:{ticket_id}", tokens)
+
+    # Update ticket's agent_cost_usd and token count
     ticket_total = await r.get(f"agent:cost:ticket:{ticket_id}")
+    ticket_tokens = await r.get(f"agent:tokens:ticket:{ticket_id}")
     await redis_client.update_ticket_fields(ticket_id, {
         "agent_cost_usd": float(ticket_total) if ticket_total else cost,
+        "agent_tokens": int(ticket_tokens) if ticket_tokens else tokens,
     })
 
     logger.debug("Recorded $%.4f for ticket %s (today: $%.2f)",
