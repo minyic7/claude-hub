@@ -5,6 +5,7 @@ import type { ActivityEvent } from '../../types/activity'
 import { Badge } from '../common/Badge'
 import { Button } from '../common/Button'
 import { ActivityLog } from '../activity/ActivityLog'
+import { StatusTimeline } from './StatusTimeline'
 import { EscalationBanner } from '../activity/EscalationBanner'
 import { api, type CIStatus } from '../../lib/api'
 
@@ -455,6 +456,9 @@ export function TicketDetail({ ticket, activities, allTickets, onClose, onDelete
           {ticket.tmux_session && <span>tmux: {ticket.tmux_session}</span>}
         </div>
       </div>
+
+      {/* Status Timeline */}
+      <StatusTimeline ticket={ticket} activities={activities} />
 
       {/* Escalation */}
       {ticket.status === 'blocked' && ticket.blocked_question && (
