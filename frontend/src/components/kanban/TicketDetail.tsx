@@ -409,11 +409,12 @@ export function TicketDetail({ ticket, activities, allTickets, onClose, onDelete
             {ciStatus.checks.length > 0 && (
               <div className="mt-2 space-y-1">
                 {ciStatus.checks.map((check, i) => {
+                  const bucket = (check.bucket || '').toUpperCase()
                   const conclusion = (check.conclusion || '').toUpperCase()
                   const state = (check.state || check.status || '').toUpperCase()
-                  const isPassed = conclusion === 'SUCCESS' || state === 'SUCCESS' || state === 'PASS'
-                  const isFailed = conclusion === 'FAILURE' || conclusion === 'TIMED_OUT' || conclusion === 'CANCELLED'
-                  const url = check.html_url || check.detailsUrl
+                  const isPassed = bucket === 'PASS' || conclusion === 'SUCCESS' || state === 'SUCCESS' || state === 'PASS'
+                  const isFailed = bucket === 'FAIL' || conclusion === 'FAILURE' || conclusion === 'TIMED_OUT' || conclusion === 'CANCELLED'
+                  const url = check.html_url || check.detailsUrl || check.link
                   return (
                     <div key={i} className="flex items-center gap-2 text-[11px] text-[var(--color-text-secondary)]">
                       {isPassed && <Check size={11} className="text-[var(--color-accent-green)]" />}

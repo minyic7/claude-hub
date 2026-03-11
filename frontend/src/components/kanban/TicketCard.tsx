@@ -337,6 +337,24 @@ export function TicketCard({ ticket, latestActivity, onClick, onOptimistic, deps
         </div>
       )}
 
+      {ticket.status === 'merging' && (
+        <div className="flex items-center gap-1.5 text-xs text-[var(--color-accent-blue)]">
+          <Loader2 size={12} className="animate-spin" />
+          <span>Waiting for CI checks...</span>
+          {ticket.pr_url && (
+            <a
+              href={ticket.pr_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className="ml-auto text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]"
+            >
+              <ExternalLink size={10} />
+            </a>
+          )}
+        </div>
+      )}
+
       {ticket.status === 'merged' && deploying !== undefined && (
         <div className="flex items-center gap-1.5 text-xs">
           {deploying ? (

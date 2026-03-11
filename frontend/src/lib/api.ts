@@ -165,8 +165,10 @@ export interface CICheck {
   status?: string
   state?: string
   conclusion?: string | null
+  bucket?: string
   html_url?: string
   detailsUrl?: string
+  link?: string
 }
 
 export interface CIStatus {

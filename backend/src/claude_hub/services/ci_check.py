@@ -35,13 +35,15 @@ def get_ci_status(clone_path: str, branch: str, gh_token: str = "", pr_number: i
         }
     """
     pr_ref = str(pr_number) if pr_number else branch
+
+    # gh pr checks --json fields vary by gh version; use the modern field names
     result = _run_gh(
-        ["gh", "pr", "checks", pr_ref, "--json", "name,state,conclusion,detailsUrl"],
+        ["gh", "pr", "checks", pr_ref, "--json", "name,state,bucket,link"],
         cwd=clone_path, gh_token=gh_token,
     )
 
     if result.returncode != 0:
-        # No PR or no checks configured — try commit status API
+        # No PR or no checks configured — try commit status API (REST, stable fields)
         result2 = _run_gh(
             ["gh", "api", f"repos/{{owner}}/{{repo}}/commits/{branch}/check-runs",
              "--jq", ".check_runs | map({name, status, conclusion, html_url})"],
@@ -69,7 +71,8 @@ def get_ci_status(clone_path: str, branch: str, gh_token: str = "", pr_number: i
     if not checks:
         return {"status": "no_ci", "checks": [], "summary": "No CI checks configured"}
 
-    return _evaluate_checks(checks, key_status="state", key_conclusion="conclusion")
+    # gh pr checks uses "state" for status and "bucket" for pass/fail/pending
+    return _evaluate_checks(checks, key_status="state", key_conclusion="bucket")
 
 
 def _evaluate_checks(checks: list[dict], key_status: str, key_conclusion: str) -> dict:
@@ -83,15 +86,17 @@ def _evaluate_checks(checks: list[dict], key_status: str, key_conclusion: str) -
         conclusion = (check.get(key_conclusion) or "").upper()
         name = check.get("name", "unknown")
 
-        if status in ("COMPLETED", "SUCCESS", "PASS"):
-            if conclusion in ("FAILURE", "TIMED_OUT", "CANCELLED", "ACTION_REQUIRED"):
-                failed.append(name)
-            else:
-                passed.append(name)
-        elif status in ("IN_PROGRESS", "QUEUED", "PENDING", "WAITING", "REQUESTED"):
-            pending.append(name)
-        elif conclusion in ("FAILURE", "TIMED_OUT", "CANCELLED"):
+        # "bucket" field from `gh pr checks` uses PASS/FAIL/PENDING
+        # "conclusion" from REST API uses SUCCESS/FAILURE/etc.
+        # "status" from REST API uses COMPLETED/IN_PROGRESS/etc.
+        if conclusion in ("PASS", "SUCCESS"):
+            passed.append(name)
+        elif conclusion in ("FAIL", "FAILURE", "TIMED_OUT", "CANCELLED", "ACTION_REQUIRED"):
             failed.append(name)
+        elif conclusion in ("PENDING",) or status in ("IN_PROGRESS", "QUEUED", "PENDING", "WAITING", "REQUESTED"):
+            pending.append(name)
+        elif status in ("COMPLETED", "SUCCESS", "PASS"):
+            passed.append(name)
         else:
             passed.append(name)
 
