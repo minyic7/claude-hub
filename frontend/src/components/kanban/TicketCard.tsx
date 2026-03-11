@@ -1,5 +1,5 @@
 import { type FormEvent, type MouseEvent, useEffect, useRef, useState } from 'react'
-import { AlertCircle, Check, CircleDot, GitMerge, Link, Loader2, Lock, MessageCircleQuestion, Play, Rocket, RotateCcw, ExternalLink, Send } from 'lucide-react'
+import { AlertCircle, Check, CircleDot, GitMerge, Link, Loader2, Lock, MessageCircleQuestion, Pencil, Play, Rocket, RotateCcw, ExternalLink, Send, X } from 'lucide-react'
 import type { Ticket, TicketStatus } from '../../types/ticket'
 import type { ActivityEvent } from '../../types/activity'
 import { Badge } from '../common/Badge'
@@ -63,6 +63,45 @@ export function TicketCard({ ticket, latestActivity, onClick, onOptimistic, deps
     { status: 'review' },
   )
 
+  // Inline edit state (TODO tickets only)
+  const [editing, setEditing] = useState(false)
+  const [editTitle, setEditTitle] = useState(ticket.title)
+  const [editDesc, setEditDesc] = useState(ticket.description || '')
+  const [saving, setSaving] = useState(false)
+
+  const handleEditClick = (e: MouseEvent) => {
+    e.stopPropagation()
+    setEditTitle(ticket.title)
+    setEditDesc(ticket.description || '')
+    setEditing(true)
+  }
+
+  const handleEditCancel = (e: MouseEvent) => {
+    e.stopPropagation()
+    setEditing(false)
+  }
+
+  const handleEditSave = async (e: MouseEvent | FormEvent) => {
+    e.stopPropagation()
+    e.preventDefault()
+    if (!editTitle.trim()) return
+    setSaving(true)
+    try {
+      await api.tickets.update(ticket.id, {
+        title: editTitle.trim(),
+        description: editDesc.trim(),
+      })
+      setEditing(false)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Save failed'
+      setActionError(msg)
+      const t = setTimeout(() => setActionError(null), 5000)
+      errorTimerRef.current = t
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const [answer, setAnswer] = useState('')
   const [answering, setAnswering] = useState(false)
   const handleAnswer = async (e: MouseEvent | FormEvent) => {
@@ -106,27 +145,70 @@ export function TicketCard({ ticket, latestActivity, onClick, onOptimistic, deps
           : 'border-[var(--color-border)] bg-[var(--color-bg-panel)] hover:border-[var(--color-accent-blue)]/40'
       }`}
     >
-      <div className="mb-2 flex items-start justify-between gap-2">
-        <h3 className="text-sm font-medium text-[var(--color-text-primary)] line-clamp-2">
-          {ticket.title}
-        </h3>
-        <StatusIndicator status={ticket.status} />
-      </div>
+      {editing ? (
+        <form onClick={(e) => e.stopPropagation()} onSubmit={handleEditSave} className="space-y-2">
+          <input
+            type="text"
+            value={editTitle}
+            onChange={(e) => setEditTitle(e.target.value)}
+            placeholder="Title"
+            autoFocus
+            className="w-full rounded border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-2 py-1 text-sm font-medium text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)] focus:border-[var(--color-accent-blue)] focus:outline-none"
+          />
+          <textarea
+            value={editDesc}
+            onChange={(e) => setEditDesc(e.target.value)}
+            placeholder="Description (markdown)"
+            rows={3}
+            className="w-full rounded border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-2 py-1 text-xs text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)] focus:border-[var(--color-accent-blue)] focus:outline-none resize-y"
+          />
+          <div className="flex items-center gap-1.5">
+            <Button size="sm" onClick={handleEditSave} disabled={saving || !editTitle.trim()}>
+              {saving ? <Loader2 size={12} className="mr-1 animate-spin" /> : <Check size={12} className="mr-1" />}
+              Save
+            </Button>
+            <Button size="sm" variant="secondary" onClick={handleEditCancel} disabled={saving}>
+              <X size={12} className="mr-1" /> Cancel
+            </Button>
+          </div>
+        </form>
+      ) : (
+        <>
+          <div className="mb-2 flex items-start justify-between gap-2">
+            <h3 className="text-sm font-medium text-[var(--color-text-primary)] line-clamp-2">
+              {ticket.title}
+            </h3>
+            <div className="flex items-center gap-1 shrink-0">
+              {ticket.status === 'todo' && (
+                <button
+                  type="button"
+                  onClick={handleEditClick}
+                  className="rounded p-0.5 text-[var(--color-text-muted)] hover:text-[var(--color-accent-blue)] hover:bg-[var(--color-bg-secondary)] transition-colors"
+                  title="Edit ticket"
+                >
+                  <Pencil size={13} />
+                </button>
+              )}
+              <StatusIndicator status={ticket.status} />
+            </div>
+          </div>
 
-      <div className="mb-2 flex items-center gap-1.5">
-        <Badge color="blue">{ticket.branch_type}</Badge>
-        {ticket.status === 'blocked' && <Badge color="red">ESCALATION</Badge>}
-        {ticket.status === 'failed' && <Badge color="red">FAILED</Badge>}
-        {ticket.status === 'verifying' && <Badge color="yellow">VERIFYING</Badge>}
-        {isIdle && <Badge color="gray">IDLE</Badge>}
-      </div>
+          <div className="mb-2 flex items-center gap-1.5">
+            <Badge color="blue">{ticket.branch_type}</Badge>
+            {ticket.status === 'blocked' && <Badge color="red">ESCALATION</Badge>}
+            {ticket.status === 'failed' && <Badge color="red">FAILED</Badge>}
+            {ticket.status === 'verifying' && <Badge color="yellow">VERIFYING</Badge>}
+            {isIdle && <Badge color="gray">IDLE</Badge>}
+          </div>
 
-      <p className="mb-2 truncate text-xs text-[var(--color-text-muted)]">
-        {ticket.branch}
-      </p>
+          <p className="mb-2 truncate text-xs text-[var(--color-text-muted)]">
+            {ticket.branch}
+          </p>
+        </>
+      )}
 
       {/* Dependency labels for TODO tickets */}
-      {ticket.status === 'todo' && depLabels && depLabels.length > 0 && depLabels.some((d) => d.status !== 'merged') && (
+      {!editing && ticket.status === 'todo' && depLabels && depLabels.length > 0 && depLabels.some((d) => d.status !== 'merged') && (
         <div className="mb-2 flex flex-wrap items-center gap-1 text-[11px] text-[var(--color-text-muted)]">
           <Link size={10} className="shrink-0" />
           {depLabels.filter((d) => d.status !== 'merged').map((d) => (
@@ -139,7 +221,7 @@ export function TicketCard({ ticket, latestActivity, onClick, onOptimistic, deps
       )}
 
       {/* Status-specific content */}
-      {ticket.status === 'todo' && (
+      {!editing && ticket.status === 'todo' && (
         <Button
           size="sm"
           onClick={depsBlocked ? undefined : handleStart}

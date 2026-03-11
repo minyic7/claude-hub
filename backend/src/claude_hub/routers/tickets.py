@@ -95,6 +95,10 @@ async def update_ticket(ticket_id: str, body: TicketUpdate):
     if not ticket:
         raise HTTPException(404, "Ticket not found")
 
+    # Only allow editing title/description when ticket is still in TODO
+    if ticket.get("status") != TicketStatus.TODO.value:
+        raise HTTPException(409, "Can only edit tickets in TODO status")
+
     updates = body.model_dump(exclude_none=True)
     if not updates:
         raise HTTPException(400, "No fields to update")
