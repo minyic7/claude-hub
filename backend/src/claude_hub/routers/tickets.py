@@ -193,6 +193,7 @@ async def start_ticket(ticket_id: str):
     task = ticket.get("description") or ticket["title"]
     session_name, log_path = session_manager.start_session(
         ticket_id, clone_path, task, role_prompt, gh_token=gh_token,
+        model="claude-opus-4-6",
     )
     await redis_client.update_ticket_fields(ticket_id, {"tmux_session": session_name})
 
@@ -315,6 +316,7 @@ async def retry_ticket(ticket_id: str, body: dict | None = None):
     role_prompt = get_role_prompt(ticket.get("role", "builder"), ticket["branch"])
     session_name, log_path = session_manager.start_session(
         ticket_id, clone_path, task, role_prompt, gh_token=gh_token,
+        model="claude-opus-4-6",
     )
     await redis_client.update_ticket_fields(ticket_id, {"tmux_session": session_name})
     asyncio.create_task(_tail_and_broadcast(ticket_id, log_path))
@@ -512,6 +514,7 @@ async def request_changes(ticket_id: str, body: dict):
     try:
         session_name, log_path = session_manager.start_session(
             ticket_id, clone_path, task, role_prompt, gh_token=gh_token,
+            model="claude-opus-4-6",
         )
     except Exception as e:
         from claude_hub.services.ticket_service import transition as _tr

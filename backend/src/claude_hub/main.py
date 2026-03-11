@@ -64,6 +64,7 @@ async def _recover_orphaned_tickets() -> None:
                 role_prompt = get_role_prompt(ticket.get("role", "builder"), ticket["branch"])
                 session_name, log_path = session_manager.start_session(
                     tid, clone_path, task, role_prompt, gh_token=gh_token,
+                    model="claude-opus-4-6",
                 )
                 await redis_client.update_ticket_fields(tid, {"tmux_session": session_name})
                 asyncio.create_task(

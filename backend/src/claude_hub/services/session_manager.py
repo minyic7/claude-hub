@@ -58,6 +58,7 @@ def start_session(
     role_prompt: str = "",
     disallowed_tools: str = "",
     gh_token: str = "",
+    model: str = "",
 ) -> tuple[str, str]:
     """Start a Claude Code session in tmux.
 
@@ -83,6 +84,9 @@ def start_session(
         "--verbose",
         "--dangerously-skip-permissions",
     ]
+
+    if model:
+        parts.extend(["--model", model])
 
     disallowed = disallowed_tools or settings.disallowed_tools
     if disallowed:
