@@ -40,6 +40,26 @@ export function TicketCard({ ticket, latestActivity, activityEvents, onClick, on
   const [actionError, setActionError] = useState<string | null>(null)
   const errorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  // Track status changes for transition animations
+  const prevStatusRef = useRef(ticket.status)
+  const [statusEntering, setStatusEntering] = useState(false)
+  const [cardFlash, setCardFlash] = useState(false)
+
+  useEffect(() => {
+    if (prevStatusRef.current !== ticket.status) {
+      prevStatusRef.current = ticket.status
+      // Trigger icon enter animation
+      setStatusEntering(true)
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => setStatusEntering(false))
+      })
+      // Trigger card border flash
+      setCardFlash(true)
+      const t = setTimeout(() => setCardFlash(false), 600)
+      return () => clearTimeout(t)
+    }
+  }, [ticket.status])
+
   useEffect(() => {
     return () => {
       if (errorTimerRef.current) clearTimeout(errorTimerRef.current)
@@ -169,7 +189,8 @@ export function TicketCard({ ticket, latestActivity, activityEvents, onClick, on
         isBlocked
           ? 'border-[var(--color-accent-red)]/60 bg-[var(--color-accent-red)]/5 hover:border-[var(--color-accent-red)]'
           : 'border-[var(--color-border)] bg-[var(--color-bg-panel)] hover:border-[var(--color-accent-blue)]/40'
-      }`}
+      }${cardFlash ? ' ticket-card--flash' : ''}`}
+      style={cardFlash ? { '--flash-color': statusFlashColor(ticket.status) } as React.CSSProperties : undefined}
     >
       {editing ? (
         <form onClick={(e) => e.stopPropagation()} onSubmit={handleEditSave} className="space-y-2">
@@ -215,7 +236,7 @@ export function TicketCard({ ticket, latestActivity, activityEvents, onClick, on
                   <Pencil size={13} />
                 </button>
               )}
-              <StatusIndicator status={ticket.status} />
+              <StatusIndicator status={ticket.status} entering={statusEntering} />
             </div>
           </div>
 
@@ -426,22 +447,33 @@ function depDotColor(status: TicketStatus): string {
   }
 }
 
-function StatusIndicator({ status }: { status: string }) {
+function statusFlashColor(status: string): string {
+  switch (status) {
+    case 'in_progress': return 'var(--color-accent-blue)'
+    case 'blocked': case 'failed': return 'var(--color-accent-red)'
+    case 'review': case 'verifying': return 'var(--color-accent-yellow)'
+    case 'merging': case 'merged': return 'var(--color-accent-green)'
+    default: return 'var(--color-accent-blue)'
+  }
+}
+
+function StatusIndicator({ status, entering }: { status: string; entering?: boolean }) {
+  const cls = `shrink-0 status-icon${entering ? ' status-icon--enter' : ''}`
   switch (status) {
     case 'in_progress':
-      return <CircleDot size={14} className="shrink-0 text-[var(--color-accent-blue)] animate-pulse" />
+      return <CircleDot size={14} className={`${cls} text-[var(--color-accent-blue)] animate-pulse`} />
     case 'blocked':
-      return <AlertCircle size={14} className="shrink-0 text-[var(--color-accent-red)] animate-pulse" />
+      return <AlertCircle size={14} className={`${cls} text-[var(--color-accent-red)] animate-pulse`} />
     case 'verifying':
-      return <Loader2 size={14} className="shrink-0 text-[var(--color-accent-yellow)] animate-spin" />
+      return <Loader2 size={14} className={`${cls} text-[var(--color-accent-yellow)] animate-spin`} />
     case 'failed':
-      return <AlertCircle size={14} className="shrink-0 text-[var(--color-accent-red)]" />
+      return <AlertCircle size={14} className={`${cls} text-[var(--color-accent-red)]`} />
     case 'review':
-      return <CircleDot size={14} className="shrink-0 text-[var(--color-accent-yellow)]" />
+      return <CircleDot size={14} className={`${cls} text-[var(--color-accent-yellow)]`} />
     case 'merging':
-      return <Loader2 size={14} className="shrink-0 text-[var(--color-accent-green)] animate-spin" />
+      return <Loader2 size={14} className={`${cls} text-[var(--color-accent-green)] animate-spin`} />
     case 'merged':
-      return <Check size={14} className="shrink-0 text-[var(--color-accent-green)]" />
+      return <Check size={14} className={`${cls} text-[var(--color-accent-green)]`} />
     default:
       return null
   }
