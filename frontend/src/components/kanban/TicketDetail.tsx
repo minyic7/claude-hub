@@ -8,6 +8,7 @@ import { ActivityLog } from '../activity/ActivityLog'
 import { StatusTimeline } from './StatusTimeline'
 import { EscalationBanner } from '../activity/EscalationBanner'
 import { api, type CIStatus } from '../../lib/api'
+import { ConfirmationDialog } from '../common/ConfirmationDialog'
 
 interface TicketDetailProps {
   ticket: Ticket
@@ -49,6 +50,8 @@ export function TicketDetail({ ticket, activities, allTickets, onClose, onDelete
   const [submitting, setSubmitting] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [confirmStop, setConfirmStop] = useState(false)
+  const [stopping, setStopping] = useState(false)
   const [editing, setEditing] = useState(false)
   const [editTitle, setEditTitle] = useState(ticket.title)
   const [editDescription, setEditDescription] = useState(ticket.description)
@@ -75,7 +78,13 @@ export function TicketDetail({ ticket, activities, allTickets, onClose, onDelete
   }, [ticket.id, ticket.status])
 
   const handleStop = async () => {
-    try { await api.tickets.stop(ticket.id) } catch { /* global handler */ }
+    setStopping(true)
+    try {
+      await api.tickets.stop(ticket.id)
+    } catch { /* global handler */ } finally {
+      setStopping(false)
+      setConfirmStop(false)
+    }
   }
 
   const handleRetry = async () => {
@@ -183,7 +192,7 @@ export function TicketDetail({ ticket, activities, allTickets, onClose, onDelete
         </button>
         <div className="flex gap-2">
           {isRunning && (
-            <Button size="sm" variant="danger" onClick={handleStop}>
+            <Button size="sm" variant="danger" onClick={() => setConfirmStop(true)}>
               <Square size={12} className="mr-1" /> Stop
             </Button>
           )}
@@ -217,25 +226,13 @@ export function TicketDetail({ ticket, activities, allTickets, onClose, onDelete
               <Pencil size={12} className="mr-1" /> Edit
             </Button>
           )}
-          {!confirmDelete ? (
-            <button
-              onClick={() => setConfirmDelete(true)}
-              className="rounded p-1 text-[var(--color-text-muted)] hover:bg-[var(--color-accent-red)]/10 hover:text-[var(--color-accent-red)]"
-              title="Delete ticket"
-            >
-              <Trash2 size={14} />
-            </button>
-          ) : (
-            <div className="flex items-center gap-1">
-              <span className="text-xs text-[var(--color-text-muted)]">Delete?</span>
-              <Button size="sm" variant="danger" onClick={handleDelete} disabled={deleting}>
-                {deleting ? '...' : 'Yes'}
-              </Button>
-              <Button size="sm" variant="secondary" onClick={() => setConfirmDelete(false)}>
-                <X size={12} />
-              </Button>
-            </div>
-          )}
+          <button
+            onClick={() => setConfirmDelete(true)}
+            className="rounded p-1 text-[var(--color-text-muted)] hover:bg-[var(--color-accent-red)]/10 hover:text-[var(--color-accent-red)]"
+            title="Delete ticket"
+          >
+            <Trash2 size={14} />
+          </button>
         </div>
       </div>
 
@@ -557,6 +554,28 @@ export function TicketDetail({ ticket, activities, allTickets, onClose, onDelete
           </a>
         )}
       </div>
+
+      <ConfirmationDialog
+        open={confirmDelete}
+        onClose={() => setConfirmDelete(false)}
+        onConfirm={handleDelete}
+        title="Delete Ticket"
+        description="This will permanently delete this ticket and cannot be undone."
+        ticketTitle={ticket.title}
+        confirmLabel="Delete"
+        loading={deleting}
+      />
+
+      <ConfirmationDialog
+        open={confirmStop}
+        onClose={() => setConfirmStop(false)}
+        onConfirm={handleStop}
+        title="Stop Ticket"
+        description="This will stop the running Claude Code session for this ticket."
+        ticketTitle={ticket.title}
+        confirmLabel="Stop"
+        loading={stopping}
+      />
     </div>
   )
 }
