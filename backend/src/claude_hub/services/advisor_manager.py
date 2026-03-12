@@ -36,25 +36,31 @@ def _tmux_is_dead(name: str) -> bool:
 
 
 def _restore_claude_config() -> None:
-    """Restore .claude.json from backup if missing and ensure onboarding is complete.
+    """Ensure ~/.claude.json survives container rebuilds.
 
-    The volume only persists ~/.claude/ (subdir), but .claude.json lives at
-    ~/. On container rebuild it gets lost. Auto-restore from backup.
+    The Docker volume persists ~/.claude/ (subdir) but ~/.claude.json is in ~/
+    which gets wiped on container rebuild. Strategy:
+    1. If ~/.claude.json exists as a regular file, move it into the volume
+    2. Create a symlink ~/.claude.json -> ~/.claude/.claude.json
+    This way the file lives inside the persisted volume.
     Also ensures settings.json marks onboarding as complete to skip theme picker.
     """
     import json as _json
 
     home = os.path.expanduser("~")
     config_path = os.path.join(home, ".claude.json")
-    if not os.path.exists(config_path):
-        backup_dir = os.path.join(home, ".claude", "backups")
-        if os.path.isdir(backup_dir):
-            import glob as globmod
-            backups = sorted(globmod.glob(os.path.join(backup_dir, ".claude.json.backup.*")))
-            if backups:
-                import shutil
-                shutil.copy2(backups[-1], config_path)
-                logger.info("Restored %s from %s", config_path, backups[-1])
+    volume_path = os.path.join(home, ".claude", ".claude.json")
+
+    # If config exists as a regular file (not symlink), move it into the volume
+    if os.path.isfile(config_path) and not os.path.islink(config_path):
+        import shutil
+        shutil.move(config_path, volume_path)
+        logger.info("Moved %s into volume at %s", config_path, volume_path)
+
+    # Create symlink if it doesn't exist but volume copy does
+    if not os.path.exists(config_path) and os.path.exists(volume_path):
+        os.symlink(volume_path, config_path)
+        logger.info("Symlinked %s -> %s", config_path, volume_path)
 
     # Ensure onboarding is marked complete (skips theme picker in interactive mode)
     settings_path = os.path.join(home, ".claude", "settings.json")
