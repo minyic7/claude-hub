@@ -58,7 +58,9 @@ COPY backend/ ./
 COPY --from=frontend-build /app/frontend/dist /app/backend/static
 
 # ─── Non-root user (Claude Code refuses --dangerously-skip-permissions as root)
-RUN useradd -m -s /bin/bash claude && \
+RUN apt-get update && apt-get install -y --no-install-recommends sudo && rm -rf /var/lib/apt/lists/* && \
+    useradd -m -s /bin/bash claude && \
+    echo "claude ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/claude && \
     mkdir -p /data/clones /data/references /data/logs && \
     chown -R claude:claude /data /app
 
