@@ -35,6 +35,29 @@ def _tmux_is_dead(name: str) -> bool:
     return result.returncode != 0 or result.stdout.strip() == "1"
 
 
+def _restore_claude_config() -> None:
+    """Restore .claude.json from backup if missing.
+
+    The volume only persists ~/.claude/ (subdir), but .claude.json lives at
+    ~/. On container rebuild it gets lost. Auto-restore from backup.
+    """
+    home = os.path.expanduser("~")
+    config_path = os.path.join(home, ".claude.json")
+    if os.path.exists(config_path):
+        return
+
+    backup_dir = os.path.join(home, ".claude", "backups")
+    if not os.path.isdir(backup_dir):
+        return
+
+    import glob as globmod
+    backups = sorted(globmod.glob(os.path.join(backup_dir, ".claude.json.backup.*")))
+    if backups:
+        import shutil
+        shutil.copy2(backups[-1], config_path)
+        logger.info("Restored %s from %s", config_path, backups[-1])
+
+
 def _clean_env() -> dict[str, str]:
     return {
         k: v for k, v in os.environ.items()
@@ -164,6 +187,9 @@ def start_advisor(project: dict, gh_token: str = "") -> str:
     """
     project_id = project["id"]
     name = _session_name(project_id)
+
+    # Ensure Claude CLI config exists (may be lost on container rebuild)
+    _restore_claude_config()
 
     # Kill existing session if any
     if _tmux_exists(name):
