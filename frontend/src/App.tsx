@@ -3,6 +3,7 @@ import { useWebSocket } from './hooks/useWebSocket'
 import { useTickets } from './hooks/useTickets'
 import { useNotifications } from './hooks/useNotifications'
 import { useDeployStatus } from './hooks/useDeployStatus'
+import { useVersionPolling } from './hooks/useVersionPolling'
 import { AppShell } from './components/layout/AppShell'
 import { KanbanBoard } from './components/layout/KanbanBoard'
 import { TicketDetail } from './components/kanban/TicketDetail'
@@ -100,16 +101,24 @@ function AuthedApp() {
     return filtered
   }, [tickets, activeProjectId, branchTypeFilter])
 
+  // Version polling: detect when a new deploy lands
+  const { startFastPolling, newVersionAvailable } = useVersionPolling(
+    useCallback(() => {
+      addNotification('info', 'New version deployed — click the banner to refresh')
+    }, [addNotification]),
+  )
+
   // Merge queue: lock merge buttons while a deploy is in progress
   const [mergeQueueLocked, setMergeQueueLocked] = useState(false)
   const lockTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const onMergeInitiated = useCallback(() => {
     setMergeQueueLocked(true)
+    startFastPolling()
     // Safety timeout: unlock after 5 min in case deploy detection fails
     if (lockTimerRef.current) clearTimeout(lockTimerRef.current)
     lockTimerRef.current = setTimeout(() => setMergeQueueLocked(false), 5 * 60_000)
-  }, [])
+  }, [startFastPolling])
 
   const onDeployComplete = useCallback((run: { conclusion: string | null; name: string }) => {
     setMergeQueueLocked(false)
@@ -140,6 +149,14 @@ function AuthedApp() {
 
   return (
     <>
+    {newVersionAvailable && (
+      <div
+        onClick={() => window.location.reload()}
+        className="fixed top-0 left-0 right-0 z-50 cursor-pointer bg-blue-600 text-white text-center py-2 text-sm font-medium shadow-md hover:bg-blue-700 transition-colors"
+      >
+        New version deployed — click to refresh
+      </div>
+    )}
     <AppShell
       connected={connected}
       projects={projects}
