@@ -19,6 +19,7 @@ function derivePhase(summary: string): string {
 
 interface DepLabel {
   id: string
+  seq?: number
   title?: string
   status: string
 }
@@ -252,6 +253,7 @@ export function TicketCard({ ticket, latestActivity, activityEvents, onClick, on
         <>
           <div className="mb-2 flex items-start justify-between gap-2">
             <h3 className="text-sm font-medium text-[var(--color-text-primary)] line-clamp-2">
+              {ticket.seq > 0 && <span className="text-[var(--color-text-muted)] mr-1">#{ticket.seq}</span>}
               {ticket.title}
             </h3>
             <div className="flex items-center gap-1 shrink-0">
@@ -312,8 +314,11 @@ export function TicketCard({ ticket, latestActivity, activityEvents, onClick, on
             >
               <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${depDotColor(d.status as TicketStatus)}`} />
               <span className="text-[var(--color-text-muted)]">Depends on:</span>
-              <span className={`truncate font-medium ${d.status === 'merged' ? 'text-[var(--color-text-muted)] line-through opacity-60' : 'text-[var(--color-text-secondary)]'}`}>
-                {d.title || `#${d.id.slice(0, 6)}`}
+              <span
+                className={`truncate font-medium ${d.status === 'merged' ? 'text-[var(--color-text-muted)] line-through opacity-60' : 'text-[var(--color-text-secondary)]'}`}
+                title={d.title}
+              >
+                {d.seq ? `#${d.seq}` : d.title || `#${d.id.slice(0, 6)}`}
               </span>
             </button>
           ))}
@@ -338,7 +343,7 @@ export function TicketCard({ ticket, latestActivity, activityEvents, onClick, on
           {depsBlocked && depLabels && (
             <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 hidden group-hover/start:block z-10">
               <div className="whitespace-nowrap rounded bg-[var(--color-bg-secondary)] border border-[var(--color-border)] px-2 py-1 text-[11px] text-[var(--color-text-muted)] shadow-lg">
-                Waiting for {depLabels.filter((d) => d.status !== 'merged').map((d) => d.title || `#${d.id.slice(0, 6)}`).join(', ')} to be merged
+                Waiting for {depLabels.filter((d) => d.status !== 'merged').map((d) => d.seq ? `#${d.seq}` : d.title || `#${d.id.slice(0, 6)}`).join(', ')} to be merged
               </div>
             </div>
           )}

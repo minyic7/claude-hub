@@ -54,7 +54,7 @@ export function SortableTicketCard({
 
   const depLabels = ticket.depends_on.length > 0 ? ticket.depends_on.map((depId) => {
     const dep = allTickets.get(depId)
-    return { id: depId, title: dep?.title, status: dep?.status || 'unknown' }
+    return { id: depId, seq: dep?.seq, title: dep?.title, status: dep?.status || 'unknown' }
   }) : []
 
   const handleDepClick = (depId: string) => {

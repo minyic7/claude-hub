@@ -30,6 +30,7 @@ export interface ProjectCreate {
 export interface Ticket {
   id: string
   project_id: string
+  seq: number
   title: string
   description: string
   branch_type: BranchType

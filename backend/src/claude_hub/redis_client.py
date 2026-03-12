@@ -170,6 +170,46 @@ async def update_ticket_fields(ticket_id: str, fields: dict) -> None:
     await r.hset(f"ticket:{ticket_id}", mapping=mapping)
 
 
+# ─── Ticket sequence helpers ─────────────────────────────────────────────────
+
+async def next_ticket_seq(project_id: str) -> int:
+    """Atomically increment and return the next per-project ticket sequence number."""
+    r = _r()
+    return int(await r.incr(f"project:{project_id}:ticket_seq"))
+
+
+async def backfill_ticket_seqs(project_id: str) -> None:
+    """Assign seq numbers to existing tickets that have seq=0, sorted by created_at.
+
+    Also sets the counter so future tickets continue from the max.
+    """
+    r = _r()
+    # Check if backfill already done (counter exists)
+    counter = await r.get(f"project:{project_id}:ticket_seq")
+    if counter is not None:
+        return
+
+    ids = await r.smembers(f"project:{project_id}:tickets")
+    if not ids:
+        return
+
+    # Load tickets and sort by created_at
+    tickets = []
+    for tid in ids:
+        data = await r.hgetall(f"ticket:{tid}")
+        if data:
+            tickets.append(data)
+    tickets.sort(key=lambda t: t.get("created_at", ""))
+
+    # Assign seq 1, 2, 3... and set counter
+    for i, t in enumerate(tickets, start=1):
+        await r.hset(f"ticket:{t['id']}", "seq", str(i))
+
+    # Set counter to highest assigned seq
+    if tickets:
+        await r.set(f"project:{project_id}:ticket_seq", str(len(tickets)))
+
+
 # ─── Activity helpers ────────────────────────────────────────────────────────
 
 async def append_activity(ticket_id: str, event: dict) -> None:
@@ -211,7 +251,7 @@ async def get_cost_summary() -> dict:
 _JSON_FIELDS = {"metadata", "depends_on"}
 _FLOAT_FIELDS = {"agent_cost_usd"}
 _INT_FIELDS = {"pr_number"}
-_INT_FIELDS_DEFAULT_ZERO = {"priority", "agent_tokens"}
+_INT_FIELDS_DEFAULT_ZERO = {"priority", "agent_tokens", "seq"}
 _BOOL_FIELDS = {"has_conflicts", "archived"}
 _NULLABLE_FIELDS = {
     "blocked_question", "failed_reason", "clone_path", "pr_url",

@@ -130,6 +130,7 @@ export function CreateTicketModal({ open, onClose, projectId, tickets }: CreateT
                       {selected && <Check size={10} />}
                     </span>
                     <span className="flex-1 truncate text-[var(--color-text-primary)]">
+                      {dep.seq > 0 && <span className="text-[var(--color-text-muted)] mr-1">#{dep.seq}</span>}
                       {dep.title}
                     </span>
                     <span className="shrink-0 text-[10px] text-[var(--color-text-muted)]">
