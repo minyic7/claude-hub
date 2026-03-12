@@ -2,9 +2,10 @@
 
 import asyncio
 import fcntl
+import json
 import logging
 import os
-import pty
+import signal
 import struct
 import termios
 
@@ -75,7 +76,10 @@ async def advisor_status(project_id: str):
 
 @ws_router.websocket("/ws/advisor/{project_id}/terminal")
 async def advisor_terminal(websocket: WebSocket, project_id: str, token: str = Query(default="")):
-    """WebSocket endpoint that bridges xterm.js to the advisor tmux session via PTY."""
+    """WebSocket endpoint that bridges xterm.js to the advisor tmux session via PTY.
+
+    Uses pty.fork() to get a proper controlling terminal for tmux attach.
+    """
     # Auth check
     if settings.auth_enabled and not verify_ws_token(token):
         await websocket.close(code=4001, reason="Invalid or missing token")
@@ -96,24 +100,34 @@ async def advisor_terminal(websocket: WebSocket, project_id: str, token: str = Q
     await websocket.accept()
     logger.info("Advisor terminal connected for project %s", project_id)
 
-    # Create PTY pair
+    # Use subprocess with script command to allocate a proper PTY
+    # 'script' creates a proper controlling terminal that tmux needs
+    import pty
     master_fd, slave_fd = pty.openpty()
 
-    # Set initial size (will be updated by client resize messages)
+    # Set initial terminal size
     _set_pty_size(master_fd, 80, 24)
 
-    # Spawn tmux attach using the slave as stdin/stdout/stderr
+    # Set slave as controlling terminal in child via preexec_fn
+    def _child_setup():
+        """Make the slave PTY the controlling terminal for the child process."""
+        os.setsid()
+        # TIOCSCTTY: set controlling terminal
+        import fcntl as _fcntl
+        _fcntl.ioctl(slave_fd, termios.TIOCSCTTY, 0)
+
     process = await asyncio.create_subprocess_exec(
         "tmux", "attach-session", "-t", session_name,
         stdin=slave_fd,
         stdout=slave_fd,
         stderr=slave_fd,
-        preexec_fn=os.setsid,
+        preexec_fn=_child_setup,
     )
-    # Close slave in parent — only master is used
+    # Close slave in parent — only master is used for I/O
     os.close(slave_fd)
 
     loop = asyncio.get_event_loop()
+    child_pid = process.pid
 
     async def _read_pty():
         """Read from PTY master and send to WebSocket."""
@@ -138,11 +152,16 @@ async def advisor_terminal(websocket: WebSocket, project_id: str, token: str = Q
                     # Check for resize message (binary: 0x01 + JSON)
                     if data and data[0:1] == b"\x01":
                         try:
-                            import json
                             resize = json.loads(data[1:])
                             cols = resize.get("cols", 80)
                             rows = resize.get("rows", 24)
                             _set_pty_size(master_fd, cols, rows)
+                            # Also notify tmux of the size change
+                            if child_pid:
+                                try:
+                                    os.kill(child_pid, signal.SIGWINCH)
+                                except ProcessLookupError:
+                                    pass
                         except (json.JSONDecodeError, KeyError):
                             pass
                     else:
