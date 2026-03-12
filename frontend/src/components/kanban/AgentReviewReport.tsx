@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { CheckCircle, XCircle, AlertTriangle, Info, ChevronDown, ChevronRight } from 'lucide-react'
+import { CheckCircle, XCircle, AlertTriangle, Info, ChevronDown, ChevronRight, TrendingUp, TrendingDown, Minus } from 'lucide-react'
 
 interface ReviewScores {
   correctness: number
@@ -29,7 +29,30 @@ interface AgentReviewReportProps {
   reviewJson: string
 }
 
-function ScoreRing({ score, label, size = 48 }: { score: number; label: string; size?: number }) {
+function avgScore(scores: ReviewScores): number {
+  return Math.round((scores.correctness + scores.security + scores.quality + scores.completeness) / 4 * 10) / 10
+}
+
+function ScoreDelta({ current, previous }: { current: number; previous: number }) {
+  const delta = Math.round((current - previous) * 10) / 10
+  if (delta === 0) {
+    return <Minus size={10} className="text-[var(--color-text-muted)]" />
+  }
+  if (delta > 0) {
+    return (
+      <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-[var(--color-accent-green)]">
+        <TrendingUp size={10} />+{delta}
+      </span>
+    )
+  }
+  return (
+    <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-[var(--color-accent-red)]">
+      <TrendingDown size={10} />{delta}
+    </span>
+  )
+}
+
+function ScoreRing({ score, label, size = 48, previousScore }: { score: number; label: string; size?: number; previousScore?: number }) {
   const r = (size - 6) / 2
   const circumference = 2 * Math.PI * r
   const pct = score / 10
@@ -57,11 +80,12 @@ function ScoreRing({ score, label, size = 48 }: { score: number; label: string; 
         </text>
       </svg>
       <span className="text-[10px] text-[var(--color-text-muted)]">{label}</span>
+      {previousScore !== undefined && <ScoreDelta current={score} previous={previousScore} />}
     </div>
   )
 }
 
-function ScoreRadar({ scores, size = 120 }: { scores: ReviewScores; size?: number }) {
+function ScoreRadar({ scores, previousScores, size = 120 }: { scores: ReviewScores; previousScores?: ReviewScores; size?: number }) {
   const cx = size / 2
   const cy = size / 2
   const maxR = size * 0.38
@@ -94,6 +118,20 @@ function ScoreRadar({ scores, size = 120 }: { scores: ReviewScores; size?: numbe
         const [x, y] = getPoint(i, maxR)
         return <line key={i} x1={cx} y1={cy} x2={x} y2={y} stroke="var(--color-border)" strokeWidth={0.5} />
       })}
+      {/* Previous round ghost polygon */}
+      {previousScores && (() => {
+        const prevValues = [previousScores.correctness, previousScores.security, previousScores.quality, previousScores.completeness]
+        const prevPoints = prevValues.map((v, i) => getPoint(i, maxR * (Math.max(v, 0.5) / 10)))
+        const prevPath = prevPoints.map((p, i) => `${i === 0 ? 'M' : 'L'}${p[0]},${p[1]}`).join(' ') + ' Z'
+        return (
+          <>
+            <path d={prevPath} fill="var(--color-text-muted)" fillOpacity={0.08} stroke="var(--color-text-muted)" strokeWidth={1} strokeDasharray="3,2" />
+            {prevPoints.map((p, i) => (
+              <circle key={`prev-${i}`} cx={p[0]} cy={p[1]} r={1.5} fill="var(--color-text-muted)" fillOpacity={0.4} />
+            ))}
+          </>
+        )
+      })()}
       {/* Data */}
       <path d={dataPath} fill="var(--color-accent-blue)" fillOpacity={0.15} stroke="var(--color-accent-blue)" strokeWidth={1.5} />
       {dataPoints.map((p, i) => (
@@ -119,11 +157,10 @@ const severityConfig = {
   minor: { icon: Info, className: 'text-[var(--color-text-muted)]', bg: 'bg-[var(--color-bg-secondary)]' },
 }
 
-function ReviewRoundCard({ review }: { review: ReviewRound }) {
-  const avg = Math.round(
-    (review.scores.correctness + review.scores.security + review.scores.quality + review.scores.completeness) / 4 * 10
-  ) / 10
+function ReviewRoundCard({ review, previousReview }: { review: ReviewRound; previousReview?: ReviewRound }) {
+  const avg = avgScore(review.scores)
   const approved = review.verdict === 'approve'
+  const prevAvg = previousReview ? avgScore(previousReview.scores) : undefined
 
   return (
     <div className="space-y-3">
@@ -139,18 +176,38 @@ function ReviewRoundCard({ review }: { review: ReviewRound }) {
         <span className="ml-auto text-xs text-[var(--color-text-muted)]">Avg: {avg}/10</span>
       </div>
 
+      {/* Round comparison summary */}
+      {previousReview && prevAvg !== undefined && (
+        <div className="flex items-center gap-1.5 text-xs">
+          {(() => {
+            const delta = Math.round((avg - prevAvg) * 10) / 10
+            const sign = delta > 0 ? '+' : ''
+            const color = delta > 0
+              ? 'text-[var(--color-accent-green)]'
+              : delta < 0
+                ? 'text-[var(--color-accent-red)]'
+                : 'text-[var(--color-text-muted)]'
+            return (
+              <span className={`font-medium ${color}`}>
+                Round {review.round}: {sign}{delta} avg vs Round {previousReview.round}
+              </span>
+            )
+          })()}
+        </div>
+      )}
+
       {/* Summary */}
       <p className="text-xs text-[var(--color-text-secondary)]">{review.summary}</p>
 
       {/* Scores */}
       <div className="flex items-start gap-4">
         <div className="flex gap-2">
-          <ScoreRing score={review.scores.correctness} label="Correct" />
-          <ScoreRing score={review.scores.security} label="Security" />
-          <ScoreRing score={review.scores.quality} label="Quality" />
-          <ScoreRing score={review.scores.completeness} label="Complete" />
+          <ScoreRing score={review.scores.correctness} label="Correct" previousScore={previousReview?.scores.correctness} />
+          <ScoreRing score={review.scores.security} label="Security" previousScore={previousReview?.scores.security} />
+          <ScoreRing score={review.scores.quality} label="Quality" previousScore={previousReview?.scores.quality} />
+          <ScoreRing score={review.scores.completeness} label="Complete" previousScore={previousReview?.scores.completeness} />
         </div>
-        <ScoreRadar scores={review.scores} size={100} />
+        <ScoreRadar scores={review.scores} previousScores={previousReview?.scores} size={100} />
       </div>
 
       {/* Issues */}
@@ -186,7 +243,7 @@ function ReviewRoundCard({ review }: { review: ReviewRound }) {
   )
 }
 
-function CollapsibleRound({ review }: { review: ReviewRound }) {
+function CollapsibleRound({ review, previousReview }: { review: ReviewRound; previousReview?: ReviewRound }) {
   const [expanded, setExpanded] = useState(false)
   const approved = review.verdict === 'approve'
   const ts = review.timestamp ? new Date(review.timestamp).toLocaleString() : ''
@@ -209,9 +266,41 @@ function CollapsibleRound({ review }: { review: ReviewRound }) {
       </button>
       {expanded && (
         <div className="border-t border-[var(--color-border)] px-3 py-2">
-          <ReviewRoundCard review={review} />
+          <ReviewRoundCard review={review} previousReview={previousReview} />
         </div>
       )}
+    </div>
+  )
+}
+
+function Sparkline({ values, width = 80, height = 24 }: { values: number[]; width?: number; height?: number }) {
+  if (values.length < 2) return null
+  const min = Math.min(...values)
+  const max = Math.max(...values)
+  const range = max - min || 1
+  const pad = 2
+
+  const points = values.map((v, i) => {
+    const x = pad + (i / (values.length - 1)) * (width - 2 * pad)
+    const y = height - pad - ((v - min) / range) * (height - 2 * pad)
+    return [x, y] as const
+  })
+
+  const pathD = points.map((p, i) => `${i === 0 ? 'M' : 'L'}${p[0]},${p[1]}`).join(' ')
+  const trend = values[values.length - 1] - values[0]
+  const color = trend > 0 ? 'var(--color-accent-green)' : trend < 0 ? 'var(--color-accent-red)' : 'var(--color-text-muted)'
+
+  return (
+    <div className="inline-flex items-center gap-1.5">
+      <svg width={width} height={height}>
+        <path d={pathD} fill="none" stroke={color} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
+        {points.map(([x, y], i) => (
+          <circle key={i} cx={x} cy={y} r={i === points.length - 1 ? 2.5 : 1.5} fill={color} />
+        ))}
+      </svg>
+      <span className="text-[10px] text-[var(--color-text-muted)]">
+        {values.map((v) => v.toFixed(1)).join(' / ')}
+      </span>
     </div>
   )
 }
@@ -233,12 +322,24 @@ export function AgentReviewReport({ reviewJson }: AgentReviewReportProps) {
 
   const latest = rounds[rounds.length - 1]
   const previous = rounds.slice(0, -1)
+  const previousOfLatest = rounds.length > 1 ? rounds[rounds.length - 2] : undefined
+
+  // Average scores across all rounds for sparkline
+  const avgScores = rounds.map((r) => avgScore(r.scores))
 
   return (
     <div className="space-y-2">
+      {/* Sparkline trend across all rounds */}
+      {rounds.length >= 2 && (
+        <div className="flex items-center gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-3 py-1.5">
+          <span className="text-[10px] font-medium text-[var(--color-text-muted)]">Avg trend:</span>
+          <Sparkline values={avgScores} />
+        </div>
+      )}
+
       {/* Previous rounds — collapsed */}
-      {previous.map((r) => (
-        <CollapsibleRound key={r.round} review={r} />
+      {previous.map((r, i) => (
+        <CollapsibleRound key={r.round} review={r} previousReview={i > 0 ? previous[i - 1] : undefined} />
       ))}
 
       {/* Latest round — always expanded */}
@@ -253,7 +354,7 @@ export function AgentReviewReport({ reviewJson }: AgentReviewReportProps) {
             </span>
           )}
         </div>
-        <ReviewRoundCard review={latest} />
+        <ReviewRoundCard review={latest} previousReview={previousOfLatest} />
       </div>
     </div>
   )
