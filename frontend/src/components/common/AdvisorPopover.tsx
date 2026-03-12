@@ -3,18 +3,16 @@ import { MessageSquare, RefreshCw, Terminal } from 'lucide-react'
 import { api } from '../../lib/api'
 import type { AdvisorStatus } from '../../lib/api'
 import { Button } from './Button'
-import { AdvisorTerminal } from './AdvisorTerminal'
-
 interface AdvisorPopoverProps {
   projectId: string
   onClose: () => void
+  onOpenTerminal: () => void
 }
 
-export function AdvisorPopover({ projectId, onClose }: AdvisorPopoverProps) {
+export function AdvisorPopover({ projectId, onClose, onOpenTerminal }: AdvisorPopoverProps) {
   const [status, setStatus] = useState<AdvisorStatus | null>(null)
   const [loading, setLoading] = useState(false)
   const [restarting, setRestarting] = useState(false)
-  const [showTerminal, setShowTerminal] = useState(false)
   const [showRestartConfirm, setShowRestartConfirm] = useState(false)
 
   const fetchStatus = useCallback(async () => {
@@ -36,7 +34,7 @@ export function AdvisorPopover({ projectId, onClose }: AdvisorPopoverProps) {
       const s = await api.advisor.start(projectId)
       setStatus(s)
       // Auto-open terminal after starting
-      setShowTerminal(true)
+      onOpenTerminal()
       onClose()
     } catch {
       // error handled by global handler
@@ -59,7 +57,7 @@ export function AdvisorPopover({ projectId, onClose }: AdvisorPopoverProps) {
   }
 
   const handleOpenTerminal = () => {
-    setShowTerminal(true)
+    onOpenTerminal()
     onClose()
   }
 
@@ -138,13 +136,6 @@ export function AdvisorPopover({ projectId, onClose }: AdvisorPopoverProps) {
         </div>
       </div>
 
-      {/* Terminal modal */}
-      {showTerminal && (
-        <AdvisorTerminal
-          projectId={projectId}
-          onClose={() => setShowTerminal(false)}
-        />
-      )}
     </>
   )
 }

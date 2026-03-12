@@ -7,6 +7,7 @@ import { CreateTicketModal } from '../tickets/CreateTicketModal'
 import { CreateProjectModal } from '../projects/CreateProjectModal'
 import { AgentSettingsModal } from '../settings/AgentSettingsModal'
 import { AdvisorPopover } from '../common/AdvisorPopover'
+import { AdvisorTerminal } from '../common/AdvisorTerminal'
 import { clearToken, getToken } from '../../lib/api'
 import type { DeployState } from '../../hooks/useDeployStatus'
 import type { WorkflowRun } from '../../lib/api'
@@ -37,6 +38,7 @@ export function AppShell({
   const [showNotifications, setShowNotifications] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [showAdvisor, setShowAdvisor] = useState(false)
+  const [showAdvisorTerminal, setShowAdvisorTerminal] = useState(false)
 
   const activeProject = activeProjectId ? projects.get(activeProjectId) : null
 
@@ -224,6 +226,7 @@ export function AppShell({
                 <AdvisorPopover
                   projectId={activeProjectId}
                   onClose={() => setShowAdvisor(false)}
+                  onOpenTerminal={() => setShowAdvisorTerminal(true)}
                 />
               )}
             </div>
@@ -280,6 +283,12 @@ export function AppShell({
       )}
       <CreateProjectModal open={showCreateProject} onClose={() => setShowCreateProject(false)} />
       <AgentSettingsModal open={showSettings} onClose={() => setShowSettings(false)} />
+      {showAdvisorTerminal && activeProjectId && (
+        <AdvisorTerminal
+          projectId={activeProjectId}
+          onClose={() => setShowAdvisorTerminal(false)}
+        />
+      )}
     </div>
   )
 }
