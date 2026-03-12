@@ -35,7 +35,6 @@ export interface Ticket {
   branch: string
   repo_url: string
   base_branch: string
-  role: string
   status: TicketStatus
   blocked_question: string | null
   failed_reason: string | null
@@ -61,6 +60,5 @@ export interface TicketCreate {
   title: string
   description?: string
   branch_type?: BranchType
-  role?: string
   depends_on?: string[]
 }

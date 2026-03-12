@@ -64,7 +64,6 @@ async def create_ticket(body: TicketCreate):
         branch=_make_branch(body.branch_type.value, body.title, ticket_id),
         repo_url=project["repo_url"],
         base_branch=project.get("base_branch", "main"),
-        role=body.role,
         source=body.source,
         external_id=body.external_id,
         metadata=body.metadata,
@@ -143,7 +142,6 @@ async def get_activity(ticket_id: str, since: int = Query(0)):
 async def start_ticket(ticket_id: str):
     import asyncio
     from claude_hub.services import clone_manager, session_manager
-    from claude_hub.services.context_engine import get_role_prompt
     from claude_hub.services.ticket_service import InvalidTransition, transition
 
     ticket = await redis_client.get_ticket(ticket_id)
@@ -193,10 +191,9 @@ async def start_ticket(ticket_id: str):
     await redis_client.update_ticket_fields(ticket_id, {"clone_path": clone_path})
 
     # Start Claude Code session
-    role_prompt = get_role_prompt(ticket.get("role", "builder"), ticket["branch"])
     task = ticket.get("description") or ticket["title"]
     session_name, log_path = session_manager.start_session(
-        ticket_id, clone_path, task, role_prompt, gh_token=gh_token,
+        ticket_id, clone_path, task, gh_token=gh_token,
         model="claude-opus-4-6",
     )
     await redis_client.update_ticket_fields(ticket_id, {"tmux_session": session_name})
@@ -296,7 +293,6 @@ async def retry_ticket(ticket_id: str, body: dict | None = None):
     # Re-spawn session
     import asyncio
     from claude_hub.services import clone_manager
-    from claude_hub.services.context_engine import get_role_prompt
 
     ticket = await redis_client.get_ticket(ticket_id)
     project = await _get_project_for_ticket(ticket)
@@ -324,9 +320,8 @@ async def retry_ticket(ticket_id: str, body: dict | None = None):
     if guidance:
         task = f"{task}\n\nAdditional guidance: {guidance}"
 
-    role_prompt = get_role_prompt(ticket.get("role", "builder"), ticket["branch"])
     session_name, log_path = session_manager.start_session(
-        ticket_id, clone_path, task, role_prompt, gh_token=gh_token,
+        ticket_id, clone_path, task, gh_token=gh_token,
         model="claude-opus-4-6",
     )
     await redis_client.update_ticket_fields(ticket_id, {"tmux_session": session_name})
@@ -471,7 +466,6 @@ async def request_changes(ticket_id: str, body: dict):
     """Send ticket back to IN_PROGRESS with review feedback for a new Claude Code session."""
     import asyncio
     from claude_hub.services import clone_manager, session_manager
-    from claude_hub.services.context_engine import get_role_prompt
     from claude_hub.services.ticket_service import InvalidTransition, transition
 
     feedback = body.get("feedback", "")
@@ -519,10 +513,9 @@ async def request_changes(ticket_id: str, body: dict):
     if pr_number:
         task += f"\nDo NOT create a new PR — push to the same branch so the existing PR #{pr_number} is updated."
 
-    role_prompt = get_role_prompt(ticket.get("role", "builder"), ticket["branch"])
     try:
         session_name, log_path = session_manager.start_session(
-            ticket_id, clone_path, task, role_prompt, gh_token=gh_token,
+            ticket_id, clone_path, task, gh_token=gh_token,
             model="claude-opus-4-6",
         )
     except Exception as e:

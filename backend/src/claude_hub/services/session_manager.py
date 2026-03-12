@@ -60,7 +60,6 @@ def start_session(
     ticket_id: str,
     clone_path: str,
     task: str,
-    role_prompt: str = "",
     disallowed_tools: str = "",
     gh_token: str = "",
     model: str = "",
@@ -77,11 +76,7 @@ def start_session(
         subprocess.run(["tmux", "kill-session", "-t", name], capture_output=True)
 
     # Build claude command
-    full_task = task
-    if role_prompt:
-        full_task = f"{role_prompt}\n\n## Task\n{task}"
-
-    task_escaped = shlex.quote(full_task)
+    task_escaped = shlex.quote(task)
     parts = [
         settings.claude_bin,
         "-p", task_escaped,

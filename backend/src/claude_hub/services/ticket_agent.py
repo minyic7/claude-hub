@@ -46,7 +46,6 @@ Claude Code runs with full permissions (--dangerously-skip-permissions). You CAN
 - Title: {title}
 - Description: {description}
 - Branch: {branch}
-- Role: {role}
 
 ## Tools available
 - tmux_send: Send a message to Claude Code (correction, suggestion, instruction)
@@ -190,7 +189,6 @@ class TicketAgent:
             title=ticket.get("title", ""),
             description=ticket.get("description", ""),
             branch=ticket.get("branch", ""),
-            role=ticket.get("role", "builder"),
         )
         self._stopped = False
 

@@ -61,7 +61,6 @@ class Ticket(BaseModel):
     branch: str
     repo_url: str
     base_branch: str = "main"
-    role: str = "builder"
     status: TicketStatus = TicketStatus.TODO
 
     # Escalation
@@ -102,7 +101,6 @@ class TicketCreate(BaseModel):
     title: str
     description: str = ""
     branch_type: BranchType = BranchType.FEATURE
-    role: str = "builder"
     source: str = "ui"
     external_id: str | None = None
     metadata: dict = Field(default_factory=dict)

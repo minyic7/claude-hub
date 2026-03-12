@@ -34,7 +34,6 @@ async def _pr_poll_loop() -> None:
 async def _recover_orphaned_tickets() -> None:
     """On startup, find IN_PROGRESS/BLOCKED tickets with dead tmux sessions → auto-restart."""
     from claude_hub.services import session_manager, clone_manager
-    from claude_hub.services.context_engine import get_role_prompt
 
     for status in ("in_progress", "blocked", "verifying"):
         tickets_list = await redis_client.list_tickets(status)
@@ -61,9 +60,8 @@ async def _recover_orphaned_tickets() -> None:
                     await redis_client.update_ticket_fields(tid, {"clone_path": clone_path})
 
                 task = ticket.get("description") or ticket["title"]
-                role_prompt = get_role_prompt(ticket.get("role", "builder"), ticket["branch"])
                 session_name, log_path = session_manager.start_session(
-                    tid, clone_path, task, role_prompt, gh_token=gh_token,
+                    tid, clone_path, task, gh_token=gh_token,
                     model="claude-opus-4-6",
                 )
                 await redis_client.update_ticket_fields(tid, {"tmux_session": session_name})
@@ -137,17 +135,6 @@ async def health():
 @app.get("/api/cost", dependencies=auth_dep)
 async def cost_summary():
     return await redis_client.get_cost_summary()
-
-
-@app.get("/api/roles", dependencies=auth_dep)
-async def list_roles():
-    import yaml
-    roles_path = Path(__file__).parent / "templates" / "roles.yaml"
-    if not roles_path.exists():
-        return {}
-    with open(roles_path) as f:
-        data = yaml.safe_load(f)
-    return data.get("roles", {})
 
 
 # Serve frontend build output (must be LAST — fallback route)

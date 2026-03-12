@@ -26,7 +26,6 @@ export function CreateTicketModal({ open, onClose, projectId, tickets }: CreateT
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [branchType, setBranchType] = useState<BranchType>('feature')
-  const [role, setRole] = useState('builder')
   const [dependsOn, setDependsOn] = useState<string[]>([])
   const [loading, setLoading] = useState(false)
 
@@ -52,13 +51,11 @@ export function CreateTicketModal({ open, onClose, projectId, tickets }: CreateT
         title: title.trim(),
         description: description.trim(),
         branch_type: branchType,
-        role,
         depends_on: dependsOn.length > 0 ? dependsOn : undefined,
       })
       setTitle('')
       setDescription('')
       setBranchType('feature')
-      setRole('builder')
       setDependsOn([])
       onClose()
     } catch (err) {
@@ -94,32 +91,17 @@ export function CreateTicketModal({ open, onClose, projectId, tickets }: CreateT
           />
         </div>
 
-        <div className="flex gap-4">
-          <div className="flex-1">
-            <label className="mb-1 block text-sm font-medium text-[var(--color-text-secondary)]">Branch Type</label>
-            <select
-              value={branchType}
-              onChange={(e) => setBranchType(e.target.value as BranchType)}
-              className="w-full rounded-md border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-3 py-2 text-sm text-[var(--color-text-primary)] focus:border-[var(--color-accent-blue)] focus:outline-none"
-            >
-              {BRANCH_TYPES.map((bt) => (
-                <option key={bt.value} value={bt.value}>{bt.label}</option>
-              ))}
-            </select>
-          </div>
-
-          <div className="flex-1">
-            <label className="mb-1 block text-sm font-medium text-[var(--color-text-secondary)]">Role</label>
-            <select
-              value={role}
-              onChange={(e) => setRole(e.target.value)}
-              className="w-full rounded-md border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-3 py-2 text-sm text-[var(--color-text-primary)] focus:border-[var(--color-accent-blue)] focus:outline-none"
-            >
-              <option value="builder">Builder</option>
-              <option value="reviewer">Reviewer</option>
-              <option value="tester">Tester</option>
-            </select>
-          </div>
+        <div>
+          <label className="mb-1 block text-sm font-medium text-[var(--color-text-secondary)]">Branch Type</label>
+          <select
+            value={branchType}
+            onChange={(e) => setBranchType(e.target.value as BranchType)}
+            className="w-full rounded-md border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-3 py-2 text-sm text-[var(--color-text-primary)] focus:border-[var(--color-accent-blue)] focus:outline-none"
+          >
+            {BRANCH_TYPES.map((bt) => (
+              <option key={bt.value} value={bt.value}>{bt.label}</option>
+            ))}
+          </select>
         </div>
 
         {/* Dependency picker */}

@@ -147,7 +147,6 @@ export const api = {
   },
   health: () => request<{ status: string; redis: boolean }>('/health'),
   cost: () => request<{ daily: number; monthly: number }>('/cost'),
-  roles: () => request<Record<string, unknown>>('/roles'),
 }
 
 export interface WorkflowRun {

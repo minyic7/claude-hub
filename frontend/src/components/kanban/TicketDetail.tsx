@@ -440,7 +440,6 @@ export function TicketDetail({ ticket, activities, allTickets, onClose, onDelete
         </h2>
         <div className="flex flex-wrap items-center gap-2 text-xs">
           <Badge color="blue">{ticket.branch_type}</Badge>
-          <Badge>{ticket.role}</Badge>
           <span className="flex items-center gap-1 text-[var(--color-text-muted)]">
             <GitBranch size={11} /> {ticket.branch}
           </span>
