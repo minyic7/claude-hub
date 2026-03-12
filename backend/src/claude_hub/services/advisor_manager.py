@@ -264,6 +264,22 @@ def start_advisor(project: dict, gh_token: str = "") -> str:
     with open(claude_md_path, "w") as f:
         f.write(claude_md)
 
+    # Pre-approve advisor tools so user isn't prompted for every curl/python3 call
+    import json as _json
+    claude_settings_dir = os.path.join(advisor_dir, ".claude")
+    os.makedirs(claude_settings_dir, exist_ok=True)
+    claude_settings_path = os.path.join(claude_settings_dir, "settings.json")
+    claude_settings = {
+        "permissions": {
+            "allow": [
+                "Bash(curl:*)",
+                "Bash(python3:*)",
+            ]
+        }
+    }
+    with open(claude_settings_path, "w") as f:
+        _json.dump(claude_settings, f, indent=2)
+
     # Build claude command — interactive mode (no -p, no --output-format)
     # The initial prompt is sent via tmux send-keys after startup
     parts = [
