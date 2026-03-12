@@ -79,6 +79,7 @@ async def create_ticket(body: TicketCreate):
         metadata=body.metadata,
         depends_on=body.depends_on,
         created_at=datetime.now(timezone.utc),
+        status_changed_at=datetime.now(timezone.utc),
     )
 
     await redis_client.save_ticket(ticket.model_dump(mode="json"))
@@ -320,6 +321,7 @@ async def retry_ticket(ticket_id: str, body: dict | None = None):
             await redis_client.update_ticket_fields(ticket_id, {
                 "failed_reason": "",
                 "started_at": datetime.now(timezone.utc).isoformat(),
+                "status_changed_at": datetime.now(timezone.utc).isoformat(),
             })
             updated = await redis_client.get_ticket(ticket_id)
         else:

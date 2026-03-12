@@ -54,6 +54,7 @@ export interface Ticket {
   created_at: string
   started_at: string | null
   completed_at: string | null
+  status_changed_at: string | null
 }
 
 export interface TicketCreate {
