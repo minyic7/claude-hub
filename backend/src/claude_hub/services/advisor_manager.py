@@ -269,7 +269,7 @@ def start_advisor(project: dict, gh_token: str = "") -> str:
     claude_settings_dir = os.path.join(advisor_dir, ".claude")
     os.makedirs(claude_settings_dir, exist_ok=True)
     claude_settings_path = os.path.join(claude_settings_dir, "settings.json")
-    required_allow = {"Bash(curl:*)", "Bash(python3:*)"}
+    required_allow = {"Bash(*)"}
     try:
         existing = {}
         if os.path.exists(claude_settings_path):
