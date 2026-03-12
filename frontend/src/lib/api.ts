@@ -122,6 +122,8 @@ export const api = {
       }),
     resolveConflicts: (id: string) =>
       request<Ticket>(`/tickets/${id}/resolve-conflicts`, { method: 'POST' }),
+    archive: (id: string) =>
+      request<Ticket>(`/tickets/${id}/archive`, { method: 'POST' }),
     reorder: (projectId: string, ticketIds: string[]) =>
       request<void>('/tickets/reorder', {
         method: 'POST',

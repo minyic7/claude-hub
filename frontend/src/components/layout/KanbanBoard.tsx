@@ -14,6 +14,7 @@ import { SortableContext, verticalListSortingStrategy, arrayMove } from '@dnd-ki
 import type { BranchType, Ticket } from '../../types/ticket'
 import type { ActivityEvent } from '../../types/activity'
 import type { KanbanColumn as KanbanColumnType } from '../../hooks/useTickets'
+import { ChevronDown, ChevronRight } from 'lucide-react'
 import { KanbanColumn } from '../kanban/KanbanColumn'
 import { TicketCard } from '../kanban/TicketCard'
 import { SortableTicketCard } from '../kanban/SortableTicketCard'
@@ -61,17 +62,20 @@ export function KanbanBoard({
 
   const todoColumn = columns.find((c) => c.status === 'todo')
   const todoTickets = todoColumn?.tickets || []
+  const activeTodoTickets = useMemo(() => todoTickets.filter((t) => !t.archived), [todoTickets])
+  const archivedTodoTickets = useMemo(() => todoTickets.filter((t) => t.archived), [todoTickets])
+  const [todoArchiveExpanded, setTodoArchiveExpanded] = useState(false)
 
-  // Use local order during drag, fall back to column order
-  const orderedTodoIds = todoOrder || todoTickets.map((t) => t.id)
-  const todoTicketMap = new Map(todoTickets.map((t) => [t.id, t]))
+  // Use local order during drag, fall back to column order (active only)
+  const orderedTodoIds = todoOrder || activeTodoTickets.map((t) => t.id)
+  const todoTicketMap = new Map(activeTodoTickets.map((t) => [t.id, t]))
   const orderedTodo = orderedTodoIds
     .map((id) => todoTicketMap.get(id))
     .filter((t): t is Ticket => !!t)
 
   // Sync external order when not dragging
   if (!activeId && !skipSyncRef.current && todoOrder) {
-    const externalIds = todoTickets.map((t) => t.id)
+    const externalIds = activeTodoTickets.map((t) => t.id)
     const orderChanged = todoOrder.length !== externalIds.length ||
       todoOrder.some((id, i) => id !== externalIds[i])
     if (orderChanged) {
@@ -86,8 +90,8 @@ export function KanbanBoard({
   const handleDragStart = useCallback((event: DragStartEvent) => {
     setActiveId(event.active.id as string)
     // Initialize local order from current
-    setTodoOrder(todoTickets.map((t) => t.id))
-  }, [todoTickets])
+    setTodoOrder(activeTodoTickets.map((t) => t.id))
+  }, [activeTodoTickets])
 
   const handleDragEnd = useCallback((event: DragEndEvent) => {
     const { active, over } = event
@@ -189,8 +193,8 @@ export function KanbanBoard({
                     {orderedTodo.length}
                   </span>
                 </div>
+                <div className="flex flex-col gap-2 overflow-y-auto px-1 pb-4">
                 <SortableContext items={orderedTodoIds} strategy={verticalListSortingStrategy}>
-                  <div className="flex flex-col gap-2 overflow-y-auto px-1 pb-4">
                     {orderedTodo.map((ticket) => {
                       const ticketActivities = activities.get(ticket.id)
                       const latest = ticketActivities?.[ticketActivities.length - 1]
@@ -207,8 +211,34 @@ export function KanbanBoard({
                         />
                       )
                     })}
-                  </div>
                 </SortableContext>
+
+                {archivedTodoTickets.length > 0 && (
+                  <>
+                    <button
+                      onClick={() => setTodoArchiveExpanded(!todoArchiveExpanded)}
+                      className="flex items-center gap-1.5 rounded px-2 py-1.5 text-xs text-[var(--color-text-muted)] hover:bg-[var(--color-bg-secondary)] hover:text-[var(--color-text-primary)] transition-colors"
+                    >
+                      {todoArchiveExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                      <span>{todoArchiveExpanded ? 'Hide' : 'Show'} {archivedTodoTickets.length} archived</span>
+                    </button>
+                    {todoArchiveExpanded && archivedTodoTickets.map((ticket) => {
+                      const ticketActivities = activities.get(ticket.id)
+                      const latest = ticketActivities?.[ticketActivities.length - 1]
+                      return (
+                        <TicketCard
+                          key={ticket.id}
+                          ticket={ticket}
+                          latestActivity={latest}
+                          activityEvents={ticketActivities}
+                          onClick={() => onTicketClick(ticket)}
+                          onOptimistic={onOptimistic}
+                        />
+                      )
+                    })}
+                  </>
+                )}
+              </div>
               </div>
             )
           }
@@ -223,7 +253,6 @@ export function KanbanBoard({
               deployingBranches={deployingBranches}
               mergeQueueLocked={mergeQueueLocked}
               onMergeInitiated={onMergeInitiated}
-              archivable={col.status === 'merged'}
             />
           )
         })}

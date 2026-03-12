@@ -112,6 +112,23 @@ async def update_ticket(ticket_id: str, body: TicketUpdate):
     return updated
 
 
+@router.post("/{ticket_id}/archive")
+async def toggle_archive(ticket_id: str):
+    ticket = await redis_client.get_ticket(ticket_id)
+    if not ticket:
+        raise HTTPException(404, "Ticket not found")
+
+    new_val = not ticket.get("archived", False)
+    await redis_client.update_ticket_fields(ticket_id, {"archived": new_val})
+    updated = await redis_client.get_ticket(ticket_id)
+    await broadcast({
+        "type": "ticket_updated",
+        "ticket_id": ticket_id,
+        "data": updated,
+    })
+    return updated
+
+
 @router.delete("/{ticket_id}", status_code=204)
 async def delete_ticket(ticket_id: str):
     from claude_hub.services import clone_manager, session_manager

@@ -86,6 +86,7 @@ class Ticket(BaseModel):
 
     # Priority (lower = higher priority)
     priority: int = 0
+    archived: bool = False
 
     # Cost
     agent_cost_usd: float = 0.0

@@ -4,8 +4,6 @@ import type { Ticket } from '../../types/ticket'
 import type { ActivityEvent } from '../../types/activity'
 import { TicketCard } from './TicketCard'
 
-const RECENT_MERGED_COUNT = 3
-
 interface KanbanColumnProps {
   label: string
   tickets: Ticket[]
@@ -15,27 +13,29 @@ interface KanbanColumnProps {
   deployingBranches?: Set<string>
   mergeQueueLocked?: boolean
   onMergeInitiated?: () => void
-  archivable?: boolean
 }
 
-export function KanbanColumn({ label, tickets, activities, onTicketClick, onOptimistic, deployingBranches, mergeQueueLocked, onMergeInitiated, archivable }: KanbanColumnProps) {
+export function KanbanColumn({ label, tickets, activities, onTicketClick, onOptimistic, deployingBranches, mergeQueueLocked, onMergeInitiated }: KanbanColumnProps) {
   const [archiveExpanded, setArchiveExpanded] = useState(false)
 
-  // For archivable columns (merged), split into recent + archived sorted by completed_at desc
-  const { recent, archived } = useMemo(() => {
-    if (!archivable || tickets.length <= RECENT_MERGED_COUNT) {
-      return { recent: tickets, archived: [] }
+  const { active, archived } = useMemo(() => {
+    const active: Ticket[] = []
+    const archived: Ticket[] = []
+    for (const t of tickets) {
+      if (t.archived) {
+        archived.push(t)
+      } else {
+        active.push(t)
+      }
     }
-    const sorted = [...tickets].sort((a, b) => {
+    // Sort archived by completed_at (or created_at) descending
+    archived.sort((a, b) => {
       const ta = a.completed_at || a.created_at
       const tb = b.completed_at || b.created_at
-      return tb.localeCompare(ta) // newest first
+      return tb.localeCompare(ta)
     })
-    return {
-      recent: sorted.slice(0, RECENT_MERGED_COUNT),
-      archived: sorted.slice(RECENT_MERGED_COUNT),
-    }
-  }, [archivable, tickets])
+    return { active, archived }
+  }, [tickets])
 
   const renderTicket = (ticket: Ticket, index: number) => {
     const ticketActivities = activities.get(ticket.id)
@@ -67,11 +67,11 @@ export function KanbanColumn({ label, tickets, activities, onTicketClick, onOpti
           {label}
         </h2>
         <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-[var(--color-bg-secondary)] px-1.5 text-xs text-[var(--color-text-muted)]">
-          {tickets.length}
+          {active.length}
         </span>
       </div>
       <div className="flex flex-col gap-2 overflow-y-auto px-1 pb-4">
-        {recent.map(renderTicket)}
+        {active.map(renderTicket)}
 
         {archived.length > 0 && (
           <>
@@ -80,9 +80,9 @@ export function KanbanColumn({ label, tickets, activities, onTicketClick, onOpti
               className="flex items-center gap-1.5 rounded px-2 py-1.5 text-xs text-[var(--color-text-muted)] hover:bg-[var(--color-bg-secondary)] hover:text-[var(--color-text-primary)] transition-colors"
             >
               {archiveExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-              <span>{archiveExpanded ? 'Hide' : 'Show'} {archived.length} older</span>
+              <span>{archiveExpanded ? 'Hide' : 'Show'} {archived.length} archived</span>
             </button>
-            {archiveExpanded && archived.map((t, i) => renderTicket(t, i + RECENT_MERGED_COUNT))}
+            {archiveExpanded && archived.map((t, i) => renderTicket(t, i + active.length))}
           </>
         )}
       </div>

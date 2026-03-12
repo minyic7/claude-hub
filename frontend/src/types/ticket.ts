@@ -47,6 +47,7 @@ export interface Ticket {
   pr_number: number | null
   has_conflicts?: boolean
   priority: number
+  archived: boolean
   tmux_session: string | null
   agent_cost_usd: number
   agent_tokens: number

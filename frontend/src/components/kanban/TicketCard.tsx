@@ -1,5 +1,5 @@
 import { type FormEvent, type MouseEvent, useEffect, useMemo, useRef, useState } from 'react'
-import { AlertCircle, Check, CircleDot, GitMerge, Loader2, Lock, MessageCircleQuestion, Pencil, Play, Rocket, RotateCcw, ExternalLink, Send, X } from 'lucide-react'
+import { AlertCircle, Archive, ArchiveRestore, Check, CircleDot, GitMerge, Loader2, Lock, MessageCircleQuestion, Pencil, Play, Rocket, RotateCcw, ExternalLink, Send, X } from 'lucide-react'
 import type { Ticket, TicketStatus } from '../../types/ticket'
 import type { ActivityEvent } from '../../types/activity'
 import { Badge } from '../common/Badge'
@@ -98,6 +98,11 @@ export function TicketCard({ ticket, latestActivity, activityEvents, onClick, on
     },
     { status: 'merged' },
     { status: 'review' },
+  )
+  const handleArchive = safeAction(
+    () => api.tickets.archive(ticket.id),
+    { archived: !ticket.archived },
+    { archived: ticket.archived },
   )
 
   // Inline edit state (TODO tickets only)
@@ -236,6 +241,14 @@ export function TicketCard({ ticket, latestActivity, activityEvents, onClick, on
                   <Pencil size={13} />
                 </button>
               )}
+              <button
+                type="button"
+                onClick={handleArchive}
+                className="rounded p-0.5 text-[var(--color-text-muted)] hover:text-[var(--color-accent-blue)] hover:bg-[var(--color-bg-secondary)] transition-colors"
+                title={ticket.archived ? 'Unarchive' : 'Archive'}
+              >
+                {ticket.archived ? <ArchiveRestore size={13} /> : <Archive size={13} />}
+              </button>
               <StatusIndicator status={ticket.status} entering={statusEntering} />
             </div>
           </div>
