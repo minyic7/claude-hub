@@ -148,6 +148,14 @@ export const api = {
     testConnection: () =>
       request<{ ok: boolean; model: string; message: string }>('/settings/agent/test', { method: 'POST' }),
   },
+  advisor: {
+    start: (projectId: string) =>
+      request<AdvisorStatus>(`/projects/${projectId}/advisor/start`, { method: 'POST' }),
+    restart: (projectId: string) =>
+      request<AdvisorStatus>(`/projects/${projectId}/advisor/restart`, { method: 'POST' }),
+    status: (projectId: string) =>
+      request<AdvisorStatus>(`/projects/${projectId}/advisor/status`),
+  },
   github: {
     actions: (projectId: string) =>
       request<{ runs: WorkflowRun[] }>(`/github/actions?project_id=${encodeURIComponent(projectId)}`),
@@ -155,6 +163,12 @@ export const api = {
   version: () => request<{ sha: string }>('/version'),
   health: () => request<{ status: string; redis: boolean }>('/health'),
   cost: () => request<{ daily: number; monthly: number }>('/cost'),
+}
+
+export interface AdvisorStatus {
+  alive: boolean
+  session_name: string
+  ssh_command: string
 }
 
 export interface WorkflowRun {
