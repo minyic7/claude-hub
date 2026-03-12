@@ -53,8 +53,11 @@ export function KanbanBoard({
   columns, activities, allTickets, activeProjectId, onTicketClick, onOptimistic, deployingBranches, mergeQueueLocked, onMergeInitiated, branchTypeFilter, onBranchTypeFilter,
 }: KanbanBoardProps) {
   const [activeId, setActiveId] = useState<string | null>(null)
+  const [dragSource, setDragSource] = useState<'todo' | 'queue' | null>(null)
   const [todoOrder, setTodoOrder] = useState<string[] | null>(null)
+  const [queueOrder, setQueueOrder] = useState<string[] | null>(null)
   const skipSyncRef = useRef(false)
+  const skipQueueSyncRef = useRef(false)
 
   // Multi-select state
   const [selectMode, setSelectMode] = useState(false)
@@ -80,6 +83,13 @@ export function KanbanBoard({
     .map((id) => todoTicketMap.get(id))
     .filter((t): t is Ticket => !!t)
 
+  // Queue order: local during drag, fall back to column order
+  const queueTicketMap = useMemo(() => new Map(queuedTodoTickets.map((t) => [t.id, t])), [queuedTodoTickets])
+  const orderedQueueIds = queueOrder || queuedTodoTickets.map((t) => t.id)
+  const orderedQueue = orderedQueueIds
+    .map((id) => queueTicketMap.get(id))
+    .filter((t): t is Ticket => !!t)
+
   // Sync external order when not dragging
   if (!activeId && !skipSyncRef.current && todoOrder) {
     const externalIds = activeTodoTickets.map((t) => t.id)
@@ -94,47 +104,84 @@ export function KanbanBoard({
     skipSyncRef.current = false
   }
 
+  // Sync external queue order when not dragging
+  if (!activeId && !skipQueueSyncRef.current && queueOrder) {
+    const externalIds = queuedTodoTickets.map((t) => t.id)
+    const orderChanged = queueOrder.length !== externalIds.length ||
+      queueOrder.some((id, i) => id !== externalIds[i])
+    if (orderChanged) {
+      setQueueOrder(null)
+    }
+  }
+  if (skipQueueSyncRef.current && !activeId) {
+    skipQueueSyncRef.current = false
+  }
+
   const handleDragStart = useCallback((event: DragStartEvent) => {
     if (selectMode) return // Disable drag in select mode
-    setActiveId(event.active.id as string)
-    // Initialize local order from current
-    setTodoOrder(activeTodoTickets.map((t) => t.id))
-  }, [activeTodoTickets, selectMode])
+    const id = event.active.id as string
+    setActiveId(id)
+    // Determine which section this item belongs to
+    if (queueTicketMap.has(id)) {
+      setDragSource('queue')
+      setQueueOrder(queuedTodoTickets.map((t) => t.id))
+    } else {
+      setDragSource('todo')
+      setTodoOrder(activeTodoTickets.map((t) => t.id))
+    }
+  }, [activeTodoTickets, queuedTodoTickets, queueTicketMap, selectMode])
 
   const handleDragEnd = useCallback((event: DragEndEvent) => {
     const { active, over } = event
     setActiveId(null)
+    const source = dragSource
+    setDragSource(null)
 
-    if (!over || active.id === over.id || !todoOrder) {
+    if (!over || active.id === over.id) {
       setTodoOrder(null)
+      setQueueOrder(null)
       return
     }
 
-    const oldIndex = todoOrder.indexOf(active.id as string)
-    const newIndex = todoOrder.indexOf(over.id as string)
-    if (oldIndex === -1 || newIndex === -1) {
-      setTodoOrder(null)
-      return
-    }
-
-    const newOrder = arrayMove(todoOrder, oldIndex, newIndex)
-    setTodoOrder(newOrder)
-    skipSyncRef.current = true
-
-    // Persist to backend
-    if (activeProjectId) {
-      api.tickets.reorder(activeProjectId, newOrder).catch(() => {
-        setTodoOrder(null)
+    if (source === 'queue' && queueOrder) {
+      const oldIndex = queueOrder.indexOf(active.id as string)
+      const newIndex = queueOrder.indexOf(over.id as string)
+      if (oldIndex === -1 || newIndex === -1) {
+        setQueueOrder(null)
+        return
+      }
+      const newOrder = arrayMove(queueOrder, oldIndex, newIndex)
+      setQueueOrder(newOrder)
+      skipQueueSyncRef.current = true
+      api.tickets.reorderQueue(newOrder).catch(() => {
+        setQueueOrder(null)
       })
+    } else if (source === 'todo' && todoOrder) {
+      const oldIndex = todoOrder.indexOf(active.id as string)
+      const newIndex = todoOrder.indexOf(over.id as string)
+      if (oldIndex === -1 || newIndex === -1) {
+        setTodoOrder(null)
+        return
+      }
+      const newOrder = arrayMove(todoOrder, oldIndex, newIndex)
+      setTodoOrder(newOrder)
+      skipSyncRef.current = true
+      if (activeProjectId) {
+        api.tickets.reorder(activeProjectId, newOrder).catch(() => {
+          setTodoOrder(null)
+        })
+      }
     }
-  }, [todoOrder, activeProjectId])
+  }, [todoOrder, queueOrder, dragSource, activeProjectId])
 
   const handleDragCancel = useCallback(() => {
     setActiveId(null)
+    setDragSource(null)
     setTodoOrder(null)
+    setQueueOrder(null)
   }, [])
 
-  const activeTicket = activeId ? todoTicketMap.get(activeId) : null
+  const activeTicket = activeId ? (todoTicketMap.get(activeId) || queueTicketMap.get(activeId)) : null
   const activeActivity = activeTicket ? activities.get(activeTicket.id) : undefined
   const activeLatest = activeActivity?.[activeActivity.length - 1]
 
@@ -333,21 +380,42 @@ export function KanbanBoard({
                     })}
                 </SortableContext>
 
-                {/* Queued tickets */}
-                {queuedTodoTickets.map((ticket) => {
-                  const ticketActivities = activities.get(ticket.id)
-                  const latest = ticketActivities?.[ticketActivities.length - 1]
-                  return (
-                    <TicketCard
-                      key={ticket.id}
-                      ticket={ticket}
-                      latestActivity={latest}
-                      activityEvents={ticketActivities}
-                      onClick={() => onTicketClick(ticket)}
-                      onOptimistic={onOptimistic}
-                    />
-                  )
-                })}
+                {/* Queued tickets (drag-to-reorder) */}
+                {orderedQueue.length > 0 && (
+                  <div className="border-t border-dashed border-[var(--color-border)] pt-2 mt-1">
+                    <span className="mb-1 block text-[10px] font-medium uppercase tracking-wider text-[var(--color-text-muted)] opacity-60">Queue</span>
+                  </div>
+                )}
+                <SortableContext items={selectMode ? [] : orderedQueueIds} strategy={verticalListSortingStrategy}>
+                  {orderedQueue.map((ticket) => {
+                    const ticketActivities = activities.get(ticket.id)
+                    const latest = ticketActivities?.[ticketActivities.length - 1]
+                    if (selectMode) {
+                      return (
+                        <TicketCard
+                          key={ticket.id}
+                          ticket={ticket}
+                          latestActivity={latest}
+                          activityEvents={ticketActivities}
+                          onClick={() => onTicketClick(ticket)}
+                          onOptimistic={onOptimistic}
+                        />
+                      )
+                    }
+                    return (
+                      <SortableTicketCard
+                        key={ticket.id}
+                        ticket={ticket}
+                        latestActivity={latest}
+                        activityEvents={ticketActivities}
+                        allTickets={allTickets}
+                        onClick={() => onTicketClick(ticket)}
+                        onOptimistic={onOptimistic}
+                        onTicketClick={onTicketClick}
+                      />
+                    )
+                  })}
+                </SortableContext>
 
                 {archivedTodoTickets.length > 0 && (
                   <>
