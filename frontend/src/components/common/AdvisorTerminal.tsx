@@ -35,6 +35,7 @@ export function AdvisorTerminal({ projectId, onClose }: AdvisorTerminalProps) {
 
     const terminal = new Terminal({
       cursorBlink: true,
+      scrollback: 10000,
       fontSize: 13,
       fontFamily: 'Menlo, Monaco, "Courier New", monospace',
       theme: {
