@@ -22,27 +22,28 @@ def verify_agent_work(
 ) -> VerifyResult:
     """Verify that the agent produced commits and a PR on the expected branch."""
 
-    # 1. Check remote branch exists
-    result = subprocess.run(
-        ["git", "ls-remote", "--heads", "origin", branch],
-        cwd=clone_path, capture_output=True, text=True,
-    )
-    if branch not in result.stdout:
-        return VerifyResult(
-            passed=False,
-            reason=f"Branch '{branch}' not found on remote",
-        )
-
-    # 2. Check commits ahead of base
+    # 1. Check commits ahead of base (remote first, then local)
     result = subprocess.run(
         ["git", "log", f"origin/{base_branch}..origin/{branch}", "--oneline"],
         cwd=clone_path, capture_output=True, text=True,
     )
     commits = [line for line in result.stdout.strip().split("\n") if line]
     if not commits:
+        # Check local branch — agent may not have pushed
+        result = subprocess.run(
+            ["git", "log", f"origin/{base_branch}..{branch}", "--oneline"],
+            cwd=clone_path, capture_output=True, text=True,
+        )
+        local_commits = [line for line in result.stdout.strip().split("\n") if line]
+        if local_commits:
+            return VerifyResult(
+                passed=False,
+                reason=f"Agent made {len(local_commits)} commit(s) locally but did not push to remote",
+                commits_count=len(local_commits),
+            )
         return VerifyResult(
             passed=False,
-            reason=f"No commits ahead of {base_branch}",
+            reason=f"No commits ahead of {base_branch} — agent did not make changes",
         )
 
     # 3. Check for PR

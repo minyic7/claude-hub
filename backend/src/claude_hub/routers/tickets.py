@@ -208,7 +208,14 @@ async def start_ticket(ticket_id: str):
     await redis_client.update_ticket_fields(ticket_id, {"clone_path": clone_path})
 
     # Start Claude Code session
-    task = ticket.get("description") or ticket["title"]
+    description = ticket.get("description") or ticket["title"]
+    branch = ticket["branch"]
+    base_branch = ticket.get("base_branch", "main")
+    task = (
+        f"{description}\n\n"
+        f"You are working on branch '{branch}' (based on '{base_branch}').\n"
+        f"When done, commit your changes, push the branch, and create a PR against '{base_branch}'."
+    )
     session_name, log_path = session_manager.start_session(
         ticket_id, clone_path, task, gh_token=gh_token,
         model="claude-opus-4-6",
@@ -326,7 +333,14 @@ async def retry_ticket(ticket_id: str, body: dict | None = None):
         await redis_client.update_ticket_fields(ticket_id, {"clone_path": clone_path})
 
     guidance = (body or {}).get("guidance", "")
-    task = ticket.get("description") or ticket["title"]
+    description = ticket.get("description") or ticket["title"]
+    branch = ticket["branch"]
+    base_branch = ticket.get("base_branch", "main")
+    task = (
+        f"{description}\n\n"
+        f"You are working on branch '{branch}' (based on '{base_branch}').\n"
+        f"When done, commit your changes, push the branch, and create a PR against '{base_branch}'."
+    )
 
     # Auto-include CI failure reason as context for retry
     failed_reason = ticket.get("failed_reason", "")

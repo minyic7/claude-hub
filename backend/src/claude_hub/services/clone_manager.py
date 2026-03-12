@@ -115,6 +115,12 @@ def clone_for_ticket(
         cwd=clone_dir, check=True, capture_output=True,
     )
 
+    # Push branch to reserve it on remote (even if empty)
+    subprocess.run(
+        ["git", "push", "-u", "origin", branch],
+        cwd=clone_dir, capture_output=True,
+    )
+
     return clone_dir
 
 
