@@ -95,6 +95,7 @@ class Ticket(BaseModel):
     created_at: datetime
     started_at: datetime | None = None
     completed_at: datetime | None = None
+    status_changed_at: datetime | None = None
 
 
 class TicketCreate(BaseModel):

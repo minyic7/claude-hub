@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from claude_hub.models.ticket import TicketStatus
 from claude_hub import redis_client
 
@@ -31,7 +33,7 @@ async def transition(ticket_id: str, target: TicketStatus, **extra_fields: objec
 
     await redis_client.update_ticket_status(ticket_id, current.value, target.value)
 
-    fields: dict = {"status": target.value}
+    fields: dict = {"status": target.value, "status_changed_at": datetime.now(timezone.utc).isoformat()}
     fields.update(extra_fields)
     await redis_client.update_ticket_fields(ticket_id, fields)
 

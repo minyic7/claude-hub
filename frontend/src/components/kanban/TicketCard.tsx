@@ -1,10 +1,11 @@
-import { type FormEvent, type MouseEvent, useEffect, useMemo, useRef, useState } from 'react'
+import { type FormEvent, type MouseEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AlertCircle, Archive, ArchiveRestore, Check, CircleDot, GitMerge, Loader2, Lock, MessageCircleQuestion, Pencil, Play, Rocket, RotateCcw, ExternalLink, Send, X } from 'lucide-react'
 import type { Ticket, TicketStatus } from '../../types/ticket'
 import type { ActivityEvent } from '../../types/activity'
 import { Badge } from '../common/Badge'
 import { Button } from '../common/Button'
 import { api } from '../../lib/api'
+import { formatElapsed } from '../../utils/relativeTime'
 
 function derivePhase(summary: string): string {
   const lower = summary.toLowerCase()
@@ -175,6 +176,29 @@ export function TicketCard({ ticket, latestActivity, activityEvents, onClick, on
     return () => clearInterval(timer)
   }, [ticket.status, latestActivity])
 
+  // Elapsed time since ticket entered current status, refreshes every 30s
+  const getElapsedTimestamp = useCallback(() => {
+    if (ticket.status === 'todo') return null
+    if (ticket.status === 'in_progress' && ticket.started_at) return ticket.started_at
+    if (ticket.status_changed_at) return ticket.status_changed_at
+    // Fallback for tickets without status_changed_at
+    if (ticket.started_at) return ticket.started_at
+    return ticket.created_at
+  }, [ticket.status, ticket.started_at, ticket.status_changed_at, ticket.created_at])
+
+  const [elapsed, setElapsed] = useState<string | null>(() => {
+    const ts = getElapsedTimestamp()
+    return ts ? formatElapsed(ts) : null
+  })
+
+  useEffect(() => {
+    const ts = getElapsedTimestamp()
+    if (!ts) { setElapsed(null); return }
+    setElapsed(formatElapsed(ts))
+    const timer = setInterval(() => setElapsed(formatElapsed(ts)), 30_000)
+    return () => clearInterval(timer)
+  }, [getElapsedTimestamp])
+
   const stepInfo = useMemo(() => {
     if (ticket.status !== 'in_progress' || !latestActivity) return null
     const stepCount = activityEvents
@@ -261,9 +285,12 @@ export function TicketCard({ ticket, latestActivity, activityEvents, onClick, on
             {isIdle && <Badge color="gray">IDLE</Badge>}
           </div>
 
-          <p className="mb-2 truncate text-xs text-[var(--color-text-muted)]">
-            {ticket.branch}
-          </p>
+          <div className="mb-2 flex items-center gap-1.5 text-xs text-[var(--color-text-muted)]">
+            <p className="truncate">{ticket.branch}</p>
+            {elapsed && (
+              <span className="shrink-0 opacity-60" title={`In ${ticket.status} for ${elapsed}`}>{elapsed}</span>
+            )}
+          </div>
         </>
       )}
 
