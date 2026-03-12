@@ -42,12 +42,19 @@ export function AppShell({
   const stats = useMemo(() => {
     let running = 0
     let blocked = 0
+    let total = 0
+    let archived = 0
     for (const [, t] of tickets) {
       if (activeProjectId && t.project_id !== activeProjectId) continue
-      if (t.status === 'in_progress' || t.status === 'verifying') running++
-      if (t.status === 'blocked') blocked++
+      if (t.archived) {
+        archived++
+      } else {
+        total++
+        if (t.status === 'in_progress' || t.status === 'verifying') running++
+        if (t.status === 'blocked') blocked++
+      }
     }
-    return { running, blocked }
+    return { running, blocked, total, archived }
   }, [tickets, activeProjectId])
 
   const unreadCount = notifications.filter((n) => n.type === 'error' || n.type === 'warning').length
@@ -129,6 +136,7 @@ export function AppShell({
 
           {/* Stats */}
           <div className="flex items-center gap-2 text-xs font-mono text-[var(--color-text-muted)]">
+            <span>{stats.total} tickets{stats.archived > 0 && <> · {stats.archived} archived</>}</span>
             {stats.running > 0 && (
               <span className="flex items-center gap-1">
                 <span className="inline-block h-2 w-2 rounded-full bg-[var(--color-accent-blue)] animate-pulse" />
