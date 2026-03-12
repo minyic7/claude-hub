@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import {
   DndContext,
   DragOverlay,
@@ -11,7 +11,7 @@ import {
 } from '@dnd-kit/core'
 import type { DragEndEvent, DragStartEvent } from '@dnd-kit/core'
 import { SortableContext, verticalListSortingStrategy, arrayMove } from '@dnd-kit/sortable'
-import type { Ticket } from '../../types/ticket'
+import type { BranchType, Ticket } from '../../types/ticket'
 import type { ActivityEvent } from '../../types/activity'
 import type { KanbanColumn as KanbanColumnType } from '../../hooks/useTickets'
 import { KanbanColumn } from '../kanban/KanbanColumn'
@@ -41,10 +41,14 @@ interface KanbanBoardProps {
   deployingBranches?: Set<string>
   mergeQueueLocked?: boolean
   onMergeInitiated?: () => void
+  branchTypeFilter?: BranchType | null
+  onBranchTypeFilter?: (type: BranchType | null) => void
 }
 
+const BRANCH_TYPES: BranchType[] = ['feature', 'bugfix', 'hotfix', 'chore', 'refactor', 'docs', 'test']
+
 export function KanbanBoard({
-  columns, activities, allTickets, activeProjectId, onTicketClick, onOptimistic, deployingBranches, mergeQueueLocked, onMergeInitiated,
+  columns, activities, allTickets, activeProjectId, onTicketClick, onOptimistic, deployingBranches, mergeQueueLocked, onMergeInitiated, branchTypeFilter, onBranchTypeFilter,
 }: KanbanBoardProps) {
   const [activeId, setActiveId] = useState<string | null>(null)
   const [todoOrder, setTodoOrder] = useState<string[] | null>(null)
@@ -122,6 +126,15 @@ export function KanbanBoard({
   const activeActivity = activeTicket ? activities.get(activeTicket.id) : undefined
   const activeLatest = activeActivity?.[activeActivity.length - 1]
 
+  // Compute branch type counts from all tickets for filter chips
+  const branchTypeCounts = useMemo(() => {
+    const counts = new Map<BranchType, number>()
+    allTickets.forEach((t) => {
+      counts.set(t.branch_type, (counts.get(t.branch_type) || 0) + 1)
+    })
+    return counts
+  }, [allTickets])
+
   return (
     <DndContext
       sensors={sensors}
@@ -130,6 +143,38 @@ export function KanbanBoard({
       onDragEnd={handleDragEnd}
       onDragCancel={handleDragCancel}
     >
+      {/* Branch type filter bar */}
+      {onBranchTypeFilter && (
+        <div className="flex items-center gap-1.5 overflow-x-auto px-5 pt-3 pb-0">
+          <span className="mr-1 text-xs text-[var(--color-text-muted)]">Filter:</span>
+          {BRANCH_TYPES.filter((bt) => branchTypeCounts.has(bt)).map((bt) => {
+            const active = branchTypeFilter === bt
+            return (
+              <button
+                key={bt}
+                onClick={() => onBranchTypeFilter(active ? null : bt)}
+                className={`rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors ${
+                  active
+                    ? 'bg-[var(--color-accent-blue)] text-white'
+                    : 'bg-[var(--color-bg-secondary)] text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]'
+                }`}
+              >
+                {bt}
+                <span className="ml-1 opacity-60">{branchTypeCounts.get(bt)}</span>
+              </button>
+            )
+          })}
+          {branchTypeFilter && (
+            <button
+              onClick={() => onBranchTypeFilter(null)}
+              className="ml-1 text-xs text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]"
+            >
+              Clear
+            </button>
+          )}
+        </div>
+      )}
+
       <div className="flex flex-1 gap-4 overflow-x-auto p-4">
         {columns.map((col) => {
           if (col.status === 'todo') {
@@ -177,6 +222,7 @@ export function KanbanBoard({
               deployingBranches={deployingBranches}
               mergeQueueLocked={mergeQueueLocked}
               onMergeInitiated={onMergeInitiated}
+              archivable={col.status === 'merged'}
             />
           )
         })}

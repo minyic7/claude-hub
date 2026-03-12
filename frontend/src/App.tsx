@@ -9,7 +9,7 @@ import { TicketDetail } from './components/kanban/TicketDetail'
 import { NotificationToast } from './components/common/NotificationToast'
 import { LoginPage } from './components/auth/LoginPage'
 import { api, getToken, setApiErrorHandler } from './lib/api'
-import type { Ticket } from './types/ticket'
+import type { BranchType, Ticket } from './types/ticket'
 
 function App() {
   const [authed, setAuthed] = useState<boolean | null>(null) // null = checking
@@ -78,11 +78,20 @@ function AuthedApp() {
     setSelectedTicket(null)
   }
 
-  // Filter tickets by active project
+  // Branch type filter
+  const [branchTypeFilter, setBranchTypeFilter] = useState<BranchType | null>(null)
+
+  // Filter tickets by active project and branch type
   const filteredTickets = useMemo(() => {
-    if (!activeProjectId) return tickets
-    return new Map([...tickets].filter(([, t]) => t.project_id === activeProjectId))
-  }, [tickets, activeProjectId])
+    let filtered = tickets
+    if (activeProjectId) {
+      filtered = new Map([...filtered].filter(([, t]) => t.project_id === activeProjectId))
+    }
+    if (branchTypeFilter) {
+      filtered = new Map([...filtered].filter(([, t]) => t.branch_type === branchTypeFilter))
+    }
+    return filtered
+  }, [tickets, activeProjectId, branchTypeFilter])
 
   // Merge queue: lock merge buttons while a deploy is in progress
   const [mergeQueueLocked, setMergeQueueLocked] = useState(false)
@@ -145,6 +154,8 @@ function AuthedApp() {
         deployingBranches={deployingBranches}
         mergeQueueLocked={mergeQueueLocked}
         onMergeInitiated={onMergeInitiated}
+        branchTypeFilter={branchTypeFilter}
+        onBranchTypeFilter={setBranchTypeFilter}
       />
       {currentTicket && (
         <TicketDetail

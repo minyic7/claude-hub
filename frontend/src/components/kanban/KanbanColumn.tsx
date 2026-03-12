@@ -1,6 +1,10 @@
+import { useMemo, useState } from 'react'
+import { ChevronDown, ChevronRight } from 'lucide-react'
 import type { Ticket } from '../../types/ticket'
 import type { ActivityEvent } from '../../types/activity'
 import { TicketCard } from './TicketCard'
+
+const RECENT_MERGED_COUNT = 3
 
 interface KanbanColumnProps {
   label: string
@@ -11,9 +15,51 @@ interface KanbanColumnProps {
   deployingBranches?: Set<string>
   mergeQueueLocked?: boolean
   onMergeInitiated?: () => void
+  archivable?: boolean
 }
 
-export function KanbanColumn({ label, tickets, activities, onTicketClick, onOptimistic, deployingBranches, mergeQueueLocked, onMergeInitiated }: KanbanColumnProps) {
+export function KanbanColumn({ label, tickets, activities, onTicketClick, onOptimistic, deployingBranches, mergeQueueLocked, onMergeInitiated, archivable }: KanbanColumnProps) {
+  const [archiveExpanded, setArchiveExpanded] = useState(false)
+
+  // For archivable columns (merged), split into recent + archived sorted by completed_at desc
+  const { recent, archived } = useMemo(() => {
+    if (!archivable || tickets.length <= RECENT_MERGED_COUNT) {
+      return { recent: tickets, archived: [] }
+    }
+    const sorted = [...tickets].sort((a, b) => {
+      const ta = a.completed_at || a.created_at
+      const tb = b.completed_at || b.created_at
+      return tb.localeCompare(ta) // newest first
+    })
+    return {
+      recent: sorted.slice(0, RECENT_MERGED_COUNT),
+      archived: sorted.slice(RECENT_MERGED_COUNT),
+    }
+  }, [archivable, tickets])
+
+  const renderTicket = (ticket: Ticket, index: number) => {
+    const ticketActivities = activities.get(ticket.id)
+    const latest = ticketActivities?.[ticketActivities.length - 1]
+    return (
+      <div
+        key={ticket.id}
+        className="rise-stagger"
+        style={{ animationDelay: `${60 + index * 50}ms` }}
+      >
+        <TicketCard
+          ticket={ticket}
+          latestActivity={latest}
+          activityEvents={ticketActivities}
+          onClick={() => onTicketClick(ticket)}
+          onOptimistic={onOptimistic}
+          deploying={ticket.status === 'merged' ? deployingBranches?.has(ticket.branch) : undefined}
+          mergeQueueLocked={mergeQueueLocked}
+          onMergeInitiated={onMergeInitiated}
+        />
+      </div>
+    )
+  }
+
   return (
     <div className="flex min-w-[280px] flex-1 flex-col">
       <div className="mb-3 flex items-center gap-2 px-1">
@@ -25,28 +71,20 @@ export function KanbanColumn({ label, tickets, activities, onTicketClick, onOpti
         </span>
       </div>
       <div className="flex flex-col gap-2 overflow-y-auto px-1 pb-4">
-        {tickets.map((ticket, index) => {
-          const ticketActivities = activities.get(ticket.id)
-          const latest = ticketActivities?.[ticketActivities.length - 1]
-          return (
-            <div
-              key={ticket.id}
-              className="rise-stagger"
-              style={{ animationDelay: `${60 + index * 50}ms` }}
+        {recent.map(renderTicket)}
+
+        {archived.length > 0 && (
+          <>
+            <button
+              onClick={() => setArchiveExpanded(!archiveExpanded)}
+              className="flex items-center gap-1.5 rounded px-2 py-1.5 text-xs text-[var(--color-text-muted)] hover:bg-[var(--color-bg-secondary)] hover:text-[var(--color-text-primary)] transition-colors"
             >
-              <TicketCard
-                ticket={ticket}
-                latestActivity={latest}
-                activityEvents={ticketActivities}
-                onClick={() => onTicketClick(ticket)}
-                onOptimistic={onOptimistic}
-                deploying={ticket.status === 'merged' ? deployingBranches?.has(ticket.branch) : undefined}
-                mergeQueueLocked={mergeQueueLocked}
-                onMergeInitiated={onMergeInitiated}
-              />
-            </div>
-          )
-        })}
+              {archiveExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+              <span>{archiveExpanded ? 'Hide' : 'Show'} {archived.length} older</span>
+            </button>
+            {archiveExpanded && archived.map((t, i) => renderTicket(t, i + RECENT_MERGED_COUNT))}
+          </>
+        )}
       </div>
     </div>
   )
