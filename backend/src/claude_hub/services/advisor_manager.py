@@ -36,26 +36,40 @@ def _tmux_is_dead(name: str) -> bool:
 
 
 def _restore_claude_config() -> None:
-    """Restore .claude.json from backup if missing.
+    """Restore .claude.json from backup if missing and ensure onboarding is complete.
 
     The volume only persists ~/.claude/ (subdir), but .claude.json lives at
     ~/. On container rebuild it gets lost. Auto-restore from backup.
+    Also ensures settings.json marks onboarding as complete to skip theme picker.
     """
+    import json as _json
+
     home = os.path.expanduser("~")
     config_path = os.path.join(home, ".claude.json")
-    if os.path.exists(config_path):
-        return
+    if not os.path.exists(config_path):
+        backup_dir = os.path.join(home, ".claude", "backups")
+        if os.path.isdir(backup_dir):
+            import glob as globmod
+            backups = sorted(globmod.glob(os.path.join(backup_dir, ".claude.json.backup.*")))
+            if backups:
+                import shutil
+                shutil.copy2(backups[-1], config_path)
+                logger.info("Restored %s from %s", config_path, backups[-1])
 
-    backup_dir = os.path.join(home, ".claude", "backups")
-    if not os.path.isdir(backup_dir):
-        return
-
-    import glob as globmod
-    backups = sorted(globmod.glob(os.path.join(backup_dir, ".claude.json.backup.*")))
-    if backups:
-        import shutil
-        shutil.copy2(backups[-1], config_path)
-        logger.info("Restored %s from %s", config_path, backups[-1])
+    # Ensure onboarding is marked complete (skips theme picker in interactive mode)
+    settings_path = os.path.join(home, ".claude", "settings.json")
+    try:
+        existing = {}
+        if os.path.exists(settings_path):
+            with open(settings_path) as f:
+                existing = _json.load(f)
+        if not existing.get("hasCompletedOnboarding"):
+            existing["hasCompletedOnboarding"] = True
+            with open(settings_path, "w") as f:
+                _json.dump(existing, f)
+            logger.info("Marked onboarding as complete in %s", settings_path)
+    except Exception as e:
+        logger.warning("Failed to update settings.json: %s", e)
 
 
 def _clean_env() -> dict[str, str]:
