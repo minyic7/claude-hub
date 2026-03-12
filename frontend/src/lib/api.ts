@@ -147,6 +147,7 @@ export const api = {
     actions: (projectId: string) =>
       request<{ runs: WorkflowRun[] }>(`/github/actions?project_id=${encodeURIComponent(projectId)}`),
   },
+  version: () => request<{ sha: string }>('/version'),
   health: () => request<{ status: string; redis: boolean }>('/health'),
   cost: () => request<{ daily: number; monthly: number }>('/cost'),
 }

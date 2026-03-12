@@ -17,6 +17,9 @@ class Settings(BaseSettings):
     merged_ttl_days: int = 7
     disallowed_tools: str = "Bash(curl:*),Bash(wget:*),Bash(ssh:*)"
 
+    # Build metadata
+    build_sha: str = "dev"
+
     # Auth
     auth_enabled: bool = True
     auth_username: str = "minyic"

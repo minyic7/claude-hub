@@ -122,6 +122,11 @@ app.include_router(github_actions.router, dependencies=auth_dep)
 app.include_router(ws.router)
 
 
+@app.get("/api/version")
+async def version():
+    return {"sha": settings.build_sha}
+
+
 @app.get("/api/health")
 async def health():
     try:

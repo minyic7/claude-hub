@@ -66,6 +66,10 @@ USER claude
 RUN git config --global user.name "Claude Hub" && \
     git config --global user.email "claude-hub@noreply.github.com"
 
+# ─── Build metadata ───────────────────────────────────────
+ARG BUILD_SHA=unknown
+ENV CLAUDE_HUB_BUILD_SHA=${BUILD_SHA}
+
 # ─── Environment defaults ─────────────────────────────────
 ENV CLAUDE_HUB_HOST=0.0.0.0
 ENV CLAUDE_HUB_PORT=7700
