@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 import jwt
@@ -21,7 +21,7 @@ class LoginResponse(BaseModel):
 @router.post("/api/login")
 async def login(req: LoginRequest) -> LoginResponse:
     if req.username == settings.auth_username and req.password == settings.auth_password:
-        exp = datetime.utcnow() + timedelta(hours=settings.auth_token_hours)
+        exp = datetime.now(timezone.utc) + timedelta(hours=settings.auth_token_hours)
         token = jwt.encode({"exp": exp}, settings.auth_secret, algorithm="HS256")
         return LoginResponse(
             token=token,

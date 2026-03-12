@@ -40,7 +40,7 @@ export function KanbanColumn({ label, tickets, activities, onTicketClick, onOpti
                 activityEvents={ticketActivities}
                 onClick={() => onTicketClick(ticket)}
                 onOptimistic={onOptimistic}
-                deploying={ticket.status === 'merged' && deployingBranches ? deployingBranches.has(ticket.branch) ? true : false : undefined}
+                deploying={ticket.status === 'merged' ? deployingBranches?.has(ticket.branch) : undefined}
                 mergeQueueLocked={mergeQueueLocked}
                 onMergeInitiated={onMergeInitiated}
               />

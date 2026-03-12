@@ -343,10 +343,8 @@ async def retry_ticket(ticket_id: str, body: dict | None = None):
 
 async def _tail_and_broadcast(ticket_id: str, log_path: str) -> None:
     """Background task: tail log with optional TicketAgent supervision."""
-    import logging
     from claude_hub.services.ticket_service import transition
 
-    logger = logging.getLogger(__name__)
     try:
         # Load agent settings from Redis (hot-reloadable)
         from claude_hub.routers.settings_router import get_agent_settings
@@ -565,7 +563,7 @@ async def reorder_tickets(body: dict):
             raise HTTPException(400, f"Ticket {tid[:8]} does not belong to project")
 
     for index, tid in enumerate(ticket_ids):
-        await redis_client.update_ticket_fields(tid, {"priority": str(index)})
+        await redis_client.update_ticket_fields(tid, {"priority": index})
 
     return {"ok": True}
 

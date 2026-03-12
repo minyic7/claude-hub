@@ -98,7 +98,7 @@ def _evaluate_checks(checks: list[dict], key_status: str, key_conclusion: str) -
         elif status in ("COMPLETED", "SUCCESS", "PASS"):
             passed.append(name)
         else:
-            passed.append(name)
+            pending.append(name)
 
     if failed:
         summary = f"CI failed: {', '.join(failed)}"

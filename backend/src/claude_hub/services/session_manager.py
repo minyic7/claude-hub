@@ -8,7 +8,6 @@ import time
 
 from claude_hub.config import settings
 from claude_hub.services.stream_parser import parse_line
-from claude_hub.models.events import ActivityEvent
 
 logger = logging.getLogger(__name__)
 

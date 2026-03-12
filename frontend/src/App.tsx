@@ -111,12 +111,11 @@ function AuthedApp() {
   useEffect(() => {
     if (deployState === 'deploying') {
       setMergeQueueLocked(true)
-    } else if (mergeQueueLocked) {
-      // Deploy finished (or never started) — unlock
+    } else {
       setMergeQueueLocked(false)
       if (lockTimerRef.current) clearTimeout(lockTimerRef.current)
     }
-  }, [deployState]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [deployState])
 
   const columns = useTickets(filteredTickets)
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null)
