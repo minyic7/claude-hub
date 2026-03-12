@@ -269,7 +269,6 @@ def start_advisor(project: dict, gh_token: str = "") -> str:
     parts = [
         settings.claude_bin,
         "--verbose",
-        "--dangerously-skip-permissions",
     ]
     claude_cmd = " ".join(parts)
 
