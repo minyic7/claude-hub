@@ -47,7 +47,7 @@ function AuthedApp() {
     return `${proto}//${window.location.host}/ws${qs}`
   }, [])
 
-  const { projects, tickets, activities, connected, lastEscalation, patchTicket } = useWebSocket(wsUrl)
+  const { projects, tickets, activities, connected, lastEscalation, lastTicketNotification, patchTicket } = useWebSocket(wsUrl)
   const { notifications, addNotification, dismiss } = useNotifications()
 
   // Wire API errors → notification bell
@@ -63,6 +63,13 @@ function AuthedApp() {
       addNotification('warning', `Blocked: ${title} — ${lastEscalation.question}`)
     }
   }, [lastEscalation])
+
+  // Show notification on ticket lifecycle events
+  useEffect(() => {
+    if (lastTicketNotification) {
+      addNotification(lastTicketNotification.notificationType, lastTicketNotification.message)
+    }
+  }, [lastTicketNotification])
 
   const [activeProjectId, setActiveProjectId] = useState<string | null>(
     () => localStorage.getItem('claude-hub-active-project'),
