@@ -296,7 +296,7 @@ def start_advisor(project: dict, gh_token: str = "") -> str:
         capture_output=True,
     )
     subprocess.run(
-        ["tmux", "set-option", "-t", name, "mouse", "on"],
+        ["tmux", "set-option", "-t", name, "mouse", "off"],
         capture_output=True,
     )
     subprocess.run(
