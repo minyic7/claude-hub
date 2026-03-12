@@ -37,6 +37,8 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
     && rm -rf /var/lib/apt/lists/*
 
 # Claude Code CLI + pnpm (for frontend projects Claude Code may work on)
+# CACHE_BUST ensures npm always installs the latest version (not cached)
+ARG CACHE_BUST=0
 RUN npm install -g @anthropic-ai/claude-code pnpm
 
 # Disable corepack strict mode (prevents download prompts in cloned repos)

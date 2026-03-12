@@ -47,6 +47,7 @@ jobs:
             ghcr.io/${{ github.repository }}:${{ github.sha }}
           build-args: |
             BUILD_SHA=${{ github.sha }}
+            CACHE_BUST=${{ github.run_id }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
