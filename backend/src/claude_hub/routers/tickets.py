@@ -51,6 +51,7 @@ async def _get_project_for_ticket(ticket: dict) -> dict:
 @router.get("")
 async def list_tickets(status: str | None = Query(None), project_id: str | None = Query(None)):
     if project_id:
+        await redis_client.backfill_ticket_seqs(project_id)
         tickets = await redis_client.list_tickets_by_project(project_id, status)
     else:
         tickets = await redis_client.list_tickets(status)
@@ -65,9 +66,11 @@ async def create_ticket(body: TicketCreate):
         raise HTTPException(404, "Project not found")
 
     ticket_id = str(uuid.uuid4())
+    seq = await redis_client.next_ticket_seq(body.project_id)
     ticket = Ticket(
         id=ticket_id,
         project_id=body.project_id,
+        seq=seq,
         title=body.title,
         description=body.description,
         branch_type=body.branch_type,

@@ -284,7 +284,7 @@ export function TicketDetail({ ticket, activities, allTickets, onClose, onDelete
                       key={depId}
                       className="inline-flex items-center gap-1 rounded-full border border-[var(--color-accent-blue)]/30 bg-[var(--color-accent-blue)]/10 px-2 py-0.5 text-xs text-[var(--color-accent-blue)]"
                     >
-                      <span className="max-w-[120px] truncate">{dep?.title || `#${depId.slice(0, 6)}`}</span>
+                      <span className="max-w-[120px] truncate" title={dep?.title}>{dep?.seq ? `#${dep.seq}` : dep?.title || `#${depId.slice(0, 6)}`}</span>
                       <button
                         type="button"
                         onClick={() => toggleEditDep(depId)}
@@ -315,7 +315,7 @@ export function TicketDetail({ ticket, activities, allTickets, onClose, onDelete
                       }`}>
                         {selected && <Check size={10} />}
                       </span>
-                      <span className="flex-1 truncate text-[var(--color-text-primary)]">{dep.title}</span>
+                      <span className="flex-1 truncate text-[var(--color-text-primary)]">{dep.seq > 0 && <span className="text-[var(--color-text-muted)] mr-1">#{dep.seq}</span>}{dep.title}</span>
                       <span className="shrink-0 text-[10px] text-[var(--color-text-muted)]">
                         {dep.status.replace('_', ' ')}
                       </span>
@@ -435,6 +435,7 @@ export function TicketDetail({ ticket, activities, allTickets, onClose, onDelete
       {/* Ticket info */}
       <div className="border-b border-[var(--color-border)] p-3">
         <h2 className="mb-2 text-sm font-semibold text-[var(--color-text-primary)]">
+          {ticket.seq > 0 && <span className="text-[var(--color-text-muted)] mr-1.5">#{ticket.seq}</span>}
           {ticket.title}
         </h2>
         <div className="flex flex-wrap items-center gap-2 text-xs">
@@ -492,10 +493,11 @@ export function TicketDetail({ ticket, activities, allTickets, onClose, onDelete
                 key={id}
                 onClick={() => dep && onTicketClick(dep)}
                 className="flex w-full items-center gap-2 rounded px-2 py-1 text-left text-xs hover:bg-[var(--color-bg-secondary)]"
+                title={dep?.title || 'Unknown ticket'}
               >
                 {depStatusIcon((dep?.status || 'todo') as TicketStatus)}
                 <span className="font-semibold text-[var(--color-text-primary)]">
-                  #{id.slice(0, 6)}
+                  #{dep?.seq || id.slice(0, 6)}
                 </span>
                 <span className="flex-1 truncate text-[var(--color-text-secondary)]">
                   {dep?.title || 'Unknown ticket'}
@@ -521,10 +523,11 @@ export function TicketDetail({ ticket, activities, allTickets, onClose, onDelete
                 key={rdep.id}
                 onClick={() => onTicketClick(rdep)}
                 className="flex w-full items-center gap-2 rounded px-2 py-1 text-left text-xs hover:bg-[var(--color-bg-secondary)]"
+                title={rdep.title}
               >
                 {depStatusIcon(rdep.status as TicketStatus)}
                 <span className="font-semibold text-[var(--color-text-primary)]">
-                  #{rdep.id.slice(0, 6)}
+                  #{rdep.seq || rdep.id.slice(0, 6)}
                 </span>
                 <span className="flex-1 truncate text-[var(--color-text-secondary)]">
                   {rdep.title}

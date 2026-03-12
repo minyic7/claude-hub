@@ -56,6 +56,7 @@ class TicketStatus(str, Enum):
 class Ticket(BaseModel):
     id: str
     project_id: str
+    seq: int = 0  # Per-project sequential number (1, 2, 3...)
     title: str
     description: str = ""
     branch_type: BranchType
