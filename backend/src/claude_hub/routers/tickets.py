@@ -415,10 +415,17 @@ async def _tail_and_broadcast(ticket_id: str, log_path: str) -> None:
         except Exception:
             pass
 
-        # Run verification
-        from claude_hub.services.github_verify import verify_agent_work
+        # Run safety net + verification
+        from claude_hub.services.github_verify import ensure_pushed, verify_agent_work
         clone_path = ticket.get("clone_path", "")
         if clone_path:
+            # Safety net: commit uncommitted changes, push, create PR if missing
+            project = await _get_project_for_ticket(ticket)
+            gh_token = project.get("gh_token", "")
+            actions = ensure_pushed(clone_path, ticket["branch"], ticket["base_branch"], gh_token)
+            if actions:
+                logger.info("ensure_pushed for %s: %s", ticket_id, actions)
+
             # Fetch latest from remote before verifying
             import subprocess
             subprocess.run(["git", "fetch", "origin"], cwd=clone_path, capture_output=True)
