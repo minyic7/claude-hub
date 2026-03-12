@@ -264,21 +264,25 @@ def start_advisor(project: dict, gh_token: str = "") -> str:
     with open(claude_md_path, "w") as f:
         f.write(claude_md)
 
-    # Pre-approve advisor tools so user isn't prompted for every curl/python3 call
+    # Pre-approve advisor tools (merge with existing user-granted permissions)
     import json as _json
     claude_settings_dir = os.path.join(advisor_dir, ".claude")
     os.makedirs(claude_settings_dir, exist_ok=True)
     claude_settings_path = os.path.join(claude_settings_dir, "settings.json")
-    claude_settings = {
-        "permissions": {
-            "allow": [
-                "Bash(curl:*)",
-                "Bash(python3:*)",
-            ]
-        }
-    }
-    with open(claude_settings_path, "w") as f:
-        _json.dump(claude_settings, f, indent=2)
+    required_allow = {"Bash(curl:*)", "Bash(python3:*)"}
+    try:
+        existing = {}
+        if os.path.exists(claude_settings_path):
+            with open(claude_settings_path) as f:
+                existing = _json.load(f)
+        perms = existing.setdefault("permissions", {})
+        current_allow = set(perms.get("allow", []))
+        current_allow.update(required_allow)
+        perms["allow"] = sorted(current_allow)
+        with open(claude_settings_path, "w") as f:
+            _json.dump(existing, f, indent=2)
+    except Exception as e:
+        logger.warning("Failed to update .claude/settings.json: %s", e)
 
     # Build claude command — interactive mode (no -p, no --output-format)
     # The initial prompt is sent via tmux send-keys after startup
