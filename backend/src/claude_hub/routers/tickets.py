@@ -15,6 +15,16 @@ from claude_hub.routers.ws import broadcast
 
 router = APIRouter(prefix="/api/tickets", tags=["tickets"])
 
+# Appended to every task prompt to ensure Claude Code pushes all changes
+_PUSH_VERIFICATION_INSTRUCTION = (
+    "\n\n## IMPORTANT — Final Verification (do this LAST before exiting)\n"
+    "Before you finish, run `git status` and `git log --oneline -5` to verify:\n"
+    "1. No uncommitted changes remain (working tree clean)\n"
+    "2. All commits have been pushed to the remote branch\n"
+    "3. A PR exists (create one if missing)\n"
+    "If anything is missing, fix it before exiting."
+)
+
 
 def _slugify(text: str, max_len: int = 60) -> str:
     slug = text.lower().strip()
@@ -215,6 +225,7 @@ async def start_ticket(ticket_id: str):
         f"{description}\n\n"
         f"You are working on branch '{branch}' (based on '{base_branch}').\n"
         f"When done, commit your changes, push the branch, and create a PR against '{base_branch}'."
+        + _PUSH_VERIFICATION_INSTRUCTION
     )
     session_name, log_path = session_manager.start_session(
         ticket_id, clone_path, task, gh_token=gh_token,
@@ -340,6 +351,7 @@ async def retry_ticket(ticket_id: str, body: dict | None = None):
         f"{description}\n\n"
         f"You are working on branch '{branch}' (based on '{base_branch}').\n"
         f"When done, commit your changes, push the branch, and create a PR against '{base_branch}'."
+        + _PUSH_VERIFICATION_INSTRUCTION
     )
 
     # Auto-include CI failure reason as context for retry
@@ -550,6 +562,7 @@ async def request_changes(ticket_id: str, body: dict):
     )
     if pr_number:
         task += f"\nDo NOT create a new PR — push to the same branch so the existing PR #{pr_number} is updated."
+    task += _PUSH_VERIFICATION_INSTRUCTION
 
     try:
         session_name, log_path = session_manager.start_session(
