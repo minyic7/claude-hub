@@ -9,6 +9,9 @@ import logging
 import os
 import shlex
 import subprocess
+from datetime import datetime, timedelta, timezone
+
+import jwt
 
 from claude_hub.config import settings
 
@@ -40,12 +43,19 @@ def _clean_env() -> dict[str, str]:
     }
 
 
-def _build_advisor_claude_md(project: dict, api_base_url: str) -> str:
+def _generate_internal_token() -> str:
+    """Generate a long-lived JWT for advisor internal API calls."""
+    exp = datetime.now(timezone.utc) + timedelta(days=30)
+    return jwt.encode({"exp": exp, "advisor": True}, settings.auth_secret, algorithm="HS256")
+
+
+def _build_advisor_claude_md(project: dict, api_base_url: str, auth_token: str = "") -> str:
     """Generate CLAUDE.md content for the advisor session."""
     project_name = project.get("name", "Unknown")
     project_id = project["id"]
     repo_url = project.get("repo_url", "")
     base_branch = project.get("base_branch", "main")
+    auth_header = f'-H "Authorization: Bearer {auth_token}" ' if auth_token else ""
 
     return f"""# Project Advisor — {project_name}
 
@@ -108,13 +118,13 @@ When reviewing the board or creating new tickets:
 ### get_kanban_state
 Fetch all tickets for this project to check for duplicates and understand current state:
 ```bash
-curl -s {api_base_url}/api/projects/{project_id}/tickets | python3 -m json.tool
+curl -s {auth_header}{api_base_url}/api/projects/{project_id}/tickets | python3 -m json.tool
 ```
 
 ### create_ticket
 Create a new ticket with structured JSON. You can include `depends_on` (list of ticket IDs):
 ```bash
-curl -s -X POST {api_base_url}/api/tickets \\
+curl -s -X POST {auth_header}{api_base_url}/api/tickets \\
   -H "Content-Type: application/json" \\
   -d '{{"project_id": "{project_id}", "title": "TICKET_TITLE", "description": "TICKET_DESCRIPTION", "branch_type": "feature", "depends_on": []}}'
 ```
@@ -124,7 +134,7 @@ Valid branch_type values: feature, bugfix, hotfix, chore, refactor, docs, test
 ### update_ticket
 Update an existing ticket (only works for tickets in TODO status). You can update title, description, priority, and depends_on:
 ```bash
-curl -s -X PATCH {api_base_url}/api/tickets/TICKET_ID \\
+curl -s -X PATCH {auth_header}{api_base_url}/api/tickets/TICKET_ID \\
   -H "Content-Type: application/json" \\
   -d '{{"title": "NEW_TITLE", "description": "NEW_DESCRIPTION", "priority": 0, "depends_on": ["dep-ticket-id-1"]}}'
 ```
@@ -133,7 +143,7 @@ Only include the fields you want to change. Omit fields you don't want to modify
 ### reorder_tickets
 Reorder TODO tickets by setting their priority values (position in list = priority, first = highest):
 ```bash
-curl -s -X POST {api_base_url}/api/tickets/reorder \\
+curl -s -X POST {auth_header}{api_base_url}/api/tickets/reorder \\
   -H "Content-Type: application/json" \\
   -d '{{"project_id": "{project_id}", "ticket_ids": ["first-ticket-id", "second-ticket-id", "third-ticket-id"]}}'
 ```
@@ -202,7 +212,8 @@ def start_advisor(project: dict, gh_token: str = "") -> str:
 
     # Write CLAUDE.md for the advisor
     api_base_url = f"http://localhost:{settings.port}"
-    claude_md = _build_advisor_claude_md(project, api_base_url)
+    auth_token = _generate_internal_token() if settings.auth_enabled else ""
+    claude_md = _build_advisor_claude_md(project, api_base_url, auth_token)
     claude_md_path = os.path.join(advisor_dir, "CLAUDE.md")
     with open(claude_md_path, "w") as f:
         f.write(claude_md)

@@ -1,13 +1,23 @@
 """Advisor endpoints for persistent project advisor sessions."""
 
+import asyncio
+import fcntl
 import logging
+import os
+import pty
+import struct
+import termios
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect
 
 from claude_hub import redis_client
+from claude_hub.auth import verify_ws_token
+from claude_hub.config import settings
 from claude_hub.services import advisor_manager
 
 router = APIRouter(prefix="/api/projects", tags=["advisor"])
+# Separate router for WebSocket (no auth dependency — handled inside endpoint)
+ws_router = APIRouter(tags=["advisor"])
 logger = logging.getLogger(__name__)
 
 
@@ -61,3 +71,123 @@ async def advisor_status(project_id: str):
         raise HTTPException(404, "Project not found")
 
     return advisor_manager.get_status(project_id)
+
+
+@ws_router.websocket("/ws/advisor/{project_id}/terminal")
+async def advisor_terminal(websocket: WebSocket, project_id: str, token: str = Query(default="")):
+    """WebSocket endpoint that bridges xterm.js to the advisor tmux session via PTY."""
+    # Auth check
+    if settings.auth_enabled and not verify_ws_token(token):
+        await websocket.close(code=4001, reason="Invalid or missing token")
+        return
+
+    # Verify project exists
+    project = await redis_client.get_project(project_id)
+    if not project:
+        await websocket.close(code=4002, reason="Project not found")
+        return
+
+    # Ensure advisor session is alive
+    if not advisor_manager.is_alive(project_id):
+        await websocket.close(code=4003, reason="Advisor session not running")
+        return
+
+    session_name = advisor_manager._session_name(project_id)
+    await websocket.accept()
+    logger.info("Advisor terminal connected for project %s", project_id)
+
+    # Create PTY pair
+    master_fd, slave_fd = pty.openpty()
+
+    # Set initial size (will be updated by client resize messages)
+    _set_pty_size(master_fd, 80, 24)
+
+    # Spawn tmux attach using the slave as stdin/stdout/stderr
+    process = await asyncio.create_subprocess_exec(
+        "tmux", "attach-session", "-t", session_name,
+        stdin=slave_fd,
+        stdout=slave_fd,
+        stderr=slave_fd,
+        preexec_fn=os.setsid,
+    )
+    # Close slave in parent — only master is used
+    os.close(slave_fd)
+
+    loop = asyncio.get_event_loop()
+
+    async def _read_pty():
+        """Read from PTY master and send to WebSocket."""
+        try:
+            while True:
+                data = await loop.run_in_executor(None, _blocking_read, master_fd)
+                if not data:
+                    break
+                await websocket.send_bytes(data)
+        except (OSError, WebSocketDisconnect, asyncio.CancelledError):
+            pass
+
+    async def _write_pty():
+        """Read from WebSocket and write to PTY master."""
+        try:
+            while True:
+                msg = await websocket.receive()
+                if msg.get("type") == "websocket.disconnect":
+                    break
+                if "bytes" in msg:
+                    data = msg["bytes"]
+                    # Check for resize message (binary: 0x01 + JSON)
+                    if data and data[0:1] == b"\x01":
+                        try:
+                            import json
+                            resize = json.loads(data[1:])
+                            cols = resize.get("cols", 80)
+                            rows = resize.get("rows", 24)
+                            _set_pty_size(master_fd, cols, rows)
+                        except (json.JSONDecodeError, KeyError):
+                            pass
+                    else:
+                        os.write(master_fd, data)
+                elif "text" in msg:
+                    os.write(master_fd, msg["text"].encode())
+        except (OSError, WebSocketDisconnect, asyncio.CancelledError):
+            pass
+
+    read_task = asyncio.create_task(_read_pty())
+    write_task = asyncio.create_task(_write_pty())
+
+    try:
+        # Wait for either direction to finish
+        done, pending = await asyncio.wait(
+            [read_task, write_task],
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+        for t in pending:
+            t.cancel()
+    finally:
+        # Cleanup: detach tmux (don't kill the session)
+        try:
+            process.terminate()
+        except ProcessLookupError:
+            pass
+        try:
+            os.close(master_fd)
+        except OSError:
+            pass
+        logger.info("Advisor terminal disconnected for project %s", project_id)
+
+
+def _blocking_read(fd: int) -> bytes:
+    """Blocking read from fd, suitable for run_in_executor."""
+    try:
+        return os.read(fd, 4096)
+    except OSError:
+        return b""
+
+
+def _set_pty_size(fd: int, cols: int, rows: int) -> None:
+    """Set PTY window size."""
+    try:
+        winsize = struct.pack("HHHH", rows, cols, 0, 0)
+        fcntl.ioctl(fd, termios.TIOCSWINSZ, winsize)
+    except OSError:
+        pass

@@ -121,6 +121,7 @@ app.include_router(github_actions.router, dependencies=auth_dep)
 app.include_router(advisor.router, dependencies=auth_dep)
 # WS auth is handled inside the endpoint (query param), not via router dependency
 app.include_router(ws.router)
+app.include_router(advisor.ws_router)
 
 
 @app.get("/api/version")
