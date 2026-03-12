@@ -4,7 +4,8 @@ from claude_hub.models.ticket import TicketStatus
 from claude_hub import redis_client
 
 VALID_TRANSITIONS: dict[TicketStatus, list[TicketStatus]] = {
-    TicketStatus.TODO: [TicketStatus.IN_PROGRESS],
+    TicketStatus.TODO: [TicketStatus.IN_PROGRESS, TicketStatus.QUEUED],
+    TicketStatus.QUEUED: [TicketStatus.IN_PROGRESS, TicketStatus.TODO],
     TicketStatus.IN_PROGRESS: [TicketStatus.BLOCKED, TicketStatus.VERIFYING, TicketStatus.FAILED],
     TicketStatus.BLOCKED: [TicketStatus.IN_PROGRESS, TicketStatus.FAILED],
     TicketStatus.VERIFYING: [TicketStatus.REVIEWING, TicketStatus.REVIEW, TicketStatus.FAILED],

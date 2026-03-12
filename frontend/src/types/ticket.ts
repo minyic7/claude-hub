@@ -2,6 +2,7 @@ export type BranchType = 'feature' | 'bugfix' | 'hotfix' | 'chore' | 'refactor' 
 
 export type TicketStatus =
   | 'todo'
+  | 'queued'
   | 'in_progress'
   | 'blocked'
   | 'verifying'

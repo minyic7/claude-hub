@@ -275,6 +275,10 @@ async def stop_ticket(ticket_id: str):
         "ticket_id": ticket_id,
         "data": updated,
     })
+
+    # Session stopped — process queue
+    await process_queue()
+
     return updated
 
 
@@ -489,6 +493,8 @@ async def _run_agent_review(ticket_id: str, agent_cfg: dict) -> None:
                 "ticket_id": ticket_id,
                 "data": updated,
             })
+            # Session freed a slot — process queue
+            await process_queue()
         except Exception as e:
             logger.error("Failed to transition %s to REVIEW after approval: %s", ticket_id, e)
     else:
@@ -506,6 +512,7 @@ async def _run_agent_review(ticket_id: str, agent_cfg: dict) -> None:
                     "ticket_id": ticket_id,
                     "data": updated,
                 })
+                await process_queue()
             except Exception:
                 pass
 
@@ -648,6 +655,8 @@ async def _tail_and_broadcast(ticket_id: str, log_path: str) -> None:
                         "ticket_id": ticket_id,
                         "data": updated,
                     })
+                    # Session freed a slot — process queue
+                    await process_queue()
             else:
                 updated = await transition(ticket_id, TicketStatus.FAILED,
                                            failed_reason=result.reason)
@@ -656,6 +665,8 @@ async def _tail_and_broadcast(ticket_id: str, log_path: str) -> None:
                     "ticket_id": ticket_id,
                     "data": updated,
                 })
+                # Session freed a slot — process queue
+                await process_queue()
 
     except Exception as e:
         logger.error("Error tailing log for ticket %s: %s", ticket_id, e)
@@ -675,6 +686,11 @@ async def _tail_and_broadcast(ticket_id: str, log_path: str) -> None:
                 })
         except Exception:
             logger.error("Failed to mark ticket %s as failed after error", ticket_id)
+        # Session freed a slot — process queue
+        try:
+            await process_queue()
+        except Exception:
+            pass
 
 
 @router.post("/{ticket_id}/mark-review")
@@ -779,6 +795,133 @@ async def request_changes(ticket_id: str, body: dict):
     asyncio.create_task(_tail_and_broadcast(ticket_id, log_path))
 
     updated = await redis_client.get_ticket(ticket_id)
+    await broadcast({
+        "type": "ticket_updated",
+        "ticket_id": ticket_id,
+        "data": updated,
+    })
+    return updated
+
+
+@router.post("/bulk-start")
+async def bulk_start_tickets(body: dict):
+    """Start multiple tickets. Those that fit within max_sessions start immediately;
+    the rest are queued and auto-started when sessions complete."""
+    from claude_hub.services import session_manager
+
+    ticket_ids = body.get("ticket_ids", [])
+    if not ticket_ids or not isinstance(ticket_ids, list):
+        raise HTTPException(400, "ticket_ids required (array)")
+
+    started = []
+    queued = []
+
+    for tid in ticket_ids:
+        ticket = await redis_client.get_ticket(tid)
+        if not ticket:
+            continue
+        if ticket.get("status") not in ("todo",):
+            continue
+
+        # Check dependencies
+        depends_on = ticket.get("depends_on", [])
+        if depends_on:
+            deps_met = True
+            for dep_id in depends_on:
+                dep = await redis_client.get_ticket(dep_id)
+                if not dep or dep.get("status") != "merged":
+                    deps_met = False
+                    break
+            if not deps_met:
+                continue
+
+        # Try to start immediately if under limit
+        if (session_manager.active_session_count() < settings.max_sessions
+                and not session_manager.has_active_session(tid)):
+            try:
+                result = await start_ticket(tid)
+                started.append(tid)
+            except HTTPException:
+                # Failed to start — queue it instead
+                await _enqueue_ticket(tid)
+                queued.append(tid)
+        else:
+            await _enqueue_ticket(tid)
+            queued.append(tid)
+
+    return {"started": started, "queued": queued}
+
+
+async def _enqueue_ticket(ticket_id: str) -> None:
+    """Transition a TODO ticket to QUEUED and add to the Redis queue."""
+    from claude_hub.services.ticket_service import InvalidTransition, transition
+
+    try:
+        updated = await transition(ticket_id, TicketStatus.QUEUED)
+    except (InvalidTransition, ValueError):
+        return
+    await redis_client.enqueue_tickets([ticket_id])
+    await broadcast({
+        "type": "ticket_updated",
+        "ticket_id": ticket_id,
+        "data": updated,
+    })
+
+
+async def process_queue() -> str | None:
+    """Try to start the next queued ticket. Called when a session completes."""
+    from claude_hub.services import session_manager
+
+    if session_manager.active_session_count() >= settings.max_sessions:
+        return None
+
+    ticket_id = await redis_client.dequeue_ticket()
+    if not ticket_id:
+        return None
+
+    ticket = await redis_client.get_ticket(ticket_id)
+    if not ticket or ticket.get("status") != "queued":
+        # Ticket was cancelled/deleted while queued — try next
+        return await process_queue()
+
+    # Transition QUEUED → TODO first (so start_ticket can do TODO → IN_PROGRESS)
+    from claude_hub.services.ticket_service import transition
+    try:
+        await transition(ticket_id, TicketStatus.TODO)
+    except Exception:
+        return await process_queue()
+
+    try:
+        await start_ticket(ticket_id)
+        return ticket_id
+    except HTTPException:
+        return await process_queue()
+
+
+@router.get("/queue")
+async def get_queue():
+    """Get the current queue of tickets waiting to start."""
+    queue_ids = await redis_client.get_queue()
+    return {"queue": queue_ids}
+
+
+@router.delete("/queue/{ticket_id}")
+async def remove_from_queue(ticket_id: str):
+    """Remove a ticket from the queue and revert to TODO."""
+    from claude_hub.services.ticket_service import InvalidTransition, transition
+
+    ticket = await redis_client.get_ticket(ticket_id)
+    if not ticket:
+        raise HTTPException(404, "Ticket not found")
+    if ticket.get("status") != "queued":
+        raise HTTPException(409, "Ticket is not queued")
+
+    await redis_client.remove_from_queue(ticket_id)
+    try:
+        updated = await transition(ticket_id, TicketStatus.TODO)
+    except (InvalidTransition, ValueError) as e:
+        raise HTTPException(409, str(e))
+
     await broadcast({
         "type": "ticket_updated",
         "ticket_id": ticket_id,
@@ -978,4 +1121,8 @@ async def merge_ticket(ticket_id: str):
     updated = await redis_client.get_ticket(ticket_id)
 
     await broadcast({"type": "ticket_updated", "ticket_id": ticket_id, "data": updated})
+
+    # Merged — session slot freed, process queue
+    await process_queue()
+
     return updated

@@ -6,6 +6,7 @@ const COLUMN_ORDER: TicketStatus[] = ['todo', 'in_progress', 'review', 'merged']
 // These statuses are shown within their parent column
 const STATUS_MAPPING: Record<TicketStatus, TicketStatus> = {
   todo: 'todo',
+  queued: 'todo',
   in_progress: 'in_progress',
   blocked: 'in_progress',
   verifying: 'in_progress',

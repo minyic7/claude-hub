@@ -43,6 +43,7 @@ class BranchType(str, Enum):
 
 class TicketStatus(str, Enum):
     TODO = "todo"
+    QUEUED = "queued"
     IN_PROGRESS = "in_progress"
     BLOCKED = "blocked"
     VERIFYING = "verifying"

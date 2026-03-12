@@ -231,6 +231,48 @@ async def get_recent_activity(ticket_id: str, count: int = 50) -> list[dict]:
     return [json.loads(item) for item in raw]
 
 
+# ─── Queue helpers ──────────────────────────────────────────────────────────
+
+QUEUE_KEY = "tickets:queue"
+
+
+async def enqueue_tickets(ticket_ids: list[str]) -> int:
+    """Add ticket IDs to the queue sorted set. Score = current max + position."""
+    r = _r()
+    existing = await r.zrange(QUEUE_KEY, -1, -1, withscores=True)
+    base_score = int(existing[0][1]) + 1 if existing else 1
+    mapping = {tid: base_score + i for i, tid in enumerate(ticket_ids)}
+    await r.zadd(QUEUE_KEY, mapping)  # type: ignore[arg-type]
+    return len(mapping)
+
+
+async def dequeue_ticket() -> str | None:
+    """Pop the lowest-score (oldest) ticket from the queue."""
+    r = _r()
+    result = await r.zpopmin(QUEUE_KEY, count=1)
+    if result:
+        return result[0][0]
+    return None
+
+
+async def remove_from_queue(ticket_id: str) -> None:
+    r = _r()
+    await r.zrem(QUEUE_KEY, ticket_id)
+
+
+async def get_queue() -> list[str]:
+    """Get all queued ticket IDs in order."""
+    r = _r()
+    return await r.zrange(QUEUE_KEY, 0, -1)
+
+
+async def get_queue_position(ticket_id: str) -> int | None:
+    """Get 0-based position in queue, or None if not queued."""
+    r = _r()
+    rank = await r.zrank(QUEUE_KEY, ticket_id)
+    return rank
+
+
 # ─── Cost helpers ────────────────────────────────────────────────────────────
 
 async def get_cost_summary() -> dict:

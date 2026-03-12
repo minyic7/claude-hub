@@ -1,5 +1,5 @@
 import { type FormEvent, type MouseEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { AlertCircle, Archive, ArchiveRestore, Check, CircleDot, ClipboardCheck, GitMerge, Loader2, Lock, MessageCircleQuestion, Pencil, Play, Plug, Rocket, RotateCcw, ExternalLink, Send, X } from 'lucide-react'
+import { AlertCircle, Archive, ArchiveRestore, Check, CircleDot, ClipboardCheck, Clock, GitMerge, Loader2, Lock, MessageCircleQuestion, Pencil, Play, Plug, Rocket, RotateCcw, ExternalLink, Send, X } from 'lucide-react'
 import type { Ticket, TicketStatus } from '../../types/ticket'
 import type { ActivityEvent } from '../../types/activity'
 import { Badge } from '../common/Badge'
@@ -87,6 +87,11 @@ export function TicketCard({ ticket, latestActivity, activityEvents, onClick, on
     () => api.tickets.start(ticket.id),
     { status: 'in_progress' },
     { status: 'todo' },
+  )
+  const handleDequeue = safeAction(
+    () => api.tickets.dequeue(ticket.id),
+    { status: 'todo' },
+    { status: 'queued' },
   )
   const handleRetry = safeAction(
     () => api.tickets.retry(ticket.id),
@@ -281,6 +286,7 @@ export function TicketCard({ ticket, latestActivity, activityEvents, onClick, on
 
           <div className="mb-2 flex items-center gap-1.5">
             <Badge color="blue">{ticket.branch_type}</Badge>
+            {ticket.status === 'queued' && <Badge color="yellow">QUEUED</Badge>}
             {ticket.status === 'blocked' && <Badge color="red">ESCALATION</Badge>}
             {ticket.status === 'failed' && <Badge color="red">FAILED</Badge>}
             {ticket.status === 'verifying' && <Badge color="yellow">VERIFYING</Badge>}
@@ -347,6 +353,18 @@ export function TicketCard({ ticket, latestActivity, activityEvents, onClick, on
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {!editing && ticket.status === 'queued' && (
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5 text-xs text-[var(--color-accent-yellow)]">
+            <Clock size={12} />
+            <span>Queued — waiting for slot</span>
+          </div>
+          <Button size="sm" variant="secondary" onClick={handleDequeue}>
+            <X size={12} className="mr-1" /> Cancel
+          </Button>
         </div>
       )}
 
@@ -495,7 +513,7 @@ function statusFlashColor(status: string): string {
   switch (status) {
     case 'in_progress': return 'var(--color-accent-blue)'
     case 'blocked': case 'failed': return 'var(--color-accent-red)'
-    case 'review': case 'verifying': case 'reviewing': return 'var(--color-accent-yellow)'
+    case 'queued': case 'review': case 'verifying': case 'reviewing': return 'var(--color-accent-yellow)'
     case 'merging': case 'merged': return 'var(--color-accent-green)'
     default: return 'var(--color-accent-blue)'
   }
@@ -504,6 +522,8 @@ function statusFlashColor(status: string): string {
 function StatusIndicator({ status, entering }: { status: string; entering?: boolean }) {
   const cls = `shrink-0 status-icon${entering ? ' status-icon--enter' : ''}`
   switch (status) {
+    case 'queued':
+      return <Clock size={14} className={`${cls} text-[var(--color-accent-yellow)]`} />
     case 'in_progress':
       return <CircleDot size={14} className={`${cls} text-[var(--color-accent-blue)] animate-pulse`} />
     case 'blocked':
