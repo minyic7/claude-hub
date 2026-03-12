@@ -75,8 +75,8 @@ function ScoreRadar({ scores, size = 120 }: { scores: ReviewScores; size?: numbe
   // Grid rings
   const rings = [0.25, 0.5, 0.75, 1.0]
 
-  // Data polygon
-  const dataPoints = values.map((v, i) => getPoint(i, maxR * (v / 10)))
+  // Data polygon (minimum 0.5/10 radius so zero scores are still visible)
+  const dataPoints = values.map((v, i) => getPoint(i, maxR * (Math.max(v, 0.5) / 10)))
   const dataPath = dataPoints.map((p, i) => `${i === 0 ? 'M' : 'L'}${p[0]},${p[1]}`).join(' ') + ' Z'
 
   return (

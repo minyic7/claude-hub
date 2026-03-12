@@ -44,6 +44,8 @@ Rules:
 - Only reject for critical or major issues. Minor issues = approve with notes.
 - Be concise. The feedback field is sent directly to Claude Code as instructions.
 - If approving, feedback can be empty string.
+- If the diff is truncated, note this in your summary and lower confidence in completeness score.
+  You can only review what you can see — do NOT reject based on what might be in the truncated portion.
 - ONLY output valid JSON. No markdown fences, no explanation."""
 
 

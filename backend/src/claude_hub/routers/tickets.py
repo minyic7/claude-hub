@@ -431,10 +431,37 @@ async def retry_ticket(ticket_id: str, body: dict | None = None):
     return updated
 
 
+MAX_REVIEW_ROUNDS = 3
+
+
 async def _run_agent_review(ticket_id: str, agent_cfg: dict) -> None:
     """Run agent code review. On approve → REVIEW, on reject → spawn new session."""
     from claude_hub.services.agent_review import review_pr
     from claude_hub.services.ticket_service import transition
+
+    # Check review round count — prevent infinite reject loops
+    ticket = await redis_client.get_ticket(ticket_id)
+    review_round = int(ticket.get("review_round", 0)) + 1
+    await redis_client.update_ticket_fields(ticket_id, {"review_round": review_round})
+
+    if review_round > MAX_REVIEW_ROUNDS:
+        logger.warning("Ticket %s hit max review rounds (%d), marking as failed for human attention",
+                        ticket_id, MAX_REVIEW_ROUNDS)
+        from claude_hub.services.agent_review import _record_activity
+        await _record_activity(ticket_id, "warning",
+                               f"Agent review failed {MAX_REVIEW_ROUNDS} times. Needs human review — check the PR directly.")
+        try:
+            updated = await transition(ticket_id, TicketStatus.FAILED,
+                                       failed_reason=f"Agent review rejected {MAX_REVIEW_ROUNDS} times. "
+                                                     "Manual review required — check the PR and use 'Mark Ready' if acceptable.")
+            await broadcast({
+                "type": "ticket_updated",
+                "ticket_id": ticket_id,
+                "data": updated,
+            })
+        except Exception as e:
+            logger.error("Failed to transition %s to FAILED after max rounds: %s", ticket_id, e)
+        return
 
     try:
         await transition(ticket_id, TicketStatus.REVIEWING)
