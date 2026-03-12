@@ -218,23 +218,22 @@ def start_advisor(project: dict, gh_token: str = "") -> str:
     with open(claude_md_path, "w") as f:
         f.write(claude_md)
 
-    # Build claude command
-    task = (
+    # Build claude command — interactive mode (no -p, no --output-format)
+    # The initial prompt is sent via tmux send-keys after startup
+    parts = [
+        settings.claude_bin,
+        "--verbose",
+        "--dangerously-skip-permissions",
+    ]
+    claude_cmd = " ".join(parts)
+
+    initial_prompt = (
         "You are a project advisor. Start by running get_kanban_state to build your mental "
         "model of all existing tickets — their titles, descriptions, statuses, and dependencies. "
         "Then greet the user and let them know you're ready to help them refine requirements "
         "and create tickets. Mention a brief summary of the current board state (e.g., how many "
         "tickets exist, any in progress, etc.)."
     )
-    task_escaped = shlex.quote(task)
-    parts = [
-        settings.claude_bin,
-        "-p", task_escaped,
-        "--output-format", "stream-json",
-        "--verbose",
-        "--dangerously-skip-permissions",
-    ]
-    claude_cmd = " ".join(parts)
 
     # Create tmux session with clean env
     env = _clean_env()
@@ -262,6 +261,27 @@ def start_advisor(project: dict, gh_token: str = "") -> str:
         ["tmux", "send-keys", "-t", name, claude_cmd, "Enter"],
         check=True,
     )
+
+    # Send initial prompt after a brief delay for Claude to start up
+    import threading
+
+    def _send_initial_prompt():
+        import time
+        time.sleep(3)  # Wait for Claude CLI to initialize
+        try:
+            subprocess.run(
+                ["tmux", "send-keys", "-t", name, "-l", initial_prompt],
+                capture_output=True,
+            )
+            subprocess.run(
+                ["tmux", "send-keys", "-t", name, "Enter"],
+                capture_output=True,
+            )
+            logger.info("Sent initial prompt to advisor %s", name)
+        except Exception as e:
+            logger.warning("Failed to send initial prompt to %s: %s", name, e)
+
+    threading.Thread(target=_send_initial_prompt, daemon=True).start()
 
     logger.info("Started advisor session %s for project %s", name, project_id)
     return name
