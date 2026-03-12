@@ -12,6 +12,7 @@ from claude_hub import redis_client
 from claude_hub.config import settings
 from claude_hub.models.ticket import Ticket, TicketCreate, TicketStatus, TicketUpdate
 from claude_hub.routers.ws import broadcast
+from claude_hub.services.advisor_manager import send_kanban_update
 
 router = APIRouter(prefix="/api/tickets", tags=["tickets"])
 
@@ -91,6 +92,7 @@ async def create_ticket(body: TicketCreate):
         "ticket_id": ticket_id,
         "data": ticket.model_dump(mode="json"),
     })
+    send_kanban_update(body.project_id)
     return ticket.model_dump(mode="json")
 
 
@@ -123,6 +125,7 @@ async def update_ticket(ticket_id: str, body: TicketUpdate):
         "ticket_id": ticket_id,
         "data": updated,
     })
+    send_kanban_update(ticket.get("project_id", ""))
     return updated
 
 
