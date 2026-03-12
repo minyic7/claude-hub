@@ -116,12 +116,16 @@ async def advisor_terminal(websocket: WebSocket, project_id: str, token: str = Q
         import fcntl as _fcntl
         _fcntl.ioctl(slave_fd, termios.TIOCSCTTY, 0)
 
+    # TERM must be set for tmux to attach ("terminal does not support clear")
+    env = {**os.environ, "TERM": "xterm-256color"}
+
     process = await asyncio.create_subprocess_exec(
         "tmux", "attach-session", "-t", session_name,
         stdin=slave_fd,
         stdout=slave_fd,
         stderr=slave_fd,
         preexec_fn=_child_setup,
+        env=env,
     )
     # Close slave in parent — only master is used for I/O
     os.close(slave_fd)
