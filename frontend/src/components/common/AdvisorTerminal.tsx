@@ -104,6 +104,28 @@ export function AdvisorTerminal({ projectId, onClose }: AdvisorTerminalProps) {
       }
     })
 
+    // Clipboard paste (Ctrl+V / Cmd+V) → send to terminal
+    terminal.attachCustomKeyEventHandler((e) => {
+      if (e.type === 'keydown' && (e.ctrlKey || e.metaKey)) {
+        if (e.key === 'v') {
+          navigator.clipboard.readText().then((text) => {
+            if (text && ws.readyState === WebSocket.OPEN) {
+              ws.send(new TextEncoder().encode(text))
+            }
+          }).catch(() => {})
+          return false // prevent default
+        }
+        if (e.key === 'c') {
+          const sel = terminal.getSelection()
+          if (sel) {
+            navigator.clipboard.writeText(sel).catch(() => {})
+            return false
+          }
+        }
+      }
+      return true
+    })
+
     // Handle window resize
     const handleResize = () => {
       fitAddon.fit()
