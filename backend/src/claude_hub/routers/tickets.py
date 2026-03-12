@@ -446,10 +446,18 @@ async def _run_agent_review(ticket_id: str, agent_cfg: dict) -> None:
     from claude_hub.services.agent_review import review_pr
     from claude_hub.services.ticket_service import transition
 
-    # Check review round count — prevent infinite reject loops
+    # Derive review round from agent_review history length
     ticket = await redis_client.get_ticket(ticket_id)
-    review_round = int(ticket.get("review_round", 0)) + 1
-    await redis_client.update_ticket_fields(ticket_id, {"review_round": review_round})
+    history = ticket.get("agent_review") or []
+    if isinstance(history, str):
+        import json as _json
+        try:
+            history = _json.loads(history)
+        except (ValueError, TypeError):
+            history = []
+    if not isinstance(history, list):
+        history = []
+    review_round = len(history) + 1  # this round will be appended by review_pr()
 
     if review_round > MAX_REVIEW_ROUNDS:
         logger.warning("Ticket %s hit max review rounds (%d), marking as failed for human attention",

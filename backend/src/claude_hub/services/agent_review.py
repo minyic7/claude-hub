@@ -133,9 +133,27 @@ async def review_pr(ticket_id: str, ticket: dict, agent_settings: dict | None = 
             "feedback": "",
         }
 
-    # Store review result on ticket
+    # Append review round to history array
+    from datetime import datetime, timezone
+    ticket_current = await redis_client.get_ticket(ticket_id)
+    history = ticket_current.get("agent_review") or []
+    if isinstance(history, str):
+        try:
+            history = json.loads(history)
+        except (json.JSONDecodeError, TypeError):
+            history = []
+    if not isinstance(history, list):
+        # Migrate legacy single-object to array
+        history = [history]
+    round_number = len(history) + 1
+    entry = {
+        "round": round_number,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        **result,
+    }
+    history.append(entry)
     await redis_client.update_ticket_fields(ticket_id, {
-        "agent_review": json.dumps(result),
+        "agent_review": json.dumps(history),
     })
 
     # Record activity

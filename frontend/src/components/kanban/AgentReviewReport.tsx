@@ -1,5 +1,5 @@
-import { useMemo } from 'react'
-import { CheckCircle, XCircle, AlertTriangle, Info } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import { CheckCircle, XCircle, AlertTriangle, Info, ChevronDown, ChevronRight } from 'lucide-react'
 
 interface ReviewScores {
   correctness: number
@@ -15,7 +15,9 @@ interface ReviewIssue {
   description: string
 }
 
-interface ReviewData {
+interface ReviewRound {
+  round: number
+  timestamp: string
   verdict: 'approve' | 'reject'
   scores: ReviewScores
   summary: string
@@ -117,24 +119,14 @@ const severityConfig = {
   minor: { icon: Info, className: 'text-[var(--color-text-muted)]', bg: 'bg-[var(--color-bg-secondary)]' },
 }
 
-export function AgentReviewReport({ reviewJson }: AgentReviewReportProps) {
-  const review = useMemo<ReviewData | null>(() => {
-    try {
-      return JSON.parse(reviewJson)
-    } catch {
-      return null
-    }
-  }, [reviewJson])
-
-  if (!review) return null
-
+function ReviewRoundCard({ review }: { review: ReviewRound }) {
   const avg = Math.round(
     (review.scores.correctness + review.scores.security + review.scores.quality + review.scores.completeness) / 4 * 10
   ) / 10
   const approved = review.verdict === 'approve'
 
   return (
-    <div className="space-y-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-3">
+    <div className="space-y-3">
       {/* Header */}
       <div className="flex items-center gap-2">
         {approved
@@ -190,6 +182,79 @@ export function AgentReviewReport({ reviewJson }: AgentReviewReportProps) {
           <p className="mt-0.5 text-xs text-[var(--color-text-secondary)]">{review.feedback}</p>
         </div>
       )}
+    </div>
+  )
+}
+
+function CollapsibleRound({ review }: { review: ReviewRound }) {
+  const [expanded, setExpanded] = useState(false)
+  const approved = review.verdict === 'approve'
+  const ts = review.timestamp ? new Date(review.timestamp).toLocaleString() : ''
+
+  return (
+    <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)]">
+      <button
+        className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs"
+        onClick={() => setExpanded(!expanded)}
+      >
+        {expanded
+          ? <ChevronDown size={14} className="text-[var(--color-text-muted)]" />
+          : <ChevronRight size={14} className="text-[var(--color-text-muted)]" />
+        }
+        <span className="font-semibold text-[var(--color-text-secondary)]">Round {review.round}</span>
+        <span className={`text-[10px] font-medium ${approved ? 'text-[var(--color-accent-green)]' : 'text-[var(--color-accent-red)]'}`}>
+          {approved ? 'APPROVED' : 'REJECTED'}
+        </span>
+        {ts && <span className="ml-auto text-[10px] text-[var(--color-text-muted)]">{ts}</span>}
+      </button>
+      {expanded && (
+        <div className="border-t border-[var(--color-border)] px-3 py-2">
+          <ReviewRoundCard review={review} />
+        </div>
+      )}
+    </div>
+  )
+}
+
+export function AgentReviewReport({ reviewJson }: AgentReviewReportProps) {
+  const rounds = useMemo<ReviewRound[]>(() => {
+    try {
+      const parsed = JSON.parse(reviewJson)
+      // Support both array (new) and single object (legacy)
+      if (Array.isArray(parsed)) return parsed
+      // Legacy single review object — wrap in array
+      return [{ round: 1, timestamp: '', ...parsed }]
+    } catch {
+      return []
+    }
+  }, [reviewJson])
+
+  if (rounds.length === 0) return null
+
+  const latest = rounds[rounds.length - 1]
+  const previous = rounds.slice(0, -1)
+
+  return (
+    <div className="space-y-2">
+      {/* Previous rounds — collapsed */}
+      {previous.map((r) => (
+        <CollapsibleRound key={r.round} review={r} />
+      ))}
+
+      {/* Latest round — always expanded */}
+      <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-3">
+        <div className="mb-2 flex items-center gap-2">
+          <span className="text-xs font-semibold text-[var(--color-text-secondary)]">
+            Round {latest.round}
+          </span>
+          {latest.timestamp && (
+            <span className="text-[10px] text-[var(--color-text-muted)]">
+              {new Date(latest.timestamp).toLocaleString()}
+            </span>
+          )}
+        </div>
+        <ReviewRoundCard review={latest} />
+      </div>
     </div>
   )
 }
