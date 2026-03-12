@@ -287,6 +287,11 @@ export function TicketCard({ ticket, latestActivity, activityEvents, onClick, on
           <div className="mb-2 flex items-center gap-1.5">
             <Badge color="blue">{ticket.branch_type}</Badge>
             {ticket.status === 'queued' && <Badge color="yellow">QUEUED</Badge>}
+            {ticket.status === 'queued' && ticket.priority >= 0 && (
+              <span className="inline-flex items-center rounded bg-[var(--color-bg-secondary)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--color-text-muted)]" title={`Priority ${ticket.priority}`}>
+                P{ticket.priority}
+              </span>
+            )}
             {ticket.status === 'blocked' && <Badge color="red">ESCALATION</Badge>}
             {ticket.status === 'failed' && <Badge color="red">FAILED</Badge>}
             {ticket.status === 'verifying' && <Badge color="yellow">VERIFYING</Badge>}

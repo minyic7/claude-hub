@@ -236,12 +236,23 @@ async def get_recent_activity(ticket_id: str, count: int = 50) -> list[dict]:
 QUEUE_KEY = "tickets:queue"
 
 
-async def enqueue_tickets(ticket_ids: list[str]) -> int:
-    """Add ticket IDs to the queue sorted set. Score = current max + position."""
+async def enqueue_tickets(ticket_ids: list[str], priorities: list[int] | None = None) -> int:
+    """Add ticket IDs to the queue sorted set.
+
+    Score encodes priority (lower = higher priority) and submission order:
+      score = priority * 1_000_000 + sequence
+    This guarantees priority ordering with FIFO fallback for equal priorities.
+    """
     r = _r()
+    # Determine next sequence number from the current max score
     existing = await r.zrange(QUEUE_KEY, -1, -1, withscores=True)
-    base_score = int(existing[0][1]) + 1 if existing else 1
-    mapping = {tid: base_score + i for i, tid in enumerate(ticket_ids)}
+    base_seq = (int(existing[0][1]) % 1_000_000 + 1) if existing else 1
+    if priorities is None:
+        priorities = [0] * len(ticket_ids)
+    mapping = {
+        tid: prio * 1_000_000 + base_seq + i
+        for i, (tid, prio) in enumerate(zip(ticket_ids, priorities))
+    }
     await r.zadd(QUEUE_KEY, mapping)  # type: ignore[arg-type]
     return len(mapping)
 
@@ -271,6 +282,20 @@ async def get_queue_position(ticket_id: str) -> int | None:
     r = _r()
     rank = await r.zrank(QUEUE_KEY, ticket_id)
     return rank
+
+
+async def reorder_queue(ticket_ids: list[str]) -> None:
+    """Re-score queued tickets so their order matches the given list.
+
+    Uses the same priority*1M+seq encoding as enqueue_tickets so that
+    subsequently enqueued tickets interleave correctly by priority.
+    Position becomes the effective priority after a user reorder.
+    """
+    r = _r()
+    if not ticket_ids:
+        return
+    mapping = {tid: i * 1_000_000 + i for i, tid in enumerate(ticket_ids)}
+    await r.zadd(QUEUE_KEY, mapping)  # type: ignore[arg-type]
 
 
 # ─── Cost helpers ────────────────────────────────────────────────────────────

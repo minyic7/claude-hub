@@ -141,6 +141,11 @@ export const api = {
         method: 'POST',
         body: JSON.stringify({ project_id: projectId, ticket_ids: ticketIds }),
       }),
+    reorderQueue: (ticketIds: string[]) =>
+      request<void>('/tickets/queue/reorder', {
+        method: 'POST',
+        body: JSON.stringify({ ticket_ids: ticketIds }),
+      }),
     activity: (id: string, since = 0) =>
       request<Record<string, unknown>[]>(`/tickets/${id}/activity?since=${since}`),
     syncReviewStatus: () =>

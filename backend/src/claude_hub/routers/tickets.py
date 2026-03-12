@@ -836,6 +836,7 @@ async def bulk_start_tickets(body: dict):
                 continue
 
         # Try to start immediately if under limit
+        priority = ticket.get("priority", 0)
         if (session_manager.active_session_count() < settings.max_sessions
                 and not session_manager.has_active_session(tid)):
             try:
@@ -843,16 +844,16 @@ async def bulk_start_tickets(body: dict):
                 started.append(tid)
             except HTTPException:
                 # Failed to start — queue it instead
-                await _enqueue_ticket(tid)
+                await _enqueue_ticket(tid, priority=priority)
                 queued.append(tid)
         else:
-            await _enqueue_ticket(tid)
+            await _enqueue_ticket(tid, priority=priority)
             queued.append(tid)
 
     return {"started": started, "queued": queued}
 
 
-async def _enqueue_ticket(ticket_id: str) -> None:
+async def _enqueue_ticket(ticket_id: str, priority: int = 0) -> None:
     """Transition a TODO ticket to QUEUED and add to the Redis queue."""
     from claude_hub.services.ticket_service import InvalidTransition, transition
 
@@ -860,7 +861,7 @@ async def _enqueue_ticket(ticket_id: str) -> None:
         updated = await transition(ticket_id, TicketStatus.QUEUED)
     except (InvalidTransition, ValueError):
         return
-    await redis_client.enqueue_tickets([ticket_id])
+    await redis_client.enqueue_tickets([ticket_id], priorities=[priority])
     await broadcast({
         "type": "ticket_updated",
         "ticket_id": ticket_id,
@@ -950,6 +951,41 @@ async def reorder_tickets(body: dict):
 
     for index, tid in enumerate(ticket_ids):
         await redis_client.update_ticket_fields(tid, {"priority": index})
+
+    return {"ok": True}
+
+
+@router.post("/queue/reorder")
+async def reorder_queue(body: dict):
+    """Reorder queued tickets. Updates both queue scores and ticket priorities."""
+    ticket_ids = body.get("ticket_ids", [])
+    if not ticket_ids or not isinstance(ticket_ids, list):
+        raise HTTPException(400, "ticket_ids required (array)")
+
+    for tid in ticket_ids:
+        if not isinstance(tid, str):
+            raise HTTPException(400, "ticket_ids must be strings")
+        t = await redis_client.get_ticket(tid)
+        if not t:
+            raise HTTPException(404, f"Ticket {tid[:8]} not found")
+        if t.get("status") != "queued":
+            raise HTTPException(409, f"Ticket {tid[:8]} is not queued")
+
+    # Re-score with position-based priorities (0, 1, 2...) to maintain order
+    await redis_client.reorder_queue(ticket_ids)
+
+    # Also update the priority field on each ticket for display
+    for index, tid in enumerate(ticket_ids):
+        await redis_client.update_ticket_fields(tid, {"priority": index})
+
+    # Broadcast updated tickets
+    for tid in ticket_ids:
+        updated = await redis_client.get_ticket(tid)
+        await broadcast({
+            "type": "ticket_updated",
+            "ticket_id": tid,
+            "data": updated,
+        })
 
     return {"ok": True}
 
