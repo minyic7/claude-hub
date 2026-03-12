@@ -87,8 +87,8 @@ def _clean_env() -> dict[str, str]:
 
 
 def _generate_internal_token() -> str:
-    """Generate a long-lived JWT for advisor internal API calls."""
-    exp = datetime.now(timezone.utc) + timedelta(days=30)
+    """Generate a long-lived JWT for advisor internal API calls (localhost only)."""
+    exp = datetime.now(timezone.utc) + timedelta(days=3650)
     return jwt.encode({"exp": exp, "advisor": True}, settings.auth_secret, algorithm="HS256")
 
 
