@@ -129,6 +129,13 @@ export const api = {
       request<Ticket>(`/tickets/${id}/resolve-conflicts`, { method: 'POST' }),
     archive: (id: string) =>
       request<Ticket>(`/tickets/${id}/archive`, { method: 'POST' }),
+    bulkStart: (ticketIds: string[]) =>
+      request<{ started: string[]; queued: string[] }>('/tickets/bulk-start', {
+        method: 'POST',
+        body: JSON.stringify({ ticket_ids: ticketIds }),
+      }),
+    dequeue: (id: string) =>
+      request<Ticket>(`/tickets/queue/${id}`, { method: 'DELETE' }),
     reorder: (projectId: string, ticketIds: string[]) =>
       request<void>('/tickets/reorder', {
         method: 'POST',

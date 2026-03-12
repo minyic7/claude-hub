@@ -14,10 +14,11 @@ import { SortableContext, verticalListSortingStrategy, arrayMove } from '@dnd-ki
 import type { BranchType, Ticket } from '../../types/ticket'
 import type { ActivityEvent } from '../../types/activity'
 import type { KanbanColumn as KanbanColumnType } from '../../hooks/useTickets'
-import { ChevronDown, ChevronRight } from 'lucide-react'
+import { CheckSquare, ChevronDown, ChevronRight, Loader2, Play, Square, X } from 'lucide-react'
 import { KanbanColumn } from '../kanban/KanbanColumn'
 import { TicketCard } from '../kanban/TicketCard'
 import { SortableTicketCard } from '../kanban/SortableTicketCard'
+import { Button } from '../common/Button'
 import { api } from '../../lib/api'
 
 // Prevent drag from starting on buttons or interactive elements
@@ -55,6 +56,11 @@ export function KanbanBoard({
   const [todoOrder, setTodoOrder] = useState<string[] | null>(null)
   const skipSyncRef = useRef(false)
 
+  // Multi-select state
+  const [selectMode, setSelectMode] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [bulkStarting, setBulkStarting] = useState(false)
+
   const sensors = useSensors(
     useSensor(SmartMouseSensor, { activationConstraint: { distance: 8 } }),
     useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 5 } }),
@@ -62,7 +68,8 @@ export function KanbanBoard({
 
   const todoColumn = columns.find((c) => c.status === 'todo')
   const todoTickets = todoColumn?.tickets || []
-  const activeTodoTickets = useMemo(() => todoTickets.filter((t) => !t.archived), [todoTickets])
+  const activeTodoTickets = useMemo(() => todoTickets.filter((t) => !t.archived && t.status === 'todo'), [todoTickets])
+  const queuedTodoTickets = useMemo(() => todoTickets.filter((t) => !t.archived && t.status === 'queued'), [todoTickets])
   const archivedTodoTickets = useMemo(() => todoTickets.filter((t) => t.archived), [todoTickets])
   const [todoArchiveExpanded, setTodoArchiveExpanded] = useState(false)
 
@@ -88,10 +95,11 @@ export function KanbanBoard({
   }
 
   const handleDragStart = useCallback((event: DragStartEvent) => {
+    if (selectMode) return // Disable drag in select mode
     setActiveId(event.active.id as string)
     // Initialize local order from current
     setTodoOrder(activeTodoTickets.map((t) => t.id))
-  }, [activeTodoTickets])
+  }, [activeTodoTickets, selectMode])
 
   const handleDragEnd = useCallback((event: DragEndEvent) => {
     const { active, over } = event
@@ -129,6 +137,42 @@ export function KanbanBoard({
   const activeTicket = activeId ? todoTicketMap.get(activeId) : null
   const activeActivity = activeTicket ? activities.get(activeTicket.id) : undefined
   const activeLatest = activeActivity?.[activeActivity.length - 1]
+
+  // Multi-select handlers
+  const toggleSelect = useCallback((ticketId: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(ticketId)) next.delete(ticketId)
+      else next.add(ticketId)
+      return next
+    })
+  }, [])
+
+  const selectAll = useCallback(() => {
+    setSelectedIds(new Set(orderedTodo.filter((t) => t.status === 'todo').map((t) => t.id)))
+  }, [orderedTodo])
+
+  const exitSelectMode = useCallback(() => {
+    setSelectMode(false)
+    setSelectedIds(new Set())
+  }, [])
+
+  const handleBulkStart = useCallback(async () => {
+    if (selectedIds.size === 0) return
+    setBulkStarting(true)
+    try {
+      // Use the ordered list to maintain priority order
+      const idsInOrder = orderedTodo
+        .filter((t) => selectedIds.has(t.id))
+        .map((t) => t.id)
+      await api.tickets.bulkStart(idsInOrder)
+      exitSelectMode()
+    } catch {
+      // Error handled by global handler
+    } finally {
+      setBulkStarting(false)
+    }
+  }, [selectedIds, orderedTodo, exitSelectMode])
 
   // Compute branch type counts from all tickets for filter chips
   const branchTypeCounts = useMemo(() => {
@@ -190,14 +234,90 @@ export function KanbanBoard({
                     {col.label}
                   </h2>
                   <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-[var(--color-bg-secondary)] px-1.5 text-xs text-[var(--color-text-muted)]">
-                    {orderedTodo.length}
+                    {orderedTodo.length + queuedTodoTickets.length}
                   </span>
+                  {/* Multi-select toggle */}
+                  {activeTodoTickets.length > 0 && !selectMode && (
+                    <button
+                      onClick={() => setSelectMode(true)}
+                      className="ml-auto rounded p-0.5 text-[var(--color-text-muted)] hover:text-[var(--color-accent-blue)] hover:bg-[var(--color-bg-secondary)] transition-colors"
+                      title="Select multiple"
+                    >
+                      <CheckSquare size={14} />
+                    </button>
+                  )}
+                  {selectMode && (
+                    <div className="ml-auto flex items-center gap-1">
+                      <button
+                        onClick={selectAll}
+                        className="text-[10px] text-[var(--color-accent-blue)] hover:underline"
+                      >
+                        All
+                      </button>
+                      <button
+                        onClick={() => setSelectedIds(new Set())}
+                        className="text-[10px] text-[var(--color-text-muted)] hover:underline"
+                      >
+                        None
+                      </button>
+                      <button
+                        onClick={exitSelectMode}
+                        className="rounded p-0.5 text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-secondary)] transition-colors"
+                        title="Exit select mode"
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+                  )}
                 </div>
+
+                {/* Bulk start button */}
+                {selectMode && selectedIds.size > 0 && (
+                  <div className="mb-2 px-1">
+                    <Button
+                      size="sm"
+                      onClick={handleBulkStart}
+                      disabled={bulkStarting}
+                      className="w-full"
+                    >
+                      {bulkStarting ? (
+                        <><Loader2 size={12} className="mr-1 animate-spin" /> Starting...</>
+                      ) : (
+                        <><Play size={12} className="mr-1" /> Start {selectedIds.size} Selected</>
+                      )}
+                    </Button>
+                  </div>
+                )}
+
                 <div className="flex flex-col gap-2 overflow-y-auto px-1 pb-4">
-                <SortableContext items={orderedTodoIds} strategy={verticalListSortingStrategy}>
+                <SortableContext items={selectMode ? [] : orderedTodoIds} strategy={verticalListSortingStrategy}>
                     {orderedTodo.map((ticket) => {
                       const ticketActivities = activities.get(ticket.id)
                       const latest = ticketActivities?.[ticketActivities.length - 1]
+                      if (selectMode) {
+                        const isSelected = selectedIds.has(ticket.id)
+                        return (
+                          <div key={ticket.id} className="flex items-start gap-2">
+                            <button
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); toggleSelect(ticket.id) }}
+                              className="mt-3 shrink-0 text-[var(--color-text-muted)] hover:text-[var(--color-accent-blue)] transition-colors"
+                              data-no-dnd
+                            >
+                              {isSelected ? <CheckSquare size={16} className="text-[var(--color-accent-blue)]" /> : <Square size={16} />}
+                            </button>
+                            <div className="flex-1">
+                              <TicketCard
+                                ticket={ticket}
+                                latestActivity={latest}
+                                activityEvents={ticketActivities}
+                                onClick={() => toggleSelect(ticket.id)}
+                                onOptimistic={onOptimistic}
+                              />
+                            </div>
+                          </div>
+                        )
+                      }
                       return (
                         <SortableTicketCard
                           key={ticket.id}
@@ -212,6 +332,22 @@ export function KanbanBoard({
                       )
                     })}
                 </SortableContext>
+
+                {/* Queued tickets */}
+                {queuedTodoTickets.map((ticket) => {
+                  const ticketActivities = activities.get(ticket.id)
+                  const latest = ticketActivities?.[ticketActivities.length - 1]
+                  return (
+                    <TicketCard
+                      key={ticket.id}
+                      ticket={ticket}
+                      latestActivity={latest}
+                      activityEvents={ticketActivities}
+                      onClick={() => onTicketClick(ticket)}
+                      onOptimistic={onOptimistic}
+                    />
+                  )
+                })}
 
                 {archivedTodoTickets.length > 0 && (
                   <>
