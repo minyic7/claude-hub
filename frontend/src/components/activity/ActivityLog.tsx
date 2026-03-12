@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Brain, FileText, Terminal, MessageSquare, AlertTriangle, CheckCircle, Info, XCircle } from 'lucide-react'
+import { Brain, FileText, Terminal, MessageSquare, AlertTriangle, CheckCircle, Info, XCircle, Eye, User, ClipboardCheck } from 'lucide-react'
 import type { ActivityEvent } from '../../types/activity'
 import { relativeTime } from '../../utils/relativeTime'
 
@@ -11,8 +11,11 @@ const typeConfig: Record<string, { icon: typeof Brain; className: string }> = {
   thinking: { icon: Brain, className: 'text-[var(--color-text-muted)]' },
   tool_use: { icon: Terminal, className: 'text-[var(--color-accent-blue)]' },
   tool_result: { icon: FileText, className: 'text-[var(--color-text-muted)]' },
+  commentary: { icon: Eye, className: 'text-[var(--color-accent-purple)]' },
   intervention: { icon: MessageSquare, className: 'text-[var(--color-accent-yellow)]' },
   decision: { icon: CheckCircle, className: 'text-[var(--color-accent-green)]' },
+  review: { icon: ClipboardCheck, className: 'text-[var(--color-accent-purple)]' },
+  message: { icon: User, className: 'text-[var(--color-accent-green)]' },
   info: { icon: Info, className: 'text-[var(--color-text-muted)]' },
   warning: { icon: AlertTriangle, className: 'text-[var(--color-accent-yellow)]' },
   error: { icon: XCircle, className: 'text-[var(--color-accent-red)]' },
@@ -64,7 +67,11 @@ export function ActivityLog({ events }: ActivityLogProps) {
             <Icon size={12} className={`mt-0.5 shrink-0 ${config.className}`} />
             <span className="shrink-0 cursor-default text-[var(--color-text-muted)]" title={fullTime}>{time}</span>
             <span className={`min-w-0 break-words ${event.type === 'error' ? 'text-[var(--color-accent-red)]' : 'text-[var(--color-text-secondary)]'}`}>
-              {isAgent && <span className="font-medium text-[var(--color-accent-blue)]">Agent: </span>}
+              {isAgent && event.type === 'commentary' && <span className="font-medium text-[var(--color-accent-purple)]">Tech Lead: </span>}
+              {isAgent && event.type === 'intervention' && <span className="font-medium text-[var(--color-accent-yellow)]">Agent → CC: </span>}
+              {isAgent && event.type === 'review' && <span className="font-medium text-[var(--color-accent-purple)]">Review: </span>}
+              {isAgent && event.type !== 'commentary' && event.type !== 'intervention' && event.type !== 'review' && <span className="font-medium text-[var(--color-accent-blue)]">Agent: </span>}
+              {event.source === 'user' && <span className="font-medium text-[var(--color-accent-green)]">You: </span>}
               {event.summary}
             </span>
           </div>

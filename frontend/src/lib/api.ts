@@ -111,6 +111,11 @@ export const api = {
         method: 'POST',
         body: JSON.stringify({ answer }),
       }),
+    message: (id: string, message: string) =>
+      request<Ticket>(`/tickets/${id}/message`, {
+        method: 'POST',
+        body: JSON.stringify({ message }),
+      }),
     markReview: (id: string) =>
       request<Ticket>(`/tickets/${id}/mark-review`, { method: 'POST' }),
     merge: (id: string) =>

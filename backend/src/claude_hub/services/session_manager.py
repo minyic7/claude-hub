@@ -34,7 +34,20 @@ def _clean_env() -> dict[str, str]:
 
 
 def active_session_count() -> int:
-    """Count currently alive tmux sessions."""
+    """Count currently alive tmux sessions with active statuses."""
+    # Only count sessions that are actively running (not idle FAILED/REVIEW sessions)
+    _ACTIVE_STATUSES = {"in_progress", "blocked", "verifying", "reviewing"}
+    count = 0
+    for tid in list(_active_sessions):
+        if is_alive(tid):
+            info = _active_sessions.get(tid, {})
+            if info.get("status", "in_progress") in _ACTIVE_STATUSES:
+                count += 1
+    return count
+
+
+def total_session_count() -> int:
+    """Count all alive tmux sessions (active + idle)."""
     return sum(1 for tid in list(_active_sessions) if is_alive(tid))
 
 
@@ -124,6 +137,7 @@ def start_session(
         "log_path": log_path,
         "clone_path": clone_path,
         "started_at": time.time(),
+        "status": "in_progress",
     }
 
     logger.info("Started session %s for ticket %s", name, ticket_id)
@@ -140,14 +154,12 @@ def send_input(ticket_id: str, text: str) -> None:
 
 
 def stop_session(ticket_id: str) -> None:
+    """Send Ctrl+C to gracefully stop Claude Code but keep tmux session alive for inspection."""
     name = _session_name(ticket_id)
     if _tmux_exists(name):
-        # Send Ctrl+C first to gracefully stop
         subprocess.run(["tmux", "send-keys", "-t", name, "C-c", ""], capture_output=True)
         time.sleep(1)
-        subprocess.run(["tmux", "kill-session", "-t", name], capture_output=True)
-        logger.info("Stopped session %s", name)
-    _active_sessions.pop(ticket_id, None)
+        logger.info("Stopped session %s (session preserved)", name)
 
 
 def cleanup_session(ticket_id: str) -> None:
@@ -162,6 +174,32 @@ def cleanup_session(ticket_id: str) -> None:
 def is_alive(ticket_id: str) -> bool:
     name = _session_name(ticket_id)
     return _tmux_exists(name) and not _tmux_is_dead(name)
+
+
+def update_session_status(ticket_id: str, status: str) -> None:
+    """Update the status tracked for a session (used for active vs idle counting)."""
+    if ticket_id in _active_sessions:
+        _active_sessions[ticket_id]["status"] = status
+
+
+def evict_idle_sessions(max_total: int) -> list[str]:
+    """Kill oldest idle sessions when total exceeds max_total. Returns evicted ticket IDs."""
+    alive = [(tid, info) for tid, info in _active_sessions.items() if is_alive(tid)]
+    if len(alive) <= max_total:
+        return []
+
+    # Sort idle sessions by started_at (oldest first)
+    _ACTIVE_STATUSES = {"in_progress", "blocked", "verifying", "reviewing"}
+    idle = [(tid, info) for tid, info in alive if info.get("status", "") not in _ACTIVE_STATUSES]
+    idle.sort(key=lambda x: x[1].get("started_at", 0))
+
+    evicted = []
+    while len(alive) - len(evicted) > max_total and idle:
+        tid, _ = idle.pop(0)
+        cleanup_session(tid)
+        evicted.append(tid)
+
+    return evicted
 
 
 def get_session_info(ticket_id: str) -> dict | None:

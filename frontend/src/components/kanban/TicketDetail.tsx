@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { AlertCircle, ArrowLeft, Check, CircleDot, ExternalLink, GitBranch, GitMerge, Loader2, MessageSquareWarning, Pencil, RefreshCw, RotateCcw, Square, Trash2, X } from 'lucide-react'
+import { AlertCircle, ArrowLeft, Check, CircleDot, ExternalLink, GitBranch, GitMerge, Loader2, MessageSquareWarning, Pencil, RefreshCw, RotateCcw, Send, Square, Trash2, X } from 'lucide-react'
 import type { Ticket, TicketStatus } from '../../types/ticket'
 import type { ActivityEvent } from '../../types/activity'
 import { Badge } from '../common/Badge'
@@ -9,6 +9,7 @@ import { StatusTimeline } from './StatusTimeline'
 import { EscalationBanner } from '../activity/EscalationBanner'
 import { api, type CIStatus } from '../../lib/api'
 import { ConfirmationDialog } from '../common/ConfirmationDialog'
+import { AgentReviewReport } from './AgentReviewReport'
 
 interface TicketDetailProps {
   ticket: Ticket
@@ -27,6 +28,7 @@ function depStatusIcon(status: TicketStatus) {
     case 'in_progress': return <CircleDot size={12} className="text-[var(--color-accent-blue)] animate-pulse" />
     case 'blocked': return <AlertCircle size={12} className="text-[var(--color-accent-red)]" />
     case 'verifying': return <Loader2 size={12} className="text-[var(--color-accent-yellow)] animate-spin" />
+    case 'reviewing': return <Loader2 size={12} className="text-[var(--color-accent-yellow)] animate-spin" />
     case 'review': return <CircleDot size={12} className="text-[var(--color-accent-yellow)]" />
     case 'merging': return <Loader2 size={12} className="text-[var(--color-accent-green)] animate-spin" />
     case 'failed': return <AlertCircle size={12} className="text-[var(--color-accent-red)]" />
@@ -162,7 +164,7 @@ export function TicketDetail({ ticket, activities, allTickets, onClose, onDelete
     )
   }
 
-  const isRunning = ticket.status === 'in_progress' || ticket.status === 'verifying'
+  const isRunning = ticket.status === 'in_progress' || ticket.status === 'verifying' || ticket.status === 'reviewing'
 
   // Resolve dependencies
   const deps = ticket.depends_on.map((depId) => {
@@ -466,6 +468,14 @@ export function TicketDetail({ ticket, activities, allTickets, onClose, onDelete
           <div className="rounded-lg border border-[var(--color-accent-red)]/30 bg-[var(--color-accent-red)]/5 p-3">
             <p className="text-xs font-medium text-[var(--color-accent-red)]">Failed</p>
             <p className="mt-1 text-sm text-[var(--color-text-primary)]">{ticket.failed_reason}</p>
+            {ticket.tmux_session && (
+              <div className="mt-2">
+                <p className="text-xs text-[var(--color-text-muted)]">Session preserved — inspect directly:</p>
+                <pre className="mt-1 rounded bg-[var(--color-bg-secondary)] px-2 py-1.5 text-xs font-mono text-[var(--color-text-secondary)] select-all">
+                  docker exec -it claude-hub bash{'\n'}tmux attach -t {ticket.tmux_session}
+                </pre>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -538,6 +548,21 @@ export function TicketDetail({ ticket, activities, allTickets, onClose, onDelete
         </div>
       </div>
 
+      {/* Agent Review Report */}
+      {ticket.agent_review && (
+        <div className="border-t border-[var(--color-border)] px-3 py-2">
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
+            Agent Review
+          </h3>
+          <AgentReviewReport reviewJson={ticket.agent_review} />
+        </div>
+      )}
+
+      {/* Message input for active sessions */}
+      {(ticket.status === 'in_progress' || ticket.status === 'blocked') && (
+        <MessageInput ticketId={ticket.id} isBlocked={ticket.status === 'blocked'} hasSession={!!ticket.tmux_session} />
+      )}
+
       {/* Footer */}
       <div className="border-t border-[var(--color-border)] p-3 text-xs text-[var(--color-text-muted)]">
         {ticket.tmux_session && (
@@ -576,6 +601,45 @@ export function TicketDetail({ ticket, activities, allTickets, onClose, onDelete
         confirmLabel="Stop"
         loading={stopping}
       />
+    </div>
+  )
+}
+
+function MessageInput({ ticketId, isBlocked, hasSession }: { ticketId: string; isBlocked: boolean; hasSession: boolean }) {
+  const [msg, setMsg] = useState('')
+  const [sending, setSending] = useState(false)
+
+  const handleSend = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!msg.trim() || sending) return
+    setSending(true)
+    try {
+      await api.tickets.message(ticketId, msg.trim())
+      setMsg('')
+    } catch { /* global error handler */ } finally {
+      setSending(false)
+    }
+  }
+
+  return (
+    <div className="border-t border-[var(--color-border)] px-3 py-2">
+      <form onSubmit={handleSend} className="flex items-center gap-2">
+        <input
+          type="text"
+          value={msg}
+          onChange={(e) => setMsg(e.target.value)}
+          placeholder={hasSession ? (isBlocked ? 'Answer or message...' : 'Message Claude Code...') : 'No active session'}
+          disabled={!hasSession}
+          className="flex-1 rounded border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-2.5 py-1.5 text-xs text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)] focus:border-[var(--color-accent-blue)] focus:outline-none disabled:opacity-50"
+        />
+        <button
+          type="submit"
+          disabled={!msg.trim() || sending || !hasSession}
+          className="rounded bg-[var(--color-accent-blue)] p-1.5 text-white transition-opacity hover:opacity-80 disabled:opacity-40"
+        >
+          <Send size={14} />
+        </button>
+      </form>
     </div>
   )
 }

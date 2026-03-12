@@ -5,6 +5,7 @@ export type TicketStatus =
   | 'in_progress'
   | 'blocked'
   | 'verifying'
+  | 'reviewing'
   | 'review'
   | 'merging'
   | 'merged'
@@ -51,6 +52,7 @@ export interface Ticket {
   tmux_session: string | null
   agent_cost_usd: number
   agent_tokens: number
+  agent_review?: string | null
   created_at: string
   started_at: string | null
   completed_at: string | null

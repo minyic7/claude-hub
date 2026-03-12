@@ -1,5 +1,5 @@
 import { type FormEvent, type MouseEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { AlertCircle, Archive, ArchiveRestore, Check, CircleDot, GitMerge, Loader2, Lock, MessageCircleQuestion, Pencil, Play, Rocket, RotateCcw, ExternalLink, Send, X } from 'lucide-react'
+import { AlertCircle, Archive, ArchiveRestore, Check, CircleDot, ClipboardCheck, GitMerge, Loader2, Lock, MessageCircleQuestion, Pencil, Play, Plug, Rocket, RotateCcw, ExternalLink, Send, X } from 'lucide-react'
 import type { Ticket, TicketStatus } from '../../types/ticket'
 import type { ActivityEvent } from '../../types/activity'
 import { Badge } from '../common/Badge'
@@ -282,7 +282,13 @@ export function TicketCard({ ticket, latestActivity, activityEvents, onClick, on
             {ticket.status === 'blocked' && <Badge color="red">ESCALATION</Badge>}
             {ticket.status === 'failed' && <Badge color="red">FAILED</Badge>}
             {ticket.status === 'verifying' && <Badge color="yellow">VERIFYING</Badge>}
+            {ticket.status === 'reviewing' && <Badge color="yellow">REVIEWING</Badge>}
             {isIdle && <Badge color="gray">IDLE</Badge>}
+            {ticket.tmux_session && ticket.status !== 'in_progress' && ticket.status !== 'verifying' && ticket.status !== 'reviewing' && (
+              <span className="flex items-center gap-0.5 text-[10px] text-[var(--color-accent-blue)]" title="Live tmux session">
+                <Plug size={10} /> Session
+              </span>
+            )}
           </div>
 
           <div className="mb-2 flex items-center gap-1.5 text-xs text-[var(--color-text-muted)]">
@@ -339,7 +345,7 @@ export function TicketCard({ ticket, latestActivity, activityEvents, onClick, on
         </div>
       )}
 
-      {(ticket.status === 'in_progress' || ticket.status === 'verifying') && latestActivity && (
+      {(ticket.status === 'in_progress' || ticket.status === 'verifying' || ticket.status === 'reviewing') && latestActivity && (
         <div className="space-y-0.5">
           {stepInfo && (
             <div className="flex items-center gap-1.5 text-[11px] text-[var(--color-text-muted)]">
@@ -474,7 +480,7 @@ function depDotColor(status: TicketStatus): string {
   switch (status) {
     case 'merged': return 'bg-[var(--color-accent-green)]'
     case 'review': case 'merging': return 'bg-[var(--color-accent-yellow)]'
-    case 'in_progress': case 'verifying': return 'bg-[var(--color-accent-blue)]'
+    case 'in_progress': case 'verifying': case 'reviewing': return 'bg-[var(--color-accent-blue)]'
     case 'blocked': case 'failed': return 'bg-[var(--color-accent-red)]'
     default: return 'bg-[var(--color-accent-red)]/60'
   }
@@ -484,7 +490,7 @@ function statusFlashColor(status: string): string {
   switch (status) {
     case 'in_progress': return 'var(--color-accent-blue)'
     case 'blocked': case 'failed': return 'var(--color-accent-red)'
-    case 'review': case 'verifying': return 'var(--color-accent-yellow)'
+    case 'review': case 'verifying': case 'reviewing': return 'var(--color-accent-yellow)'
     case 'merging': case 'merged': return 'var(--color-accent-green)'
     default: return 'var(--color-accent-blue)'
   }
@@ -499,6 +505,8 @@ function StatusIndicator({ status, entering }: { status: string; entering?: bool
       return <AlertCircle size={14} className={`${cls} text-[var(--color-accent-red)] animate-pulse`} />
     case 'verifying':
       return <Loader2 size={14} className={`${cls} text-[var(--color-accent-yellow)] animate-spin`} />
+    case 'reviewing':
+      return <ClipboardCheck size={14} className={`${cls} text-[var(--color-accent-yellow)] animate-pulse`} />
     case 'failed':
       return <AlertCircle size={14} className={`${cls} text-[var(--color-accent-red)]`} />
     case 'review':

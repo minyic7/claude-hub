@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     repo_url: str = ""
     base_branch: str = "main"
     max_sessions: int = 4
+    max_total_sessions: int = 12
     claude_bin: str = "claude"
     log_level: str = "info"
     data_dir: str = "/tmp/claude-hub-data"

@@ -9,6 +9,7 @@ const STATUS_MAPPING: Record<TicketStatus, TicketStatus> = {
   in_progress: 'in_progress',
   blocked: 'in_progress',
   verifying: 'in_progress',
+  reviewing: 'in_progress',
   review: 'review',
   merging: 'review',
   merged: 'merged',

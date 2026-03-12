@@ -195,6 +195,11 @@ async def start_ticket(ticket_id: str):
             429, f"Max concurrent sessions ({settings.max_sessions}) reached. Wait for a session to finish."
         )
 
+    # Evict oldest idle sessions if total exceeds limit
+    evicted = session_manager.evict_idle_sessions(settings.max_total_sessions)
+    if evicted:
+        logger.info("Evicted %d idle session(s) to stay under total limit", len(evicted))
+
     # Resolve project token
     project = await _get_project_for_ticket(ticket)
     gh_token = project.get("gh_token", "")
@@ -258,7 +263,9 @@ async def stop_ticket(ticket_id: str):
     except InvalidTransition as e:
         raise HTTPException(409, str(e))
 
+    # Send Ctrl+C but keep session alive for inspection
     session_manager.stop_session(ticket_id)
+    session_manager.update_session_status(ticket_id, "failed")
 
     await broadcast({
         "type": "ticket_updated",
@@ -292,6 +299,49 @@ async def answer_ticket(ticket_id: str, body: dict):
         "ticket_id": ticket_id,
         "data": updated,
     })
+    return updated
+
+
+@router.post("/{ticket_id}/message")
+async def message_ticket(ticket_id: str, body: dict):
+    """Send a message to the Claude Code session. Works for IN_PROGRESS and BLOCKED tickets."""
+    from claude_hub.services import session_manager
+
+    message = body.get("message", "")
+    if not message:
+        raise HTTPException(400, "message required")
+
+    ticket = await redis_client.get_ticket(ticket_id)
+    if not ticket:
+        raise HTTPException(404, "Ticket not found")
+
+    status = ticket.get("status")
+    if status not in ("in_progress", "blocked"):
+        raise HTTPException(409, f"Cannot send message to ticket in {status} status")
+
+    if not session_manager.is_alive(ticket_id):
+        raise HTTPException(409, "No active session to send message to")
+
+    # If BLOCKED, also unblock
+    if status == "blocked":
+        from claude_hub.services.ticket_service import transition
+        await transition(ticket_id, TicketStatus.IN_PROGRESS, blocked_question="")
+
+    session_manager.send_input(ticket_id, message)
+
+    # Log as activity event
+    from datetime import datetime, timezone
+    event = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "source": "user",
+        "type": "message",
+        "summary": f"User: {message[:200]}",
+    }
+    await redis_client.append_activity(ticket_id, event)
+    await broadcast({"type": "activity", "ticket_id": ticket_id, "data": event})
+
+    updated = await redis_client.get_ticket(ticket_id)
+    await broadcast({"type": "ticket_updated", "ticket_id": ticket_id, "data": updated})
     return updated
 
 
@@ -381,6 +431,109 @@ async def retry_ticket(ticket_id: str, body: dict | None = None):
     return updated
 
 
+async def _run_agent_review(ticket_id: str, agent_cfg: dict) -> None:
+    """Run agent code review. On approve → REVIEW, on reject → spawn new session."""
+    from claude_hub.services.agent_review import review_pr
+    from claude_hub.services.ticket_service import transition
+
+    try:
+        await transition(ticket_id, TicketStatus.REVIEWING)
+        await broadcast({
+            "type": "ticket_updated",
+            "ticket_id": ticket_id,
+            "data": await redis_client.get_ticket(ticket_id),
+        })
+    except Exception as e:
+        logger.warning("Failed to transition %s to REVIEWING: %s", ticket_id, e)
+        return
+
+    ticket = await redis_client.get_ticket(ticket_id)
+    result = await review_pr(ticket_id, ticket, agent_settings=agent_cfg)
+    verdict = result.get("verdict", "approve")
+
+    if verdict == "approve":
+        try:
+            updated = await transition(ticket_id, TicketStatus.REVIEW)
+            await broadcast({
+                "type": "ticket_updated",
+                "ticket_id": ticket_id,
+                "data": updated,
+            })
+        except Exception as e:
+            logger.error("Failed to transition %s to REVIEW after approval: %s", ticket_id, e)
+    else:
+        # Rejected — spawn new session with feedback (like request_changes)
+        feedback = result.get("feedback", "Address the review issues.")
+        try:
+            await _respawn_with_feedback(ticket_id, feedback)
+        except Exception as e:
+            logger.error("Failed to respawn session for %s after rejection: %s", ticket_id, e)
+            try:
+                updated = await transition(ticket_id, TicketStatus.FAILED,
+                                           failed_reason=f"Review rejected, respawn failed: {e}")
+                await broadcast({
+                    "type": "ticket_updated",
+                    "ticket_id": ticket_id,
+                    "data": updated,
+                })
+            except Exception:
+                pass
+
+
+async def _respawn_with_feedback(ticket_id: str, feedback: str) -> None:
+    """Transition REVIEWING → IN_PROGRESS and spawn a new Claude Code session."""
+    import asyncio
+    from claude_hub.services import clone_manager, session_manager
+    from claude_hub.services.ticket_service import transition
+    from pathlib import Path
+
+    # Guard: enforce max sessions
+    if session_manager.active_session_count() >= settings.max_sessions:
+        logger.warning("Cannot respawn %s: max sessions reached", ticket_id)
+        updated = await transition(ticket_id, TicketStatus.FAILED,
+                                   failed_reason="Review rejected but max sessions reached. Retry manually.")
+        await broadcast({"type": "ticket_updated", "ticket_id": ticket_id, "data": updated})
+        return
+
+    updated = await transition(ticket_id, TicketStatus.IN_PROGRESS,
+                               started_at=datetime.now(timezone.utc).isoformat())
+    await broadcast({"type": "ticket_updated", "ticket_id": ticket_id, "data": updated})
+
+    ticket = await redis_client.get_ticket(ticket_id)
+    project = await _get_project_for_ticket(ticket)
+    gh_token = project.get("gh_token", "")
+
+    clone_path = ticket.get("clone_path")
+    if not clone_path or not Path(clone_path).exists():
+        clone_manager.ensure_reference(ticket["repo_url"], gh_token=gh_token)
+        clone_path = clone_manager.clone_for_ticket(
+            ticket["repo_url"], ticket_id,
+            ticket["branch"], ticket["base_branch"],
+            gh_token=gh_token,
+        )
+        await redis_client.update_ticket_fields(ticket_id, {"clone_path": clone_path})
+
+    original_task = ticket.get("description") or ticket["title"]
+    pr_number = ticket.get("pr_number", "")
+    task = (
+        f"{original_task}\n\n"
+        f"## Agent Review Feedback — Address These Issues:\n{feedback}\n\n"
+        f"You are on branch {ticket['branch']} which already has your previous work.\n"
+        f"Read the existing code, address the review feedback above, commit, push, "
+        f"and update the PR."
+    )
+    if pr_number:
+        task += f"\nDo NOT create a new PR — push to the same branch so the existing PR #{pr_number} is updated."
+    task += _PUSH_VERIFICATION_INSTRUCTION
+
+    session_name, log_path = session_manager.start_session(
+        ticket_id, clone_path, task, gh_token=gh_token,
+        model="claude-opus-4-6",
+    )
+    await redis_client.update_ticket_fields(ticket_id, {"tmux_session": session_name})
+    asyncio.create_task(_tail_and_broadcast(ticket_id, log_path))
+
+
 async def _tail_and_broadcast(ticket_id: str, log_path: str) -> None:
     """Background task: tail log with optional TicketAgent supervision."""
     from claude_hub.services.ticket_service import transition
@@ -409,9 +562,8 @@ async def _tail_and_broadcast(ticket_id: str, log_path: str) -> None:
                     "data": event_dict,
                 })
 
-        # Session ended — clean up tmux session
-        from claude_hub.services import session_manager
-        session_manager.cleanup_session(ticket_id)
+        # Session ended — keep tmux session alive for inspection
+        # Session is only cleaned up on MERGED or DELETE
 
         # Verify agent work
         logger.info("Session ended for ticket %s, running verification", ticket_id)
@@ -448,24 +600,39 @@ async def _tail_and_broadcast(ticket_id: str, log_path: str) -> None:
             logger.info("Verification for %s: %s", ticket_id, result)
 
             if result.passed:
-                updated = await transition(ticket_id, TicketStatus.REVIEW,
-                                           pr_url=result.pr_url,
-                                           pr_number=result.pr_number)
+                # Store PR info before review
+                await redis_client.update_ticket_fields(ticket_id, {
+                    "pr_url": result.pr_url or "",
+                    "pr_number": result.pr_number or 0,
+                })
+
+                # Agent code review (if enabled)
+                if agent_enabled and agent_cfg.get("api_key"):
+                    await _run_agent_review(ticket_id, agent_cfg)
+                else:
+                    updated = await transition(ticket_id, TicketStatus.REVIEW,
+                                               pr_url=result.pr_url,
+                                               pr_number=result.pr_number)
+                    await broadcast({
+                        "type": "ticket_updated",
+                        "ticket_id": ticket_id,
+                        "data": updated,
+                    })
             else:
                 updated = await transition(ticket_id, TicketStatus.FAILED,
                                            failed_reason=result.reason)
-            await broadcast({
-                "type": "ticket_updated",
-                "ticket_id": ticket_id,
-                "data": updated,
-            })
+                await broadcast({
+                    "type": "ticket_updated",
+                    "ticket_id": ticket_id,
+                    "data": updated,
+                })
 
     except Exception as e:
         logger.error("Error tailing log for ticket %s: %s", ticket_id, e)
         # If session errored out and ticket is still in_progress, mark as failed
         try:
             ticket = await redis_client.get_ticket(ticket_id)
-            if ticket and ticket.get("status") in ("in_progress", "verifying"):
+            if ticket and ticket.get("status") in ("in_progress", "verifying", "reviewing"):
                 from claude_hub.services.ticket_service import transition as _transition
                 updated = await _transition(
                     ticket_id, TicketStatus.FAILED,
@@ -711,6 +878,7 @@ async def get_ticket_ci_status(ticket_id: str):
 @router.post("/{ticket_id}/merge")
 async def merge_ticket(ticket_id: str):
     import asyncio
+    from claude_hub.services import session_manager
     from claude_hub.services.ticket_service import InvalidTransition, transition
     from claude_hub.services.ci_check import get_ci_status, merge_pr, wait_for_ci_and_merge
 
@@ -772,10 +940,11 @@ async def merge_ticket(ticket_id: str):
     except InvalidTransition as e:
         raise HTTPException(409, str(e))
 
-    # Cleanup clone directory after merge
+    # Cleanup session and clone directory after merge
     from claude_hub.services import clone_manager
+    session_manager.cleanup_session(ticket_id)
     clone_manager.cleanup_clone(ticket_id)
-    await redis_client.update_ticket_fields(ticket_id, {"clone_path": ""})
+    await redis_client.update_ticket_fields(ticket_id, {"clone_path": "", "tmux_session": ""})
     updated = await redis_client.get_ticket(ticket_id)
 
     await broadcast({"type": "ticket_updated", "ticket_id": ticket_id, "data": updated})
