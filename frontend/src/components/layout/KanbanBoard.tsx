@@ -143,39 +143,40 @@ export function KanbanBoard({
       onDragEnd={handleDragEnd}
       onDragCancel={handleDragCancel}
     >
-      {/* Branch type filter bar */}
-      {onBranchTypeFilter && (
-        <div className="flex items-center gap-1.5 overflow-x-auto px-5 pt-3 pb-0">
-          <span className="mr-1 text-xs text-[var(--color-text-muted)]">Filter:</span>
-          {BRANCH_TYPES.filter((bt) => branchTypeCounts.has(bt)).map((bt) => {
-            const active = branchTypeFilter === bt
-            return (
+      <div className="flex flex-1 flex-col overflow-hidden">
+        {/* Branch type filter bar */}
+        {onBranchTypeFilter && (
+          <div className="flex shrink-0 items-center gap-1.5 overflow-x-auto border-b border-[var(--color-border)] px-5 py-2">
+            <span className="mr-1 text-xs text-[var(--color-text-muted)]">Filter:</span>
+            {BRANCH_TYPES.filter((bt) => branchTypeCounts.has(bt)).map((bt) => {
+              const active = branchTypeFilter === bt
+              return (
+                <button
+                  key={bt}
+                  onClick={() => onBranchTypeFilter(active ? null : bt)}
+                  className={`rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors ${
+                    active
+                      ? 'bg-[var(--color-accent-blue)] text-white'
+                      : 'bg-[var(--color-bg-secondary)] text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]'
+                  }`}
+                >
+                  {bt}
+                  <span className="ml-1 opacity-60">{branchTypeCounts.get(bt)}</span>
+                </button>
+              )
+            })}
+            {branchTypeFilter && (
               <button
-                key={bt}
-                onClick={() => onBranchTypeFilter(active ? null : bt)}
-                className={`rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors ${
-                  active
-                    ? 'bg-[var(--color-accent-blue)] text-white'
-                    : 'bg-[var(--color-bg-secondary)] text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]'
-                }`}
+                onClick={() => onBranchTypeFilter(null)}
+                className="ml-1 text-xs text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]"
               >
-                {bt}
-                <span className="ml-1 opacity-60">{branchTypeCounts.get(bt)}</span>
+                Clear
               </button>
-            )
-          })}
-          {branchTypeFilter && (
-            <button
-              onClick={() => onBranchTypeFilter(null)}
-              className="ml-1 text-xs text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]"
-            >
-              Clear
-            </button>
-          )}
-        </div>
-      )}
+            )}
+          </div>
+        )}
 
-      <div className="flex flex-1 gap-4 overflow-x-auto p-4">
+        <div className="flex flex-1 gap-4 overflow-x-auto p-4">
         {columns.map((col) => {
           if (col.status === 'todo') {
             return (
@@ -226,6 +227,7 @@ export function KanbanBoard({
             />
           )
         })}
+        </div>
       </div>
 
       <DragOverlay
