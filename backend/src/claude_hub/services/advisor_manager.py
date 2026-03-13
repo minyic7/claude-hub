@@ -199,11 +199,11 @@ curl -s -X POST {auth_header}{api_base_url}/api/tickets/reorder \\
 - Be conversational and helpful, not robotic
 
 ## Git Safety — CRITICAL
-- **NEVER push directly to the `{base_branch}` branch.** Always create a feature branch first.
+- You are on the `kanban-advisor` branch (created from `{base_branch}`). Work here freely.
+- **NEVER push to `{base_branch}`** directly. Use feature branches or stay on `kanban-advisor`.
 - **NEVER force push** to any branch.
 - Before any `git push`, ALWAYS ask the user for confirmation first.
-- If the user asks you to push, confirm the branch name and remote before executing.
-- You are working in the project's repository clone. The current branch is `{base_branch}`. Create branches for any changes.
+- To merge your work into `{base_branch}`, create a PR — never merge directly.
 """
 
 
@@ -257,9 +257,27 @@ def start_advisor(project: dict, gh_token: str = "") -> str:
                 check=True, capture_output=True,
             )
 
-    # Checkout base branch
+    # Checkout dedicated advisor branch (keeps main clean)
+    advisor_branch = "kanban-advisor"
+    subprocess.run(
+        ["git", "fetch", "origin", base_branch],
+        cwd=advisor_dir, capture_output=True,
+    )
     subprocess.run(
         ["git", "checkout", base_branch],
+        cwd=advisor_dir, capture_output=True,
+    )
+    subprocess.run(
+        ["git", "reset", "--hard", f"origin/{base_branch}"],
+        cwd=advisor_dir, capture_output=True,
+    )
+    # Create or reset advisor branch from latest base
+    subprocess.run(
+        ["git", "branch", "-D", advisor_branch],
+        cwd=advisor_dir, capture_output=True,  # ignore error if doesn't exist
+    )
+    subprocess.run(
+        ["git", "checkout", "-b", advisor_branch],
         cwd=advisor_dir, capture_output=True,
     )
 
