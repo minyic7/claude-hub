@@ -44,7 +44,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/arm64
           push: true
           tags: |
             ghcr.io/${{ github.repository }}:latest
@@ -94,13 +94,13 @@ jobs:
 
             # Wait for healthy
             echo "Waiting for API..."
-            for i in $(seq 1 12); do
+            for i in $(seq 1 10); do
               if curl -sf http://localhost:7700/api/health > /dev/null 2>&1; then
                 echo "Deploy successful - health check passed"
                 exit 0
               fi
-              sleep 10
+              sleep 5
             done
-            echo "Health check failed after 120s"
+            echo "Health check failed after 50s"
             exit 1
           EOF
