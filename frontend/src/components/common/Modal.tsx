@@ -6,10 +6,11 @@ interface ModalProps {
   open: boolean
   onClose: () => void
   title: string
+  wide?: boolean
   children: ReactNode
 }
 
-export function Modal({ open, onClose, title, children }: ModalProps) {
+export function Modal({ open, onClose, title, wide, children }: ModalProps) {
   useEffect(() => {
     if (!open) return
     const handler = (e: KeyboardEvent) => {
@@ -24,7 +25,7 @@ export function Modal({ open, onClose, title, children }: ModalProps) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
-      <div className="relative w-full max-w-lg rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-panel)] p-6 shadow-xl">
+      <div className={`relative w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-panel)] p-6 shadow-xl ${wide ? 'max-w-2xl' : 'max-w-lg'}`}>
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-lg font-semibold text-[var(--color-text-primary)]">{title}</h2>
           <button onClick={onClose} className="text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]">
