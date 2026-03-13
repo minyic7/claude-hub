@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
+import { LogOut } from 'lucide-react'
 import { Modal } from '../common/Modal'
-import { api, type AgentSettings, type AgentProvider } from '../../lib/api'
+import { api, clearToken, type AgentSettings, type AgentProvider } from '../../lib/api'
 
 const PROVIDERS: { id: AgentProvider; label: string; description: string }[] = [
   { id: 'anthropic', label: 'Anthropic', description: 'Claude models via Anthropic API' },
@@ -335,7 +336,15 @@ export function AgentSettingsModal({ open, onClose }: Props) {
 
         {error && <p className="text-xs text-[var(--color-accent-red)]">{error}</p>}
 
-        <div className="flex items-center justify-end gap-2 pt-2">
+        <div className="flex items-center justify-between pt-2">
+          <button
+            onClick={() => { clearToken(); window.location.reload() }}
+            className="flex items-center gap-1 rounded px-2 py-1.5 text-[11px] text-[var(--color-text-muted)] hover:text-[var(--color-accent-red)] transition-colors"
+          >
+            <LogOut size={12} />
+            Logout
+          </button>
+          <div className="flex items-center gap-2">
           {saved && <span className="text-xs text-[var(--color-accent-green)]">Saved!</span>}
           <button
             onClick={onClose}
@@ -350,6 +359,7 @@ export function AgentSettingsModal({ open, onClose }: Props) {
           >
             {saving ? 'Saving...' : 'Save'}
           </button>
+          </div>
         </div>
       </div>
     </Modal>

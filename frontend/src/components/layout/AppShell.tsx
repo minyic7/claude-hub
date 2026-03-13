@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { Bell, ChevronDown, FolderPlus, LogOut, Plus, Settings, TerminalSquare, Wifi, WifiOff } from 'lucide-react'
+import { Bell, ChevronDown, FolderPlus, PanelRightOpen, Plus, Settings, Wifi, WifiOff } from 'lucide-react'
 import { DeployStatusWidget } from '../common/DeployStatusWidget'
 import { ThemeToggle } from '../common/ThemeToggle'
 import { Button } from '../common/Button'
@@ -36,7 +36,7 @@ export function AppShell({
   const [showProjectMenu, setShowProjectMenu] = useState(false)
   const [showNotifications, setShowNotifications] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
-  const [showKanbanTerminal, setShowKanbanTerminal] = useState(false)
+  const [showKanbanTerminal, setShowKanbanTerminal] = useState(true)
 
   const activeProject = activeProjectId ? projects.get(activeProjectId) : null
 
@@ -215,17 +215,6 @@ export function AppShell({
             )}
           </div>
 
-          {/* Kanban Claude Code */}
-          {activeProjectId && (
-            <button
-              onClick={() => setShowKanbanTerminal(true)}
-              className="rounded-md p-1.5 text-[var(--color-text-muted)] hover:bg-[var(--color-bg-secondary)] hover:text-[var(--color-text-primary)]"
-              title="Kanban Claude Code"
-            >
-              <TerminalSquare size={16} />
-            </button>
-          )}
-
           <Button size="sm" onClick={() => setShowCreateTicket(true)} disabled={!activeProjectId}>
             <Plus size={14} className="mr-1" /> New Ticket
           </Button>
@@ -237,15 +226,6 @@ export function AppShell({
             <Settings size={16} />
           </button>
           <ThemeToggle />
-          {getToken() && (
-            <button
-              onClick={() => { clearToken(); window.location.reload() }}
-              className="rounded-md p-1.5 text-[var(--color-text-muted)] hover:bg-[var(--color-bg-secondary)] hover:text-[var(--color-text-primary)]"
-              title="Logout"
-            >
-              <LogOut size={16} />
-            </button>
-          )}
         </div>
       </header>
 
@@ -278,12 +258,23 @@ export function AppShell({
       <CreateProjectModal open={showCreateProject} onClose={() => setShowCreateProject(false)} />
       <AgentSettingsModal open={showSettings} onClose={() => setShowSettings(false)} />
       {activeProjectId && (
-        <KanbanTerminal
-          projectId={activeProjectId}
-          projectName={activeProject?.name}
-          visible={showKanbanTerminal}
-          onClose={() => setShowKanbanTerminal(false)}
-        />
+        <>
+          <KanbanTerminal
+            projectId={activeProjectId}
+            projectName={activeProject?.name}
+            visible={showKanbanTerminal}
+            onClose={() => setShowKanbanTerminal(false)}
+          />
+          {!showKanbanTerminal && (
+            <button
+              onClick={() => setShowKanbanTerminal(true)}
+              className="fixed right-0 top-1/2 -translate-y-1/2 z-40 rounded-l-md border border-r-0 border-[var(--color-border)] bg-[var(--color-bg-panel)] p-2 text-[var(--color-text-muted)] hover:bg-[var(--color-bg-secondary)] hover:text-[var(--color-text-primary)] transition-colors shadow-lg"
+              title="Open Kanban Claude Code"
+            >
+              <PanelRightOpen size={16} />
+            </button>
+          )}
+        </>
       )}
     </div>
   )
