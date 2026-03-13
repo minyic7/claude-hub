@@ -106,9 +106,14 @@ export function AppShell({
                       className={`flex w-full flex-col px-3 py-2 text-left hover:bg-[var(--color-bg-secondary)] ${p.id === activeProjectId ? 'bg-[var(--color-accent-blue)]/5' : ''}`}
                     >
                       <span className="text-xs font-medium text-[var(--color-text-primary)]">{p.name}</span>
-                      <span className="text-xs text-[var(--color-text-muted)] truncate">
-                        {p.repo_url.replace('https://github.com/', '')}
-                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs text-[var(--color-text-muted)] truncate">
+                          {p.repo_url.replace('https://github.com/', '')}
+                        </span>
+                        <span className="font-mono text-[9px] text-[var(--color-text-muted)]/40">
+                          {p.id.slice(0, 8)}
+                        </span>
+                      </div>
                     </button>
                   ))}
                   {projects.size > 0 && <div className="my-1 border-t border-[var(--color-border)]" />}
@@ -275,6 +280,7 @@ export function AppShell({
       {showKanbanTerminal && activeProjectId && (
         <KanbanTerminal
           projectId={activeProjectId}
+          projectName={activeProject?.name}
           onClose={() => setShowKanbanTerminal(false)}
         />
       )}

@@ -7,10 +7,11 @@ import '@xterm/xterm/css/xterm.css'
 
 interface KanbanTerminalProps {
   projectId: string
+  projectName?: string
   onClose: () => void
 }
 
-export function KanbanTerminal({ projectId, onClose }: KanbanTerminalProps) {
+export function KanbanTerminal({ projectId, projectName, onClose }: KanbanTerminalProps) {
   const termRef = useRef<HTMLDivElement>(null)
   const terminalRef = useRef<Terminal | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
@@ -200,7 +201,10 @@ export function KanbanTerminal({ projectId, onClose }: KanbanTerminalProps) {
           <div className="flex items-center gap-2">
             <TerminalSquare size={14} className="text-[var(--color-accent-blue)]" />
             <span className="text-xs font-semibold text-[var(--color-text-muted)]">
-              Kanban Claude Code
+              {projectName || 'Kanban Claude Code'}
+            </span>
+            <span className="font-mono text-[10px] text-[var(--color-text-muted)]/40 select-all" title={projectId}>
+              {projectId.slice(0, 8)}
             </span>
           </div>
           <div className="flex items-center gap-2">
