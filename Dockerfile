@@ -61,8 +61,8 @@ COPY --from=frontend-build /app/frontend/dist /app/backend/static
 RUN apt-get update && apt-get install -y --no-install-recommends sudo && rm -rf /var/lib/apt/lists/* && \
     useradd -m -s /bin/bash claude && \
     echo "claude ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/claude && \
-    mkdir -p /data/clones /data/references /data/logs && \
-    chown -R claude:claude /data /app
+    mkdir -p /data/clones /data/references /data/logs /home/claude/.claude && \
+    chown -R claude:claude /data /app /home/claude/.claude
 
 USER claude
 

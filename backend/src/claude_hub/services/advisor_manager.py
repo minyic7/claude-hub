@@ -197,6 +197,13 @@ curl -s -X POST {auth_header}{api_base_url}/api/tickets/reorder \\
 - Ask at least one clarifying question before creating a ticket (unless the request is already very specific)
 - When suggesting dependencies, reference specific ticket IDs and titles so the user can verify
 - Be conversational and helpful, not robotic
+
+## Git Safety — CRITICAL
+- **NEVER push directly to the `{base_branch}` branch.** Always create a feature branch first.
+- **NEVER force push** to any branch.
+- Before any `git push`, ALWAYS ask the user for confirmation first.
+- If the user asks you to push, confirm the branch name and remote before executing.
+- You are working in the project's repository clone. The current branch is `{base_branch}`. Create branches for any changes.
 """
 
 
@@ -285,12 +292,15 @@ def start_advisor(project: dict, gh_token: str = "") -> str:
         logger.warning("Failed to update .claude/settings.json: %s", e)
 
     # Build claude command — interactive mode (no -p, no --output-format)
+    # Wrapped in a restart loop so accidental exit doesn't kill the session
     # The initial prompt is sent via tmux send-keys after startup
     parts = [
         settings.claude_bin,
         "--verbose",
     ]
-    claude_cmd = " ".join(parts)
+    inner_cmd = " ".join(parts)
+    # Wrapper: auto-restart Claude Code if it exits, with a 2s pause to avoid tight loops
+    claude_cmd = f'while true; do {inner_cmd}; echo -e "\\n\\033[33mClaude Code exited. Restarting in 2s... (Ctrl+C to stop)\\033[0m"; sleep 2; done'
 
     initial_prompt = (
         "You are a project advisor. Start by running get_kanban_state to build your mental "

@@ -1,12 +1,11 @@
 import { useState, useEffect, useMemo } from 'react'
-import { Bell, ChevronDown, FolderPlus, LogOut, MessageSquare, Plus, Settings, Wifi, WifiOff } from 'lucide-react'
+import { Bell, ChevronDown, FolderPlus, LogOut, Plus, Settings, TerminalSquare, Wifi, WifiOff } from 'lucide-react'
 import { DeployStatusWidget } from '../common/DeployStatusWidget'
 import { ThemeToggle } from '../common/ThemeToggle'
 import { Button } from '../common/Button'
 import { CreateTicketModal } from '../tickets/CreateTicketModal'
 import { CreateProjectModal } from '../projects/CreateProjectModal'
 import { AgentSettingsModal } from '../settings/AgentSettingsModal'
-import { AdvisorPopover } from '../common/AdvisorPopover'
 import { AdvisorTerminal } from '../common/AdvisorTerminal'
 import { clearToken, getToken } from '../../lib/api'
 import type { DeployState } from '../../hooks/useDeployStatus'
@@ -37,7 +36,6 @@ export function AppShell({
   const [showProjectMenu, setShowProjectMenu] = useState(false)
   const [showNotifications, setShowNotifications] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
-  const [showAdvisor, setShowAdvisor] = useState(false)
   const [showAdvisorTerminal, setShowAdvisorTerminal] = useState(false)
 
   const activeProject = activeProjectId ? projects.get(activeProjectId) : null
@@ -212,24 +210,15 @@ export function AppShell({
             )}
           </div>
 
-          {/* Advisor */}
+          {/* Kanban Claude Code */}
           {activeProjectId && (
-            <div className="relative">
-              <button
-                onClick={() => setShowAdvisor(!showAdvisor)}
-                className="rounded-md p-1.5 text-[var(--color-text-muted)] hover:bg-[var(--color-bg-secondary)] hover:text-[var(--color-text-primary)]"
-                title="Project Advisor"
-              >
-                <MessageSquare size={16} />
-              </button>
-              {showAdvisor && (
-                <AdvisorPopover
-                  projectId={activeProjectId}
-                  onClose={() => setShowAdvisor(false)}
-                  onOpenTerminal={() => setShowAdvisorTerminal(true)}
-                />
-              )}
-            </div>
+            <button
+              onClick={() => setShowAdvisorTerminal(true)}
+              className="rounded-md p-1.5 text-[var(--color-text-muted)] hover:bg-[var(--color-bg-secondary)] hover:text-[var(--color-text-primary)]"
+              title="Kanban Claude Code"
+            >
+              <TerminalSquare size={16} />
+            </button>
           )}
 
           <Button size="sm" onClick={() => setShowCreateTicket(true)} disabled={!activeProjectId}>
