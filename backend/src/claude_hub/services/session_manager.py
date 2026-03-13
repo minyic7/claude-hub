@@ -33,27 +33,44 @@ def _clean_env() -> dict[str, str]:
     }
 
 
+def _purge_stale() -> None:
+    """Remove entries from _active_sessions whose tmux session no longer exists."""
+    stale = [tid for tid in _active_sessions if not is_alive(tid)]
+    for tid in stale:
+        logger.info("Purging stale session entry for ticket %s (tmux gone)", tid)
+        _active_sessions.pop(tid, None)
+
+
 def active_session_count() -> int:
     """Count currently alive tmux sessions with active statuses."""
-    # Only count sessions that are actively running (not idle FAILED/REVIEW sessions)
+    _purge_stale()
     _ACTIVE_STATUSES = {"in_progress", "blocked", "verifying", "reviewing"}
     count = 0
-    for tid in list(_active_sessions):
-        if is_alive(tid):
-            info = _active_sessions.get(tid, {})
-            if info.get("status", "in_progress") in _ACTIVE_STATUSES:
-                count += 1
+    for tid, info in _active_sessions.items():
+        if info.get("status", "in_progress") in _ACTIVE_STATUSES:
+            count += 1
     return count
 
 
 def total_session_count() -> int:
     """Count all alive tmux sessions (active + idle)."""
-    return sum(1 for tid in list(_active_sessions) if is_alive(tid))
+    _purge_stale()
+    return len(_active_sessions)
 
 
 def has_active_session(ticket_id: str) -> bool:
-    """Check if a ticket already has a running session."""
-    return ticket_id in _active_sessions and is_alive(ticket_id)
+    """Check if a ticket already has a running session.
+
+    Self-healing: removes stale entries when tmux session is gone.
+    """
+    if ticket_id not in _active_sessions:
+        return False
+    if is_alive(ticket_id):
+        return True
+    # Entry exists but tmux is gone — clean up
+    logger.info("Purging stale session entry for ticket %s (tmux gone)", ticket_id)
+    _active_sessions.pop(ticket_id, None)
+    return False
 
 
 def _tmux_exists(name: str) -> bool:
@@ -203,7 +220,12 @@ def evict_idle_sessions(max_total: int) -> list[str]:
 
 
 def get_session_info(ticket_id: str) -> dict | None:
-    return _active_sessions.get(ticket_id)
+    info = _active_sessions.get(ticket_id)
+    if info and not is_alive(ticket_id):
+        logger.info("Purging stale session entry for ticket %s (tmux gone)", ticket_id)
+        _active_sessions.pop(ticket_id, None)
+        return None
+    return info
 
 
 async def tail_log(ticket_id: str, log_path: str):
