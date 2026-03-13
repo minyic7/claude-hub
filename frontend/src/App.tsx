@@ -51,6 +51,7 @@ function AuthedApp() {
   const { projects, tickets, activities, connected, lastEscalation, lastTicketNotification, patchTicket } = useWebSocket(wsUrl)
   const { notifications, addNotification, dismiss, markRead, markAllRead, clearAll } = useNotifications()
   const [openSettingsRequested, setOpenSettingsRequested] = useState(false)
+  const [openSettingsTab, setOpenSettingsTab] = useState<string | undefined>()
 
   // Wire API errors → notification bell
   useEffect(() => {
@@ -63,7 +64,7 @@ function AuthedApp() {
       if (!cfg.api_key) {
         addNotification('warning', 'TicketAgent API key not configured — ticket supervision disabled', {
           label: 'Configure',
-          callback: () => setOpenSettingsRequested(true),
+          callback: () => { setOpenSettingsTab('agent'); setOpenSettingsRequested(true) },
         })
       }
     }).catch(() => {})
@@ -181,7 +182,8 @@ function AuthedApp() {
       onMarkAllRead={markAllRead}
       onClearAll={clearAll}
       openSettingsRequested={openSettingsRequested}
-      onSettingsOpened={() => setOpenSettingsRequested(false)}
+      openSettingsTab={openSettingsTab}
+      onSettingsOpened={() => { setOpenSettingsRequested(false); setOpenSettingsTab(undefined) }}
       deployState={deployState}
       deployRuns={deployRuns}
     >

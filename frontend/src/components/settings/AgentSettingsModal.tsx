@@ -32,16 +32,22 @@ const TABS: { id: Tab; label: string; icon: typeof Server }[] = [
 interface Props {
   open: boolean
   onClose: () => void
+  initialTab?: Tab
 }
 
-export function AgentSettingsModal({ open, onClose }: Props) {
+export function AgentSettingsModal({ open, onClose, initialTab }: Props) {
   const [settings, setSettings] = useState<AgentSettings | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [saved, setSaved] = useState(false)
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null)
-  const [activeTab, setActiveTab] = useState<Tab>('system')
+  const [activeTab, setActiveTab] = useState<Tab>(initialTab || 'system')
+
+  // Sync initialTab when modal opens
+  useEffect(() => {
+    if (open && initialTab) setActiveTab(initialTab)
+  }, [open, initialTab])
 
   useEffect(() => {
     if (open) {

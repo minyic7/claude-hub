@@ -24,6 +24,7 @@ interface AppShellProps {
   onMarkAllRead: () => void
   onClearAll: () => void
   openSettingsRequested?: boolean
+  openSettingsTab?: string
   onSettingsOpened?: () => void
   deployState: DeployState
   deployRuns: WorkflowRun[]
@@ -33,7 +34,7 @@ interface AppShellProps {
 export function AppShell({
   connected, projects, tickets, activeProjectId, onProjectChange,
   notifications, onMarkRead, onMarkAllRead, onClearAll,
-  openSettingsRequested, onSettingsOpened, deployState, deployRuns, children,
+  openSettingsRequested, openSettingsTab, onSettingsOpened, deployState, deployRuns, children,
 }: AppShellProps) {
   const [showCreateTicket, setShowCreateTicket] = useState(false)
   const [showCreateProject, setShowCreateProject] = useState(false)
@@ -302,7 +303,7 @@ export function AppShell({
         />
       )}
       <CreateProjectModal open={showCreateProject} onClose={() => setShowCreateProject(false)} />
-      <AgentSettingsModal open={showSettings} onClose={() => setShowSettings(false)} />
+      <AgentSettingsModal open={showSettings} onClose={() => setShowSettings(false)} initialTab={openSettingsTab as 'system' | 'agent' | 'account'} />
       {activeProjectId && (
         <KanbanTerminal
           projectId={activeProjectId}
