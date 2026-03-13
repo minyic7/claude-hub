@@ -12,7 +12,7 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
-  DEPLOY_PATH: /claude-hub
+  DEPLOY_PATH: /Users/minyic/claude-hub
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
@@ -51,12 +51,10 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  # ─── Deploy to Windows via Tailscale SSH ───────────
+  # ─── Deploy to Mac Mini via Tailscale + SSH ───────────
   deploy:
     needs: build
     runs-on: ubuntu-latest
-    permissions:
-      packages: read
 
     steps:
       - name: Checkout
@@ -78,25 +76,27 @@ jobs:
 
       - name: Copy compose files
         run: |
-          scp docker-compose.yml "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:C:/claude-hub/docker-compose.yml"
-          scp docker-compose.prod.yml "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:C:/claude-hub/docker-compose.prod.yml"
+          scp docker-compose.yml docker-compose.prod.yml ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:${{ env.DEPLOY_PATH }}/
 
-      - name: Deploy via scheduled task
+      - name: Deploy
         run: |
-          # Windows Docker Desktop credential helper doesn't work in SSH sessions.
-          # Use a Windows scheduled task to run deploy in the user's logon session.
-          ssh ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} "schtasks /run /tn claude-hub-deploy"
-          echo "Triggered deploy task, waiting for containers..."
-          sleep 30
+          ssh ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} << 'EOF'
+            set -e
+            cd ${{ env.DEPLOY_PATH }}
 
-      - name: Health check
-        run: |
-          for i in $(seq 1 12); do
-            if curl -sf http://${{ secrets.DEPLOY_HOST }}:7700/api/health > /dev/null 2>&1; then
-              echo "Deploy successful - health check passed"
-              exit 0
-            fi
-            sleep 10
-          done
-          echo "Health check failed after 120s"
-          exit 1
+            # Pull and deploy
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml pull
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --remove-orphans --force-recreate
+
+            # Wait for healthy
+            echo "Waiting for API..."
+            for i in $(seq 1 12); do
+              if curl -sf http://localhost:7700/api/health > /dev/null 2>&1; then
+                echo "Deploy successful - health check passed"
+                exit 0
+              fi
+              sleep 10
+            done
+            echo "Health check failed after 120s"
+            exit 1
+          EOF
