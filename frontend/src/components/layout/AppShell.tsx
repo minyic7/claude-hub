@@ -95,7 +95,7 @@ export function AppShell({
           <div className="relative">
             <button
               onClick={() => setShowProjectMenu(!showProjectMenu)}
-              className="flex items-center gap-1.5 rounded-md border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2.5 py-1 text-xs text-[var(--color-text-primary)] hover:border-[var(--color-accent-blue)]/40 transition-colors"
+              className={`flex items-center gap-1.5 rounded-md border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2.5 py-1 text-xs text-[var(--color-text-primary)] hover:border-[var(--color-accent-blue)]/40 transition-colors${isMobile ? ' w-full' : ''}`}
             >
               {activeProject ? (
                 <>
@@ -154,7 +154,7 @@ export function AppShell({
             )}
           </span>
 
-          <DeployStatusWidget state={deployState} runs={deployRuns} />
+          {!isMobile && <DeployStatusWidget state={deployState} runs={deployRuns} />}
 
           {/* Stats (hidden on mobile) */}
           {!isMobile && (
@@ -270,7 +270,7 @@ export function AppShell({
             <Settings size={16} />
           </button>
           <ThemeToggle />
-          {activeProjectId && !showKanbanTerminal && !isMobile && (
+          {!isMobile && activeProjectId && !showKanbanTerminal && (
             <button
               onClick={() => setShowKanbanTerminal(true)}
               className="rounded-md p-1.5 text-[var(--color-text-muted)] hover:bg-[var(--color-bg-secondary)] hover:text-[var(--color-text-primary)]"
@@ -300,7 +300,7 @@ export function AppShell({
             children
           )}
         </div>
-        {activeProjectId && !isMobile && (
+        {!isMobile && activeProjectId && (
           <KanbanTerminal
             projectId={activeProjectId}
             projectName={activeProject?.name}
