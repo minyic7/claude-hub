@@ -37,6 +37,11 @@ export function KanbanTerminal({ projectId, onClose }: KanbanTerminalProps) {
     const qs = token ? `?token=${encodeURIComponent(token)}` : ''
     const wsUrl = `${proto}//${window.location.host}/ws/kanban/${projectId}/terminal${qs}`
 
+    // Close any existing connection before creating a new one
+    if (wsRef.current) {
+      wsRef.current.close()
+    }
+
     const ws = new WebSocket(wsUrl)
     ws.binaryType = 'arraybuffer'
     wsRef.current = ws
@@ -54,10 +59,12 @@ export function KanbanTerminal({ projectId, onClose }: KanbanTerminalProps) {
     }
 
     ws.onclose = (event) => {
+      // Ignore close events from superseded connections
+      if (wsRef.current !== ws) return
       if (event.code === 4003) {
         terminal.write('\r\n\x1b[31mFailed to start session.\x1b[0m\r\n')
-      } else {
-        terminal.write('\r\n\x1b[31mConnection closed.\x1b[0m\r\n')
+      } else if (event.code !== 1000 && event.code !== 1005) {
+        terminal.write(`\r\n\x1b[31mConnection closed (${event.code}).\x1b[0m\r\n`)
       }
     }
 
