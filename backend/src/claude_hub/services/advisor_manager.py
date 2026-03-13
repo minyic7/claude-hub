@@ -100,25 +100,25 @@ def _build_advisor_claude_md(project: dict, api_base_url: str, auth_token: str =
     base_branch = project.get("base_branch", "main")
     auth_header = f'-H "Authorization: Bearer {auth_token}" ' if auth_token else ""
 
-    return f"""# Project Advisor — {project_name}
+    return f"""# Kanban Claude Code — {project_name}
 
-You are a **project advisor** for the "{project_name}" project.
-Your role is to help users refine vague requirements into structured, actionable tickets.
+You are the **Kanban Claude Code** for the "{project_name}" project.
+You work directly on this repository and help users with coding, refining requirements, and managing tickets.
 
 ## Project Context
 - **Repository**: {repo_url}
 - **Base branch**: {base_branch}
+- **Working branch**: `kanban-claude-hub` (created from {base_branch})
 - **Project ID**: {project_id}
 
-## Your Responsibilities
-1. When a user describes a need, ask clarifying questions to understand scope and requirements
-2. Check for duplicate or related existing tickets using `get_kanban_state`
-3. Once requirements are clear, create well-structured tickets using `create_ticket`
-4. Help users break down large features into smaller, manageable tickets
-5. Suggest appropriate branch types (feature, bugfix, hotfix, chore, refactor, docs, test)
-6. **Suggest `depends_on` relationships** between tickets based on your understanding of the codebase and ticket scopes
-7. **Suggest ticket ordering and priority** based on dependency analysis (tickets that others depend on should be done first)
-8. **Edit existing TODO tickets** when the user wants to refine a ticket's description, title, or dependencies instead of creating a new one
+## Your Capabilities
+You are a full Claude Code instance with access to the repository. You can:
+1. **Read and modify code** — explore the codebase, write features, fix bugs, refactor
+2. **Manage tickets** — create, update, and organize kanban tickets via the API tools below
+3. **Help with requirements** — refine vague ideas into structured, actionable tickets
+4. **Break down work** — split large features into smaller tickets with dependencies
+5. **Suggest branch types** (feature, bugfix, hotfix, chore, refactor, docs, test)
+6. **Analyze dependencies** between tickets and suggest execution order
 
 ## Ticket Format Conventions
 - **Title**: Imperative mood, concise (e.g., "Add user authentication endpoint")
@@ -199,8 +199,8 @@ curl -s -X POST {auth_header}{api_base_url}/api/tickets/reorder \\
 - Be conversational and helpful, not robotic
 
 ## Git Safety — CRITICAL
-- You are on the `kanban-advisor` branch (created from `{base_branch}`). Work here freely.
-- **NEVER push to `{base_branch}`** directly. Use feature branches or stay on `kanban-advisor`.
+- You are on the `kanban-claude-hub` branch (created from `{base_branch}`). Work here freely.
+- **NEVER push to `{base_branch}`** directly.
 - **NEVER force push** to any branch.
 - Before any `git push`, ALWAYS ask the user for confirmation first.
 - To merge your work into `{base_branch}`, create a PR — never merge directly.
@@ -257,29 +257,45 @@ def start_advisor(project: dict, gh_token: str = "") -> str:
                 check=True, capture_output=True,
             )
 
-    # Checkout dedicated advisor branch (keeps main clean)
-    advisor_branch = "kanban-advisor"
+    # Checkout dedicated kanban branch (keeps main clean)
+    kanban_branch = "kanban-claude-hub"
     subprocess.run(
-        ["git", "fetch", "origin", base_branch],
+        ["git", "fetch", "origin"],
         cwd=advisor_dir, capture_output=True,
     )
-    subprocess.run(
-        ["git", "checkout", base_branch],
-        cwd=advisor_dir, capture_output=True,
+    # Check if branch exists on remote
+    result = subprocess.run(
+        ["git", "ls-remote", "--heads", "origin", kanban_branch],
+        cwd=advisor_dir, capture_output=True, text=True,
     )
-    subprocess.run(
-        ["git", "reset", "--hard", f"origin/{base_branch}"],
-        cwd=advisor_dir, capture_output=True,
-    )
-    # Create or reset advisor branch from latest base
-    subprocess.run(
-        ["git", "branch", "-D", advisor_branch],
-        cwd=advisor_dir, capture_output=True,  # ignore error if doesn't exist
-    )
-    subprocess.run(
-        ["git", "checkout", "-b", advisor_branch],
-        cwd=advisor_dir, capture_output=True,
-    )
+    if kanban_branch in (result.stdout or ""):
+        # Branch exists on remote — switch to it and pull latest
+        subprocess.run(
+            ["git", "checkout", kanban_branch],
+            cwd=advisor_dir, capture_output=True,
+        )
+        subprocess.run(
+            ["git", "pull", "origin", kanban_branch],
+            cwd=advisor_dir, capture_output=True,
+        )
+    else:
+        # Create new branch from latest base and push it
+        subprocess.run(
+            ["git", "checkout", base_branch],
+            cwd=advisor_dir, capture_output=True,
+        )
+        subprocess.run(
+            ["git", "reset", "--hard", f"origin/{base_branch}"],
+            cwd=advisor_dir, capture_output=True,
+        )
+        subprocess.run(
+            ["git", "checkout", "-b", kanban_branch],
+            cwd=advisor_dir, capture_output=True,
+        )
+        subprocess.run(
+            ["git", "push", "-u", "origin", kanban_branch],
+            cwd=advisor_dir, capture_output=True,
+        )
 
     # Write CLAUDE.md for the advisor
     api_base_url = f"http://localhost:{settings.port}"
@@ -321,11 +337,9 @@ def start_advisor(project: dict, gh_token: str = "") -> str:
     claude_cmd = f'while true; do {inner_cmd}; echo -e "\\n\\033[33mClaude Code exited. Restarting in 2s... (Ctrl+C to stop)\\033[0m"; sleep 2; done'
 
     initial_prompt = (
-        "You are a project advisor. Start by running get_kanban_state to build your mental "
-        "model of all existing tickets — their titles, descriptions, statuses, and dependencies. "
-        "Then greet the user and let them know you're ready to help them refine requirements "
-        "and create tickets. Mention a brief summary of the current board state (e.g., how many "
-        "tickets exist, any in progress, etc.)."
+        "Start by running get_kanban_state to see the current tickets. "
+        "Then greet the user with a brief summary of the board state and let them know "
+        "you're ready to help — whether that's coding, creating tickets, or anything else."
     )
 
     # Create tmux session with clean env
