@@ -101,7 +101,7 @@ def start_session(
     if model:
         parts.extend(["--model", model])
 
-    disallowed = disallowed_tools or settings.disallowed_tools
+    disallowed = disallowed_tools or getattr(settings, "disallowed_tools", "")
     if disallowed:
         parts.extend(["--disallowedTools", shlex.quote(disallowed)])
 
