@@ -20,7 +20,6 @@ interface AppShellProps {
   activeProjectId: string | null
   onProjectChange: (id: string | null) => void
   notifications: Notification[]
-  onDismissNotification: (id: string) => void
   onMarkRead: (id: string) => void
   onMarkAllRead: () => void
   onClearAll: () => void
@@ -33,7 +32,7 @@ interface AppShellProps {
 
 export function AppShell({
   connected, projects, tickets, activeProjectId, onProjectChange,
-  notifications, onDismissNotification, onMarkRead, onMarkAllRead, onClearAll,
+  notifications, onMarkRead, onMarkAllRead, onClearAll,
   openSettingsRequested, onSettingsOpened, deployState, deployRuns, children,
 }: AppShellProps) {
   const [showCreateTicket, setShowCreateTicket] = useState(false)

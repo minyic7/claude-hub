@@ -177,7 +177,6 @@ function AuthedApp() {
       activeProjectId={activeProjectId}
       onProjectChange={handleProjectChange}
       notifications={notifications}
-      onDismissNotification={dismiss}
       onMarkRead={markRead}
       onMarkAllRead={markAllRead}
       onClearAll={clearAll}
