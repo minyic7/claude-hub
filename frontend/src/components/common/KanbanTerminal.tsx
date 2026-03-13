@@ -53,18 +53,9 @@ export function KanbanTerminal({ projectId, onClose }: KanbanTerminalProps) {
       }
     }
 
-    ws.onclose = async (event) => {
+    ws.onclose = (event) => {
       if (event.code === 4003) {
-        // Session not running — auto-start it
-        terminal.write('\r\n\x1b[33mStarting Claude Code session...\x1b[0m\r\n')
-        try {
-          await api.kanban.start(projectId)
-          // Wait a moment for tmux to initialize, then reconnect
-          await new Promise(r => setTimeout(r, 2000))
-          connectWs(terminal)
-        } catch {
-          terminal.write('\r\n\x1b[31mFailed to start session.\x1b[0m\r\n')
-        }
+        terminal.write('\r\n\x1b[31mFailed to start session.\x1b[0m\r\n')
       } else {
         terminal.write('\r\n\x1b[31mConnection closed.\x1b[0m\r\n')
       }

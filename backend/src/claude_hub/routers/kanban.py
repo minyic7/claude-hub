@@ -91,10 +91,21 @@ async def kanban_terminal(websocket: WebSocket, project_id: str, token: str = Qu
         await websocket.close(code=4002, reason="Project not found")
         return
 
-    # Ensure kanban session is alive
+    # Auto-start kanban session if not running
     if not kanban_manager.is_alive(project_id):
-        await websocket.close(code=4003, reason="Kanban session not running")
-        return
+        try:
+            gh_token = project.get("gh_token", "")
+            if not gh_token:
+                from claude_hub.routers.settings_router import get_gh_token
+                gh_token = await get_gh_token()
+            kanban_manager.start_kanban(project, gh_token)
+            # Give tmux a moment to initialize
+            import asyncio
+            await asyncio.sleep(1)
+        except Exception as e:
+            logger.error("Failed to auto-start kanban for %s: %s", project_id, e)
+            await websocket.close(code=4003, reason=f"Failed to start session: {e}")
+            return
 
     session_name = kanban_manager._session_name(project_id)
     await websocket.accept()
