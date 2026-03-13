@@ -229,21 +229,31 @@ async def start_ticket(ticket_id: str):
 
     await redis_client.update_ticket_fields(ticket_id, {"clone_path": clone_path})
 
-    # Start Claude Code session
-    description = ticket.get("description") or ticket["title"]
-    branch = ticket["branch"]
-    base_branch = ticket.get("base_branch", "main")
-    task = (
-        f"{description}\n\n"
-        f"You are working on branch '{branch}' (based on '{base_branch}').\n"
-        f"When done, commit your changes, push the branch, and create a PR against '{base_branch}'."
-        + _PUSH_VERIFICATION_INSTRUCTION
-    )
-    session_name, log_path = session_manager.start_session(
-        ticket_id, clone_path, task, gh_token=gh_token,
-        model="claude-opus-4-6",
-    )
-    await redis_client.update_ticket_fields(ticket_id, {"tmux_session": session_name})
+    # Start Claude Code session — rollback to TODO if anything fails
+    try:
+        description = ticket.get("description") or ticket["title"]
+        branch = ticket["branch"]
+        base_branch = ticket.get("base_branch", "main")
+        task = (
+            f"{description}\n\n"
+            f"You are working on branch '{branch}' (based on '{base_branch}').\n"
+            f"When done, commit your changes, push the branch, and create a PR against '{base_branch}'."
+            + _PUSH_VERIFICATION_INSTRUCTION
+        )
+        session_name, log_path = session_manager.start_session(
+            ticket_id, clone_path, task, gh_token=gh_token,
+            model="claude-opus-4-6",
+        )
+        await redis_client.update_ticket_fields(ticket_id, {"tmux_session": session_name})
+    except Exception as e:
+        logger.error("Session start failed for %s, rolling back to TODO: %s", ticket_id, e)
+        await transition(ticket_id, TicketStatus.TODO, started_at="")
+        await broadcast({
+            "type": "ticket_updated",
+            "ticket_id": ticket_id,
+            "data": await redis_client.get_ticket(ticket_id),
+        })
+        raise HTTPException(500, f"Failed to start session: {e}")
 
     # Start background log tailing
     asyncio.create_task(_tail_and_broadcast(ticket_id, log_path))
