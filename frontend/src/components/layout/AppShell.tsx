@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { Bell, ChevronDown, FolderPlus, PanelRightOpen, Plus, Settings, Wifi, WifiOff } from 'lucide-react'
+import { Bell, Check, ChevronDown, FolderPlus, PanelRightOpen, Plus, Settings, Wifi, WifiOff } from 'lucide-react'
 import { DeployStatusWidget } from '../common/DeployStatusWidget'
 import { ThemeToggle } from '../common/ThemeToggle'
 import { Button } from '../common/Button'
@@ -21,6 +21,8 @@ interface AppShellProps {
   onProjectChange: (id: string | null) => void
   notifications: Notification[]
   onDismissNotification: (id: string) => void
+  onMarkAllRead: () => void
+  onClearAll: () => void
   deployState: DeployState
   deployRuns: WorkflowRun[]
   children: ReactNode
@@ -28,7 +30,7 @@ interface AppShellProps {
 
 export function AppShell({
   connected, projects, tickets, activeProjectId, onProjectChange,
-  notifications, onDismissNotification, deployState, deployRuns, children,
+  notifications, onDismissNotification, onMarkAllRead, onClearAll, deployState, deployRuns, children,
 }: AppShellProps) {
   const [showCreateTicket, setShowCreateTicket] = useState(false)
   const [showCreateProject, setShowCreateProject] = useState(false)
@@ -58,7 +60,7 @@ export function AppShell({
     return { running, blocked, total, archived }
   }, [tickets, activeProjectId])
 
-  const unreadCount = notifications.filter((n) => n.type === 'error' || n.type === 'warning').length
+  const unreadCount = notifications.filter((n) => !n.read).length
 
   // Auto-select first project if none selected and projects exist
   useEffect(() => {
@@ -177,8 +179,26 @@ export function AppShell({
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setShowNotifications(false)} />
                 <div className="absolute right-0 top-full z-50 mt-1 w-80 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-panel)] shadow-lg">
-                  <div className="border-b border-[var(--color-border)] px-3 py-2">
+                  <div className="flex items-center justify-between border-b border-[var(--color-border)] px-3 py-2">
                     <span className="text-xs font-semibold text-[var(--color-text-primary)]">Notifications</span>
+                    <div className="flex items-center gap-2">
+                      {unreadCount > 0 && (
+                        <button
+                          onClick={onMarkAllRead}
+                          className="flex items-center gap-1 text-[10px] text-[var(--color-accent-blue)] hover:text-[var(--color-text-primary)] transition-colors"
+                        >
+                          <Check size={10} /> Mark all read
+                        </button>
+                      )}
+                      {notifications.length > 0 && (
+                        <button
+                          onClick={() => { onClearAll(); setShowNotifications(false) }}
+                          className="text-[10px] text-[var(--color-text-muted)] hover:text-[var(--color-accent-red)] transition-colors"
+                        >
+                          Clear all
+                        </button>
+                      )}
+                    </div>
                   </div>
                   <div className="max-h-64 overflow-y-auto">
                     {notifications.length === 0 ? (
@@ -193,7 +213,7 @@ export function AppShell({
                           }}
                           className="flex w-full items-start gap-2 border-b border-[var(--color-border)]/50 px-3 py-2 text-left hover:bg-[var(--color-bg-secondary)]"
                         >
-                          <span className={`mt-0.5 inline-block h-2 w-2 shrink-0 rounded-full ${
+                          <span className={`mt-0.5 inline-block h-2 w-2 shrink-0 rounded-full ${n.read ? 'opacity-30' : ''} ${
                             n.type === 'error' ? 'bg-[var(--color-accent-red)]' :
                             n.type === 'warning' ? 'bg-[var(--color-accent-yellow)]' :
                             n.type === 'success' ? 'bg-[var(--color-accent-green)]' :

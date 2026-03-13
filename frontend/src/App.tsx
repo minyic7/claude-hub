@@ -49,7 +49,7 @@ function AuthedApp() {
   }, [])
 
   const { projects, tickets, activities, connected, lastEscalation, lastTicketNotification, patchTicket } = useWebSocket(wsUrl)
-  const { notifications, addNotification, dismiss } = useNotifications()
+  const { notifications, addNotification, dismiss, markAllRead, clearAll } = useNotifications()
 
   // Wire API errors → notification bell
   useEffect(() => {
@@ -165,6 +165,8 @@ function AuthedApp() {
       onProjectChange={handleProjectChange}
       notifications={notifications}
       onDismissNotification={dismiss}
+      onMarkAllRead={markAllRead}
+      onClearAll={clearAll}
       deployState={deployState}
       deployRuns={deployRuns}
     >

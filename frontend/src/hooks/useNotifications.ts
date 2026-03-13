@@ -5,6 +5,8 @@ export interface Notification {
   type: 'error' | 'warning' | 'info' | 'success'
   message: string
   timestamp: number
+  bannerVisible: boolean
+  read: boolean
 }
 
 let nextId = 0
@@ -14,12 +16,12 @@ export function useNotifications() {
 
   const addNotification = useCallback((type: Notification['type'], message: string) => {
     const id = `n-${++nextId}`
-    const notification: Notification = { id, type, message, timestamp: Date.now() }
-    setNotifications((prev) => [...prev.slice(-19), notification])
+    const notification: Notification = { id, type, message, timestamp: Date.now(), bannerVisible: true, read: false }
+    setNotifications((prev) => [...prev.slice(-49), notification])
 
-    // Auto-dismiss after 6 seconds
+    // Auto-hide banner after 6 seconds (notification stays in list)
     setTimeout(() => {
-      setNotifications((prev) => prev.filter((n) => n.id !== id))
+      setNotifications((prev) => prev.map((n) => n.id === id ? { ...n, bannerVisible: false } : n))
     }, 6000)
   }, [])
 
@@ -27,5 +29,13 @@ export function useNotifications() {
     setNotifications((prev) => prev.filter((n) => n.id !== id))
   }, [])
 
-  return { notifications, addNotification, dismiss }
+  const markAllRead = useCallback(() => {
+    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })))
+  }, [])
+
+  const clearAll = useCallback(() => {
+    setNotifications([])
+  }, [])
+
+  return { notifications, addNotification, dismiss, markAllRead, clearAll }
 }

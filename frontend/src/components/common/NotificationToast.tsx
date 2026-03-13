@@ -21,11 +21,12 @@ const colors = {
 }
 
 export function NotificationToast({ notifications, onDismiss }: NotificationToastProps) {
-  if (notifications.length === 0) return null
+  const visible = notifications.filter((n) => n.bannerVisible)
+  if (visible.length === 0) return null
 
   return (
     <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2">
-      {notifications.map((n) => {
+      {visible.map((n) => {
         const Icon = icons[n.type]
         return (
           <div
