@@ -18,6 +18,7 @@ export function KanbanTerminal({ projectId, projectName, onClose }: KanbanTermin
   const fitAddonRef = useRef<FitAddon | null>(null)
   const retriesRef = useRef(0)
   const [restarting, setRestarting] = useState(false)
+  const [connecting, setConnecting] = useState(true)
 
   const sendResize = useCallback((cols: number, rows: number) => {
     const ws = wsRef.current
@@ -50,6 +51,7 @@ export function KanbanTerminal({ projectId, projectName, onClose }: KanbanTermin
 
     ws.onopen = () => {
       retriesRef.current = 0
+      setConnecting(false)
       sendResize(terminal.cols, terminal.rows)
     }
 
@@ -69,7 +71,8 @@ export function KanbanTerminal({ projectId, projectName, onClose }: KanbanTermin
       } else if (event.code === 1006 && retriesRef.current < 3) {
         // Abnormal close — likely race with previous session cleanup, silent retry
         retriesRef.current++
-        setTimeout(() => connectWs(terminal), 1500)
+        setConnecting(true)
+        setTimeout(() => connectWs(terminal), 500)
       } else if (event.code !== 1000 && event.code !== 1005) {
         terminal.write(`\r\n\x1b[31mConnection closed (${event.code}).\x1b[0m\r\n`)
       }
@@ -205,7 +208,7 @@ export function KanbanTerminal({ projectId, projectName, onClose }: KanbanTermin
         {/* Header */}
         <div className="flex items-center justify-between border-b border-[var(--color-border)] px-3 py-2">
           <div className="flex items-center gap-2">
-            <TerminalSquare size={14} className="text-[var(--color-accent-blue)]" />
+            <TerminalSquare size={14} className={connecting ? 'text-[var(--color-text-muted)] animate-pulse' : 'text-[var(--color-accent-blue)]'} />
             <span className="text-xs font-semibold text-[var(--color-text-muted)]">
               {projectName || 'Kanban Claude Code'}
             </span>
