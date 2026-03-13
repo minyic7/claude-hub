@@ -77,6 +77,35 @@ def _restore_claude_config() -> None:
     except Exception as e:
         logger.warning("Failed to update settings.json: %s", e)
 
+    # Auto-trust advisor directories (skip "trust this folder?" prompt)
+    try:
+        config_data = {}
+        if os.path.exists(volume_path):
+            with open(volume_path) as f:
+                config_data = _json.load(f)
+        elif os.path.exists(config_path):
+            with open(config_path) as f:
+                config_data = _json.load(f)
+
+        projects = config_data.setdefault("projects", {})
+        advisors_dir = os.path.join(settings.data_dir, "advisors")
+        # Trust any subdirectory under /data/advisors/
+        # Claude Code uses the directory path as key with allowedTools etc.
+        needs_write = False
+        for entry in os.listdir(advisors_dir) if os.path.isdir(advisors_dir) else []:
+            advisor_path = os.path.join(advisors_dir, entry)
+            if advisor_path not in projects:
+                projects[advisor_path] = {"allowedTools": [], "isTrusted": True}
+                needs_write = True
+
+        if needs_write:
+            target = volume_path if os.path.exists(os.path.dirname(volume_path)) else config_path
+            with open(target, "w") as f:
+                _json.dump(config_data, f)
+            logger.info("Auto-trusted advisor directories in %s", target)
+    except Exception as e:
+        logger.warning("Failed to auto-trust advisor dirs: %s", e)
+
 
 def _clean_env() -> dict[str, str]:
     return {
