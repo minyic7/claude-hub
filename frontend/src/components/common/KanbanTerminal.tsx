@@ -127,6 +127,14 @@ export function KanbanTerminal({ projectId, projectName, visible, onClose }: Kan
     fitAddonRef.current = fitAddon
 
     terminal.attachCustomKeyEventHandler((e) => {
+      // Shift+Enter: send CSI u encoded sequence so Claude Code receives newline
+      if (e.type === 'keydown' && e.key === 'Enter' && e.shiftKey) {
+        const ws = wsRef.current
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(new TextEncoder().encode('\x1b[13;2u'))
+        }
+        return false
+      }
       if (e.type === 'keydown' && (e.ctrlKey || e.metaKey)) {
         if (e.key === 'v') {
           navigator.clipboard.readText().then((text) => {

@@ -386,6 +386,14 @@ def start_kanban(project: dict, gh_token: str = "") -> str:
         capture_output=True,
     )
     subprocess.run(
+        ["tmux", "set-option", "-t", name, "extended-keys", "on"],
+        capture_output=True,
+    )
+    subprocess.run(
+        ["tmux", "set-option", "-t", name, "allow-passthrough", "on"],
+        capture_output=True,
+    )
+    subprocess.run(
         ["tmux", "send-keys", "-t", name, claude_cmd, "Enter"],
         check=True,
     )
