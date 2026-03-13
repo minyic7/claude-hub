@@ -225,6 +225,15 @@ export function AppShell({
             <Settings size={16} />
           </button>
           <ThemeToggle />
+          {activeProjectId && !showKanbanTerminal && (
+            <button
+              onClick={() => setShowKanbanTerminal(true)}
+              className="rounded-md p-1.5 text-[var(--color-text-muted)] hover:bg-[var(--color-bg-secondary)] hover:text-[var(--color-text-primary)]"
+              title="Open Kanban Claude Code"
+            >
+              <PanelRightOpen size={16} />
+            </button>
+          )}
         </div>
       </header>
 
@@ -257,23 +266,12 @@ export function AppShell({
       <CreateProjectModal open={showCreateProject} onClose={() => setShowCreateProject(false)} />
       <AgentSettingsModal open={showSettings} onClose={() => setShowSettings(false)} />
       {activeProjectId && (
-        <>
-          <KanbanTerminal
-            projectId={activeProjectId}
-            projectName={activeProject?.name}
-            visible={showKanbanTerminal}
-            onClose={() => setShowKanbanTerminal(false)}
-          />
-          {!showKanbanTerminal && (
-            <button
-              onClick={() => setShowKanbanTerminal(true)}
-              className="fixed right-0 top-1/2 -translate-y-1/2 z-40 rounded-l-md border border-r-0 border-[var(--color-border)] bg-[var(--color-bg-panel)] p-2 text-[var(--color-text-muted)] hover:bg-[var(--color-bg-secondary)] hover:text-[var(--color-text-primary)] transition-colors shadow-lg"
-              title="Open Kanban Claude Code"
-            >
-              <PanelRightOpen size={16} />
-            </button>
-          )}
-        </>
+        <KanbanTerminal
+          projectId={activeProjectId}
+          projectName={activeProject?.name}
+          visible={showKanbanTerminal}
+          onClose={() => setShowKanbanTerminal(false)}
+        />
       )}
     </div>
   )
