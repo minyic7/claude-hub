@@ -73,7 +73,7 @@ export function AgentSettingsModal({ open, onClose }: Props) {
 
   if (!settings) {
     return (
-      <Modal open={open} onClose={onClose} title="TicketAgent Settings">
+      <Modal open={open} onClose={onClose} title="Settings">
         <p className="text-sm text-[var(--color-text-muted)]">Loading...</p>
       </Modal>
     )
@@ -84,8 +84,49 @@ export function AgentSettingsModal({ open, onClose }: Props) {
     : [] // openai_compatible: free-form model input
 
   return (
-    <Modal open={open} onClose={onClose} title="TicketAgent Settings">
+    <Modal open={open} onClose={onClose} title="Settings">
       <div className="space-y-4">
+        {/* ─── System ─── */}
+        <div className="border-b border-[var(--color-border)] pb-1">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">System</span>
+        </div>
+
+        {/* Max Sessions */}
+        <div>
+          <label className="mb-1 flex items-center justify-between text-sm text-[var(--color-text-primary)]">
+            <span>Max Concurrent Sessions</span>
+            <span className="font-mono text-xs text-[var(--color-text-muted)]">{settings.max_sessions}</span>
+          </label>
+          <input
+            type="range"
+            min={1}
+            max={20}
+            value={settings.max_sessions}
+            onChange={(e) => setSettings({ ...settings, max_sessions: Number(e.target.value) })}
+            className="w-full accent-[var(--color-accent-blue)]"
+          />
+        </div>
+
+        {/* GitHub Token */}
+        <div>
+          <label className="mb-1 block text-sm text-[var(--color-text-primary)]">GitHub Token</label>
+          <input
+            type="password"
+            value={settings.gh_token}
+            onChange={(e) => setSettings({ ...settings, gh_token: e.target.value })}
+            placeholder="ghp_..."
+            className="w-full rounded border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2 py-1.5 text-xs text-[var(--color-text-primary)] font-mono"
+          />
+          <p className="mt-0.5 text-[10px] text-[var(--color-text-muted)]">
+            Fallback token for projects without their own. Used for git clone and gh CLI.
+          </p>
+        </div>
+
+        {/* ─── TicketAgent ─── */}
+        <div className="border-b border-[var(--color-border)] pb-1 pt-2">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">TicketAgent</span>
+        </div>
+
         {/* Enabled toggle */}
         <label className="flex items-center justify-between">
           <span className="text-sm text-[var(--color-text-primary)]">Agent Enabled</span>

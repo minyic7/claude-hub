@@ -9,7 +9,6 @@ import anthropic
 import openai
 
 from claude_hub import redis_client
-from claude_hub.config import settings
 from claude_hub.routers.ws import broadcast
 from claude_hub.services import cost_tracker
 
@@ -79,8 +78,8 @@ async def review_pr(ticket_id: str, ticket: dict, agent_settings: dict | None = 
     """Run agent code review on a ticket's PR. Returns the review result dict."""
     cfg = agent_settings or {}
     provider = cfg.get("provider", "anthropic")
-    model = cfg.get("model", settings.agent_model)
-    api_key = cfg.get("api_key") or settings.anthropic_api_key or os.environ.get("ANTHROPIC_API_KEY", "")
+    model = cfg.get("model", "claude-haiku-4-5-20251001")
+    api_key = cfg.get("api_key", "")
 
     clone_path = ticket.get("clone_path", "")
     base_branch = ticket.get("base_branch", "main")

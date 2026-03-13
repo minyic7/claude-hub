@@ -12,7 +12,7 @@ from claude_hub import redis_client
 from claude_hub.config import settings
 from claude_hub.models.ticket import Ticket, TicketCreate, TicketStatus, TicketUpdate
 from claude_hub.routers.ws import broadcast
-from claude_hub.services.advisor_manager import send_kanban_update
+from claude_hub.services.kanban_manager import send_kanban_update
 
 router = APIRouter(prefix="/api/tickets", tags=["tickets"])
 
@@ -590,7 +590,7 @@ async def _tail_and_broadcast(ticket_id: str, log_path: str) -> None:
         # Load agent settings from Redis (hot-reloadable)
         from claude_hub.routers.settings_router import get_agent_settings
         agent_cfg = await get_agent_settings()
-        agent_enabled = agent_cfg.get("enabled", settings.agent_enabled)
+        agent_enabled = agent_cfg.get("enabled", True)
 
         if agent_enabled and agent_cfg.get("api_key"):
             # Agent mode: TicketAgent handles tailing + broadcasting + intervention

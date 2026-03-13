@@ -1,7 +1,7 @@
-"""Manages persistent project advisor Claude Code sessions.
+"""Manages persistent project kanban Claude Code sessions.
 
-Each project gets a single long-running tmux session (claude-hub-advisor-{project_id})
-that acts as a project advisor helping users refine requirements into tickets.
+Each project gets a single long-running tmux session (claude-hub-kanban-{project_id})
+that acts as a project kanban helper assisting users with coding, requirements, and tickets.
 These sessions do NOT count toward max_sessions.
 """
 
@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 
 def _session_name(project_id: str) -> str:
-    return f"claude-hub-advisor-{project_id}"
+    return f"claude-hub-kanban-{project_id}"
 
 
 def _tmux_exists(name: str) -> bool:
@@ -77,7 +77,7 @@ def _restore_claude_config() -> None:
     except Exception as e:
         logger.warning("Failed to update settings.json: %s", e)
 
-    # Auto-trust advisor directories (skip "trust this folder?" prompt)
+    # Auto-trust kanban directories (skip "trust this folder?" prompt)
     try:
         config_data = {}
         if os.path.exists(volume_path):
@@ -88,41 +88,33 @@ def _restore_claude_config() -> None:
                 config_data = _json.load(f)
 
         projects = config_data.setdefault("projects", {})
-        advisors_dir = os.path.join(settings.data_dir, "advisors")
-        # Trust any subdirectory under /data/advisors/
+        kanbans_dir = os.path.join(settings.data_dir, "kanbans")
+        # Trust any subdirectory under /data/kanbans/
         # Claude Code uses the directory path as key with allowedTools etc.
         needs_write = False
-        for entry in os.listdir(advisors_dir) if os.path.isdir(advisors_dir) else []:
-            advisor_path = os.path.join(advisors_dir, entry)
-            if advisor_path not in projects:
-                projects[advisor_path] = {"allowedTools": [], "isTrusted": True}
+        for entry in os.listdir(kanbans_dir) if os.path.isdir(kanbans_dir) else []:
+            kanban_path = os.path.join(kanbans_dir, entry)
+            if kanban_path not in projects:
+                projects[kanban_path] = {"allowedTools": [], "isTrusted": True}
                 needs_write = True
 
         if needs_write:
             target = volume_path if os.path.exists(os.path.dirname(volume_path)) else config_path
             with open(target, "w") as f:
                 _json.dump(config_data, f)
-            logger.info("Auto-trusted advisor directories in %s", target)
+            logger.info("Auto-trusted kanban directories in %s", target)
     except Exception as e:
-        logger.warning("Failed to auto-trust advisor dirs: %s", e)
-
-
-def _clean_env() -> dict[str, str]:
-    return {
-        k: v for k, v in os.environ.items()
-        if not k.startswith("CLAUDE") and k != "CLAUDECODE"
-        and not k.startswith("ANTHROPIC")
-    }
+        logger.warning("Failed to auto-trust kanban dirs: %s", e)
 
 
 def _generate_internal_token() -> str:
-    """Generate a long-lived JWT for advisor internal API calls (localhost only)."""
+    """Generate a long-lived JWT for kanban internal API calls (localhost only)."""
     exp = datetime.now(timezone.utc) + timedelta(days=3650)
-    return jwt.encode({"exp": exp, "advisor": True}, settings.auth_secret, algorithm="HS256")
+    return jwt.encode({"exp": exp, "kanban": True}, settings.auth_secret, algorithm="HS256")
 
 
-def _build_advisor_claude_md(project: dict, api_base_url: str, auth_token: str = "") -> str:
-    """Generate CLAUDE.md content for the advisor session."""
+def _build_kanban_claude_md(project: dict, api_base_url: str, auth_token: str = "") -> str:
+    """Generate CLAUDE.md content for the kanban session."""
     project_name = project.get("name", "Unknown")
     project_id = project["id"]
     repo_url = project.get("repo_url", "")
@@ -133,6 +125,12 @@ def _build_advisor_claude_md(project: dict, api_base_url: str, auth_token: str =
 
 You are the **Kanban Claude Code** for the "{project_name}" project.
 You work directly on this repository and help users with coding, refining requirements, and managing tickets.
+
+## On Startup
+When you first start, do the following:
+1. Run `get_kanban_state` (see Bash Tools below) to load the current board state
+2. Greet the user with a brief summary of the board (e.g., how many tickets, what's in progress)
+3. Let them know you're ready to help — coding, creating tickets, or anything else
 
 ## Project Context
 - **Repository**: {repo_url}
@@ -236,8 +234,8 @@ curl -s -X POST {auth_header}{api_base_url}/api/tickets/reorder \\
 """
 
 
-def start_advisor(project: dict, gh_token: str = "") -> str:
-    """Start or restart the advisor session for a project.
+def start_kanban(project: dict, gh_token: str = "") -> str:
+    """Start or restart the kanban session for a project.
 
     Returns the tmux session name.
     """
@@ -251,23 +249,23 @@ def start_advisor(project: dict, gh_token: str = "") -> str:
     if _tmux_exists(name):
         subprocess.run(["tmux", "kill-session", "-t", name], capture_output=True)
 
-    # Prepare clone directory for the advisor
+    # Prepare clone directory for the kanban session
     from claude_hub.services.clone_manager import ensure_reference, _inject_token, _reference_dir, _repo_hash
 
     repo_url = project.get("repo_url", "")
     base_branch = project.get("base_branch", "main")
-    advisor_dir = os.path.join(settings.data_dir, "advisors", project_id)
+    kanban_dir = os.path.join(settings.data_dir, "kanbans", project_id)
 
     authed_url = _inject_token(repo_url, gh_token)
 
-    if os.path.exists(advisor_dir):
+    if os.path.exists(kanban_dir):
         # Update existing clone
         subprocess.run(
             ["git", "fetch", "origin"],
-            cwd=advisor_dir, capture_output=True,
+            cwd=kanban_dir, capture_output=True,
         )
     else:
-        os.makedirs(os.path.dirname(advisor_dir), exist_ok=True)
+        os.makedirs(os.path.dirname(kanban_dir), exist_ok=True)
         # Try reference clone first
         try:
             ensure_reference(repo_url, gh_token)
@@ -277,12 +275,12 @@ def start_advisor(project: dict, gh_token: str = "") -> str:
         ref_path = os.path.join(_reference_dir(), f"{_repo_hash(repo_url)}.git")
         if os.path.exists(ref_path):
             subprocess.run(
-                ["git", "clone", "--reference", ref_path, authed_url, advisor_dir],
+                ["git", "clone", "--reference", ref_path, authed_url, kanban_dir],
                 check=True, capture_output=True,
             )
         else:
             subprocess.run(
-                ["git", "clone", authed_url, advisor_dir],
+                ["git", "clone", authed_url, kanban_dir],
                 check=True, capture_output=True,
             )
 
@@ -290,53 +288,53 @@ def start_advisor(project: dict, gh_token: str = "") -> str:
     kanban_branch = "kanban-claude-hub"
     subprocess.run(
         ["git", "fetch", "origin"],
-        cwd=advisor_dir, capture_output=True,
+        cwd=kanban_dir, capture_output=True,
     )
     # Check if branch exists on remote
     result = subprocess.run(
         ["git", "ls-remote", "--heads", "origin", kanban_branch],
-        cwd=advisor_dir, capture_output=True, text=True,
+        cwd=kanban_dir, capture_output=True, text=True,
     )
     if kanban_branch in (result.stdout or ""):
         # Branch exists on remote — switch to it and pull latest
         subprocess.run(
             ["git", "checkout", kanban_branch],
-            cwd=advisor_dir, capture_output=True,
+            cwd=kanban_dir, capture_output=True,
         )
         subprocess.run(
             ["git", "pull", "origin", kanban_branch],
-            cwd=advisor_dir, capture_output=True,
+            cwd=kanban_dir, capture_output=True,
         )
     else:
         # Create new branch from latest base and push it
         subprocess.run(
             ["git", "checkout", base_branch],
-            cwd=advisor_dir, capture_output=True,
+            cwd=kanban_dir, capture_output=True,
         )
         subprocess.run(
             ["git", "reset", "--hard", f"origin/{base_branch}"],
-            cwd=advisor_dir, capture_output=True,
+            cwd=kanban_dir, capture_output=True,
         )
         subprocess.run(
             ["git", "checkout", "-b", kanban_branch],
-            cwd=advisor_dir, capture_output=True,
+            cwd=kanban_dir, capture_output=True,
         )
         subprocess.run(
             ["git", "push", "-u", "origin", kanban_branch],
-            cwd=advisor_dir, capture_output=True,
+            cwd=kanban_dir, capture_output=True,
         )
 
-    # Write CLAUDE.md for the advisor
+    # Write CLAUDE.md for the kanban session
     api_base_url = f"http://localhost:{settings.port}"
     auth_token = _generate_internal_token() if settings.auth_enabled else ""
-    claude_md = _build_advisor_claude_md(project, api_base_url, auth_token)
-    claude_md_path = os.path.join(advisor_dir, "CLAUDE.md")
+    claude_md = _build_kanban_claude_md(project, api_base_url, auth_token)
+    claude_md_path = os.path.join(kanban_dir, "CLAUDE.md")
     with open(claude_md_path, "w") as f:
         f.write(claude_md)
 
-    # Pre-approve advisor tools (merge with existing user-granted permissions)
+    # Pre-approve kanban tools (merge with existing user-granted permissions)
     import json as _json
-    claude_settings_dir = os.path.join(advisor_dir, ".claude")
+    claude_settings_dir = os.path.join(kanban_dir, ".claude")
     os.makedirs(claude_settings_dir, exist_ok=True)
     claude_settings_path = os.path.join(claude_settings_dir, "settings.json")
     required_allow = {"Bash(*)"}
@@ -356,7 +354,6 @@ def start_advisor(project: dict, gh_token: str = "") -> str:
 
     # Build claude command — interactive mode (no -p, no --output-format)
     # Wrapped in a restart loop so accidental exit doesn't kill the session
-    # The initial prompt is sent via tmux send-keys after startup
     parts = [
         settings.claude_bin,
         "--verbose",
@@ -365,21 +362,15 @@ def start_advisor(project: dict, gh_token: str = "") -> str:
     # Wrapper: auto-restart Claude Code if it exits, with a 2s pause to avoid tight loops
     claude_cmd = f'while true; do {inner_cmd}; echo -e "\\n\\033[33mClaude Code exited. Restarting in 2s... (Ctrl+C to stop)\\033[0m"; sleep 2; done'
 
-    initial_prompt = (
-        "Start by running get_kanban_state to see the current tickets. "
-        "Then greet the user with a brief summary of the board state and let them know "
-        "you're ready to help — whether that's coding, creating tickets, or anything else."
-    )
-
-    # Create tmux session with clean env
-    env = _clean_env()
+    # Create tmux session — pass GH_TOKEN from project or Settings UI fallback
+    env = dict(os.environ)
     token = gh_token or settings.gh_token
     if token:
         env["GH_TOKEN"] = token
 
     subprocess.run(
         ["tmux", "new-session", "-d", "-s", name, "-x", "200", "-y", "50"],
-        check=True, env=env, cwd=advisor_dir,
+        check=True, env=env, cwd=kanban_dir,
     )
     subprocess.run(
         ["tmux", "set-option", "-t", name, "remain-on-exit", "on"],
@@ -390,7 +381,7 @@ def start_advisor(project: dict, gh_token: str = "") -> str:
         capture_output=True,
     )
     subprocess.run(
-        ["tmux", "set-option", "-t", name, "history-limit", "50000"],
+        ["tmux", "set-option", "-t", name, "history-limit", "200000"],
         capture_output=True,
     )
     subprocess.run(
@@ -398,28 +389,7 @@ def start_advisor(project: dict, gh_token: str = "") -> str:
         check=True,
     )
 
-    # Send initial prompt after a brief delay for Claude to start up
-    import threading
-
-    def _send_initial_prompt():
-        import time
-        time.sleep(3)  # Wait for Claude CLI to initialize
-        try:
-            subprocess.run(
-                ["tmux", "send-keys", "-t", name, "-l", initial_prompt],
-                capture_output=True,
-            )
-            subprocess.run(
-                ["tmux", "send-keys", "-t", name, "Enter"],
-                capture_output=True,
-            )
-            logger.info("Sent initial prompt to advisor %s", name)
-        except Exception as e:
-            logger.warning("Failed to send initial prompt to %s: %s", name, e)
-
-    threading.Thread(target=_send_initial_prompt, daemon=True).start()
-
-    logger.info("Started advisor session %s for project %s", name, project_id)
+    logger.info("Started kanban session %s for project %s", name, project_id)
     return name
 
 
@@ -429,7 +399,7 @@ def is_alive(project_id: str) -> bool:
 
 
 def get_status(project_id: str) -> dict:
-    """Get advisor session status."""
+    """Get kanban session status."""
     name = _session_name(project_id)
     alive = _tmux_exists(name) and not _tmux_is_dead(name)
     return {
@@ -439,18 +409,18 @@ def get_status(project_id: str) -> dict:
     }
 
 
-def restart_advisor(project: dict, gh_token: str = "") -> str:
-    """Kill and recreate the advisor session."""
+def restart_kanban(project: dict, gh_token: str = "") -> str:
+    """Kill and recreate the kanban session."""
     project_id = project["id"]
     name = _session_name(project_id)
     if _tmux_exists(name):
         subprocess.run(["tmux", "kill-session", "-t", name], capture_output=True)
-        logger.info("Killed existing advisor session %s", name)
-    return start_advisor(project, gh_token)
+        logger.info("Killed existing kanban session %s", name)
+    return start_kanban(project, gh_token)
 
 
 def send_kanban_update(project_id: str) -> None:
-    """Send [KANBAN_UPDATE] marker to the advisor session if it's alive."""
+    """Send [KANBAN_UPDATE] marker to the kanban session if it's alive."""
     name = _session_name(project_id)
     if not _tmux_exists(name) or _tmux_is_dead(name):
         return
@@ -463,6 +433,6 @@ def send_kanban_update(project_id: str) -> None:
             ["tmux", "send-keys", "-t", name, "Enter"],
             capture_output=True,
         )
-        logger.debug("Sent KANBAN_UPDATE to advisor %s", name)
+        logger.debug("Sent KANBAN_UPDATE to kanban %s", name)
     except Exception as e:
         logger.warning("Failed to send KANBAN_UPDATE to %s: %s", name, e)

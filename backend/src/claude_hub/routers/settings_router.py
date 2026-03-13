@@ -4,7 +4,6 @@ import logging
 from fastapi import APIRouter, HTTPException
 
 from claude_hub import redis_client
-from claude_hub.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -14,8 +13,12 @@ REDIS_KEY = "settings:agent"
 
 VALID_PROVIDERS = ["anthropic", "openai", "openai_compatible"]
 
-# Default values
+# Default values — all settings managed via UI, stored in Redis
 _DEFAULTS = {
+    # System
+    "max_sessions": 4,
+    "gh_token": "",
+    # Agent
     "enabled": True,
     "provider": "anthropic",
     "api_key": "",
@@ -38,40 +41,42 @@ def _mask_key(key: str) -> str:
 
 
 async def get_agent_settings() -> dict:
-    """Get agent settings from Redis, falling back to env vars then defaults."""
+    """Get all settings from Redis, falling back to defaults."""
     r = redis_client.get_pool()
     raw = await r.get(REDIS_KEY)
     if raw:
         try:
             stored = json.loads(raw)
             result = {**_DEFAULTS, **stored}
-            # If no API key in Redis, fall back to env
-            if not result.get("api_key"):
-                result["api_key"] = settings.anthropic_api_key
             return result
         except json.JSONDecodeError:
             pass
 
-    # First time: seed from env vars
-    return {
-        **_DEFAULTS,
-        "enabled": settings.agent_enabled,
-        "api_key": settings.anthropic_api_key,
-        "model": settings.agent_model,
-        "batch_size": settings.agent_batch_size,
-        "max_context_messages": settings.agent_max_context_messages,
-        "web_search": settings.agent_web_search,
-        "budget_per_ticket_usd": settings.agent_budget_per_ticket_usd,
-        "budget_daily_usd": settings.agent_budget_daily_usd,
-        "budget_monthly_usd": settings.agent_budget_monthly_usd,
-    }
+    # First time: return defaults (all settings managed via UI)
+    return {**_DEFAULTS}
+
+
+async def get_max_sessions() -> int:
+    """Get max_sessions from settings (convenience for ticket router)."""
+    cfg = await get_agent_settings()
+    return cfg.get("max_sessions", 4)
+
+
+async def get_gh_token() -> str:
+    """Get global GitHub token from settings."""
+    cfg = await get_agent_settings()
+    return cfg.get("gh_token", "")
 
 
 @router.get("/agent")
 async def get_settings():
     cfg = await get_agent_settings()
-    # Mask API key in response
-    return {**cfg, "api_key": _mask_key(cfg.get("api_key", ""))}
+    # Mask secrets in response
+    return {
+        **cfg,
+        "api_key": _mask_key(cfg.get("api_key", "")),
+        "gh_token": _mask_key(cfg.get("gh_token", "")),
+    }
 
 
 @router.put("/agent")
@@ -118,15 +123,31 @@ async def update_settings(body: dict):
     if "budget_monthly_usd" in body:
         current["budget_monthly_usd"] = max(1.0, float(body["budget_monthly_usd"]))
 
+    # System settings
+    if "max_sessions" in body:
+        current["max_sessions"] = max(1, min(20, int(body["max_sessions"])))
+
+    if "gh_token" in body:
+        token = body["gh_token"]
+        if token and "..." not in token:
+            current["gh_token"] = token
+
     r = redis_client.get_pool()
     await r.set(REDIS_KEY, json.dumps(current))
 
-    # Log without exposing full key
-    log_cfg = {**current, "api_key": _mask_key(current.get("api_key", ""))}
-    logger.info("Agent settings updated: %s", log_cfg)
+    # Log without exposing secrets
+    log_cfg = {
+        **current,
+        "api_key": _mask_key(current.get("api_key", "")),
+        "gh_token": _mask_key(current.get("gh_token", "")),
+    }
+    logger.info("Settings updated: %s", log_cfg)
 
-    # Return with masked key
-    return {**current, "api_key": _mask_key(current.get("api_key", ""))}
+    return {
+        **current,
+        "api_key": _mask_key(current.get("api_key", "")),
+        "gh_token": _mask_key(current.get("gh_token", "")),
+    }
 
 
 @router.post("/agent/test")

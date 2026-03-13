@@ -2,7 +2,6 @@ import logging
 from datetime import datetime
 
 from claude_hub import redis_client
-from claude_hub.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -29,13 +28,13 @@ def calculate_cost(usage: dict, model: str) -> float:
 
 
 async def _get_budgets() -> dict:
-    """Get budget limits from Redis settings (hot-reloadable), fallback to env."""
+    """Get budget limits from Redis settings (hot-reloadable)."""
     from claude_hub.routers.settings_router import get_agent_settings
     cfg = await get_agent_settings()
     return {
-        "per_ticket": cfg.get("budget_per_ticket_usd", settings.agent_budget_per_ticket_usd),
-        "daily": cfg.get("budget_daily_usd", settings.agent_budget_daily_usd),
-        "monthly": cfg.get("budget_monthly_usd", settings.agent_budget_monthly_usd),
+        "per_ticket": cfg.get("budget_per_ticket_usd", 2.00),
+        "daily": cfg.get("budget_daily_usd", 50.00),
+        "monthly": cfg.get("budget_monthly_usd", 500.00),
     }
 
 

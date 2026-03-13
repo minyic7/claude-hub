@@ -5,12 +5,12 @@ import { X, TerminalSquare, RefreshCw } from 'lucide-react'
 import { api, getToken } from '../../lib/api'
 import '@xterm/xterm/css/xterm.css'
 
-interface AdvisorTerminalProps {
+interface KanbanTerminalProps {
   projectId: string
   onClose: () => void
 }
 
-export function AdvisorTerminal({ projectId, onClose }: AdvisorTerminalProps) {
+export function KanbanTerminal({ projectId, onClose }: KanbanTerminalProps) {
   const termRef = useRef<HTMLDivElement>(null)
   const terminalRef = useRef<Terminal | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
@@ -35,7 +35,7 @@ export function AdvisorTerminal({ projectId, onClose }: AdvisorTerminalProps) {
     const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
     const token = getToken()
     const qs = token ? `?token=${encodeURIComponent(token)}` : ''
-    const wsUrl = `${proto}//${window.location.host}/ws/advisor/${projectId}/terminal${qs}`
+    const wsUrl = `${proto}//${window.location.host}/ws/kanban/${projectId}/terminal${qs}`
 
     const ws = new WebSocket(wsUrl)
     ws.binaryType = 'arraybuffer'
@@ -58,7 +58,7 @@ export function AdvisorTerminal({ projectId, onClose }: AdvisorTerminalProps) {
         // Session not running — auto-start it
         terminal.write('\r\n\x1b[33mStarting Claude Code session...\x1b[0m\r\n')
         try {
-          await api.advisor.start(projectId)
+          await api.kanban.start(projectId)
           // Wait a moment for tmux to initialize, then reconnect
           await new Promise(r => setTimeout(r, 2000))
           connectWs(terminal)
@@ -177,7 +177,7 @@ export function AdvisorTerminal({ projectId, onClose }: AdvisorTerminalProps) {
   const handleRestart = async () => {
     setRestarting(true)
     try {
-      await api.advisor.restart(projectId)
+      await api.kanban.restart(projectId)
       // Close and reconnect
       wsRef.current?.close()
       const terminal = terminalRef.current

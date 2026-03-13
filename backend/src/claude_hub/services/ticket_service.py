@@ -41,10 +41,10 @@ async def transition(ticket_id: str, target: TicketStatus, **extra_fields: objec
 
     updated = await redis_client.get_ticket(ticket_id)
 
-    # Notify advisor session of kanban state change
+    # Notify kanban session of kanban state change
     project_id = updated.get("project_id", "") if updated else ""
     if project_id:
-        from claude_hub.services.advisor_manager import send_kanban_update
+        from claude_hub.services.kanban_manager import send_kanban_update
         send_kanban_update(project_id)
 
     return updated

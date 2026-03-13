@@ -7,7 +7,6 @@ import anthropic
 import openai
 
 from claude_hub import redis_client
-from claude_hub.config import settings
 from claude_hub.models.events import ActivityEvent
 from claude_hub.routers.ws import broadcast
 from claude_hub.services import cost_tracker, session_manager
@@ -141,7 +140,7 @@ def _build_tools(agent_settings: dict | None = None) -> list[dict]:
         },
     ]
 
-    web_search = agent_settings.get("web_search", settings.agent_web_search) if agent_settings else settings.agent_web_search
+    web_search = agent_settings.get("web_search", False) if agent_settings else False
     if web_search:
         tools.append({
             "name": "web_search",
@@ -188,9 +187,9 @@ class TicketAgent:
         # Use hot-reloadable settings from Redis, fallback to env
         self._settings = agent_settings or {}
         self.provider = self._settings.get("provider", "anthropic")
-        self.model = self._settings.get("model", settings.agent_model)
-        self.batch_size = self._settings.get("batch_size", settings.agent_batch_size)
-        self.max_context = self._settings.get("max_context_messages", settings.agent_max_context_messages)
+        self.model = self._settings.get("model", "claude-haiku-4-5-20251001")
+        self.batch_size = self._settings.get("batch_size", 8)
+        self.max_context = self._settings.get("max_context_messages", 25)
         self.messages: list[dict] = []
         self.tools = _build_tools(self._settings)
         self.system_prompt = SYSTEM_PROMPT_TEMPLATE.format(
@@ -201,7 +200,7 @@ class TicketAgent:
         self._stopped = False
 
         # Initialize client based on provider
-        api_key = self._settings.get("api_key") or settings.anthropic_api_key or os.environ.get("ANTHROPIC_API_KEY", "")
+        api_key = self._settings.get("api_key", "")
         endpoint_url = self._settings.get("endpoint_url", "")
 
         if self.provider == "anthropic":

@@ -160,13 +160,13 @@ export const api = {
     testConnection: () =>
       request<{ ok: boolean; model: string; message: string }>('/settings/agent/test', { method: 'POST' }),
   },
-  advisor: {
+  kanban: {
     start: (projectId: string) =>
-      request<AdvisorStatus>(`/projects/${projectId}/advisor/start`, { method: 'POST' }),
+      request<KanbanStatus>(`/projects/${projectId}/kanban/start`, { method: 'POST' }),
     restart: (projectId: string) =>
-      request<AdvisorStatus>(`/projects/${projectId}/advisor/restart`, { method: 'POST' }),
+      request<KanbanStatus>(`/projects/${projectId}/kanban/restart`, { method: 'POST' }),
     status: (projectId: string) =>
-      request<AdvisorStatus>(`/projects/${projectId}/advisor/status`),
+      request<KanbanStatus>(`/projects/${projectId}/kanban/status`),
   },
   github: {
     actions: (projectId: string) =>
@@ -177,7 +177,7 @@ export const api = {
   cost: () => request<{ daily: number; monthly: number }>('/cost'),
 }
 
-export interface AdvisorStatus {
+export interface KanbanStatus {
   alive: boolean
   session_name: string
   ssh_command: string
@@ -213,6 +213,10 @@ export interface CIStatus {
 export type AgentProvider = 'anthropic' | 'openai' | 'openai_compatible'
 
 export interface AgentSettings {
+  // System
+  max_sessions: number
+  gh_token: string
+  // Agent
   enabled: boolean
   provider: AgentProvider
   api_key: string

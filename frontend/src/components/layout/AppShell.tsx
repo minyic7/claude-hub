@@ -6,7 +6,7 @@ import { Button } from '../common/Button'
 import { CreateTicketModal } from '../tickets/CreateTicketModal'
 import { CreateProjectModal } from '../projects/CreateProjectModal'
 import { AgentSettingsModal } from '../settings/AgentSettingsModal'
-import { AdvisorTerminal } from '../common/AdvisorTerminal'
+import { KanbanTerminal } from '../common/KanbanTerminal'
 import { clearToken, getToken } from '../../lib/api'
 import type { DeployState } from '../../hooks/useDeployStatus'
 import type { WorkflowRun } from '../../lib/api'
@@ -36,7 +36,7 @@ export function AppShell({
   const [showProjectMenu, setShowProjectMenu] = useState(false)
   const [showNotifications, setShowNotifications] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
-  const [showAdvisorTerminal, setShowAdvisorTerminal] = useState(false)
+  const [showKanbanTerminal, setShowKanbanTerminal] = useState(false)
 
   const activeProject = activeProjectId ? projects.get(activeProjectId) : null
 
@@ -213,7 +213,7 @@ export function AppShell({
           {/* Kanban Claude Code */}
           {activeProjectId && (
             <button
-              onClick={() => setShowAdvisorTerminal(true)}
+              onClick={() => setShowKanbanTerminal(true)}
               className="rounded-md p-1.5 text-[var(--color-text-muted)] hover:bg-[var(--color-bg-secondary)] hover:text-[var(--color-text-primary)]"
               title="Kanban Claude Code"
             >
@@ -227,7 +227,7 @@ export function AppShell({
           <button
             onClick={() => setShowSettings(true)}
             className="rounded-md p-1.5 text-[var(--color-text-muted)] hover:bg-[var(--color-bg-secondary)] hover:text-[var(--color-text-primary)]"
-            title="Agent Settings"
+            title="Settings"
           >
             <Settings size={16} />
           </button>
@@ -272,10 +272,10 @@ export function AppShell({
       )}
       <CreateProjectModal open={showCreateProject} onClose={() => setShowCreateProject(false)} />
       <AgentSettingsModal open={showSettings} onClose={() => setShowSettings(false)} />
-      {showAdvisorTerminal && activeProjectId && (
-        <AdvisorTerminal
+      {showKanbanTerminal && activeProjectId && (
+        <KanbanTerminal
           projectId={activeProjectId}
-          onClose={() => setShowAdvisorTerminal(false)}
+          onClose={() => setShowKanbanTerminal(false)}
         />
       )}
     </div>

@@ -1,4 +1,4 @@
-"""Advisor endpoints for persistent project advisor sessions."""
+"""Kanban endpoints for persistent project kanban sessions."""
 
 import asyncio
 import fcntl
@@ -14,11 +14,11 @@ from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconn
 from claude_hub import redis_client
 from claude_hub.auth import verify_ws_token
 from claude_hub.config import settings
-from claude_hub.services import advisor_manager
+from claude_hub.services import kanban_manager
 
-router = APIRouter(prefix="/api/projects", tags=["advisor"])
+router = APIRouter(prefix="/api/projects", tags=["kanban"])
 # Separate router for WebSocket (no auth dependency — handled inside endpoint)
-ws_router = APIRouter(tags=["advisor"])
+ws_router = APIRouter(tags=["kanban"])
 logger = logging.getLogger(__name__)
 
 
@@ -30,53 +30,53 @@ async def _get_project_and_token(project_id: str) -> tuple[dict, str]:
     return project, gh_token
 
 
-@router.post("/{project_id}/advisor/start")
-async def start_advisor(project_id: str):
-    """Create a persistent advisor tmux session for the project."""
+@router.post("/{project_id}/kanban/start")
+async def start_kanban(project_id: str):
+    """Create a persistent kanban tmux session for the project."""
     project, gh_token = await _get_project_and_token(project_id)
 
     try:
-        session_name = advisor_manager.start_advisor(project, gh_token)
+        session_name = kanban_manager.start_kanban(project, gh_token)
     except Exception as e:
-        logger.error("Failed to start advisor for %s: %s", project_id, e)
-        raise HTTPException(500, f"Failed to start advisor: {e}")
+        logger.error("Failed to start kanban for %s: %s", project_id, e)
+        raise HTTPException(500, f"Failed to start kanban: {e}")
 
     return {
         "session_name": session_name,
-        **advisor_manager.get_status(project_id),
+        **kanban_manager.get_status(project_id),
     }
 
 
-@router.post("/{project_id}/advisor/restart")
-async def restart_advisor(project_id: str):
-    """Kill and recreate the advisor session."""
+@router.post("/{project_id}/kanban/restart")
+async def restart_kanban(project_id: str):
+    """Kill and recreate the kanban session."""
     project, gh_token = await _get_project_and_token(project_id)
 
     try:
-        session_name = advisor_manager.restart_advisor(project, gh_token)
+        session_name = kanban_manager.restart_kanban(project, gh_token)
     except Exception as e:
-        logger.error("Failed to restart advisor for %s: %s", project_id, e)
-        raise HTTPException(500, f"Failed to restart advisor: {e}")
+        logger.error("Failed to restart kanban for %s: %s", project_id, e)
+        raise HTTPException(500, f"Failed to restart kanban: {e}")
 
     return {
         "session_name": session_name,
-        **advisor_manager.get_status(project_id),
+        **kanban_manager.get_status(project_id),
     }
 
 
-@router.get("/{project_id}/advisor/status")
-async def advisor_status(project_id: str):
-    """Get advisor session status."""
+@router.get("/{project_id}/kanban/status")
+async def kanban_status(project_id: str):
+    """Get kanban session status."""
     project = await redis_client.get_project(project_id)
     if not project:
         raise HTTPException(404, "Project not found")
 
-    return advisor_manager.get_status(project_id)
+    return kanban_manager.get_status(project_id)
 
 
-@ws_router.websocket("/ws/advisor/{project_id}/terminal")
-async def advisor_terminal(websocket: WebSocket, project_id: str, token: str = Query(default="")):
-    """WebSocket endpoint that bridges xterm.js to the advisor tmux session via PTY.
+@ws_router.websocket("/ws/kanban/{project_id}/terminal")
+async def kanban_terminal(websocket: WebSocket, project_id: str, token: str = Query(default="")):
+    """WebSocket endpoint that bridges xterm.js to the kanban tmux session via PTY.
 
     Uses pty.fork() to get a proper controlling terminal for tmux attach.
     """
@@ -91,14 +91,14 @@ async def advisor_terminal(websocket: WebSocket, project_id: str, token: str = Q
         await websocket.close(code=4002, reason="Project not found")
         return
 
-    # Ensure advisor session is alive
-    if not advisor_manager.is_alive(project_id):
-        await websocket.close(code=4003, reason="Advisor session not running")
+    # Ensure kanban session is alive
+    if not kanban_manager.is_alive(project_id):
+        await websocket.close(code=4003, reason="Kanban session not running")
         return
 
-    session_name = advisor_manager._session_name(project_id)
+    session_name = kanban_manager._session_name(project_id)
     await websocket.accept()
-    logger.info("Advisor terminal connected for project %s", project_id)
+    logger.info("Kanban terminal connected for project %s", project_id)
 
     # Use subprocess with script command to allocate a proper PTY
     # 'script' creates a proper controlling terminal that tmux needs
@@ -196,7 +196,7 @@ async def advisor_terminal(websocket: WebSocket, project_id: str, token: str = Q
             os.close(master_fd)
         except OSError:
             pass
-        logger.info("Advisor terminal disconnected for project %s", project_id)
+        logger.info("Kanban terminal disconnected for project %s", project_id)
 
 
 def _blocking_read(fd: int) -> bytes:
