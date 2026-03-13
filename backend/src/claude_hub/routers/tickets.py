@@ -641,8 +641,8 @@ async def _tail_and_broadcast(ticket_id: str, log_path: str) -> None:
         # Verify agent work
         logger.info("Session ended for ticket %s, running verification", ticket_id)
         ticket = await redis_client.get_ticket(ticket_id)
-        if not ticket or ticket.get("status") == "blocked":
-            return  # Don't verify if blocked (agent escalated)
+        if not ticket or ticket.get("status") in ("blocked", "todo", "queued", "failed"):
+            return  # Don't verify if blocked/rolled-back/already-failed
 
         try:
             await transition(ticket_id, TicketStatus.VERIFYING)

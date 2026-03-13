@@ -264,9 +264,23 @@ class TicketAgent:
             "content": f"New activity from Claude Code:\n\n{summary}",
         })
 
-        # Trim context
+        # Trim context — must keep assistant+tool_result pairs intact
         if len(self.messages) > self.max_context:
-            self.messages = self.messages[-self.max_context:]
+            trimmed = self.messages[-self.max_context:]
+            # Ensure we don't start with a tool_result (user msg containing tool_result blocks)
+            # which would be orphaned without its preceding assistant tool_use
+            while trimmed and trimmed[0]["role"] == "user":
+                content = trimmed[0].get("content", "")
+                if isinstance(content, list) and any(
+                    isinstance(b, dict) and b.get("type") == "tool_result" for b in content
+                ):
+                    trimmed = trimmed[1:]  # Drop orphaned tool_result
+                else:
+                    break
+            # Also ensure we don't start with an assistant message (API expects user-first)
+            while trimmed and trimmed[0]["role"] == "assistant":
+                trimmed = trimmed[1:]
+            self.messages = trimmed
 
         await self._call_api()
 
