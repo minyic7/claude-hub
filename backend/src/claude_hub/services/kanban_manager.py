@@ -362,8 +362,9 @@ def start_kanban(project: dict, gh_token: str = "") -> str:
     # Wrapper: auto-restart Claude Code if it exits, with a 2s pause to avoid tight loops
     claude_cmd = f'while true; do {inner_cmd}; echo -e "\\n\\033[33mClaude Code exited. Restarting in 2s... (Ctrl+C to stop)\\033[0m"; sleep 2; done'
 
-    # Create tmux session — pass GH_TOKEN from project or Settings UI fallback
-    env = dict(os.environ)
+    # Create tmux session — strip ANTHROPIC_API_KEY so Claude Code uses
+    # its own subscription login, not the API key from the host environment.
+    env = {k: v for k, v in os.environ.items() if k != "ANTHROPIC_API_KEY"}
     token = gh_token or settings.gh_token
     if token:
         env["GH_TOKEN"] = token
