@@ -16,6 +16,7 @@ export function KanbanTerminal({ projectId, projectName, onClose }: KanbanTermin
   const terminalRef = useRef<Terminal | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
+  const retriesRef = useRef(0)
   const [restarting, setRestarting] = useState(false)
 
   const sendResize = useCallback((cols: number, rows: number) => {
@@ -48,6 +49,7 @@ export function KanbanTerminal({ projectId, projectName, onClose }: KanbanTermin
     wsRef.current = ws
 
     ws.onopen = () => {
+      retriesRef.current = 0
       sendResize(terminal.cols, terminal.rows)
     }
 
@@ -64,6 +66,10 @@ export function KanbanTerminal({ projectId, projectName, onClose }: KanbanTermin
       if (wsRef.current !== ws) return
       if (event.code === 4003) {
         terminal.write('\r\n\x1b[31mFailed to start session.\x1b[0m\r\n')
+      } else if (event.code === 1006 && retriesRef.current < 3) {
+        // Abnormal close — likely race with previous session cleanup, silent retry
+        retriesRef.current++
+        setTimeout(() => connectWs(terminal), 1500)
       } else if (event.code !== 1000 && event.code !== 1005) {
         terminal.write(`\r\n\x1b[31mConnection closed (${event.code}).\x1b[0m\r\n`)
       }

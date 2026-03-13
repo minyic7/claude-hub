@@ -201,7 +201,8 @@ async def kanban_terminal(websocket: WebSocket, project_id: str, token: str = Qu
         # Cleanup: detach tmux (don't kill the session)
         try:
             process.terminate()
-        except ProcessLookupError:
+            await asyncio.wait_for(process.wait(), timeout=3)
+        except (ProcessLookupError, asyncio.TimeoutError):
             pass
         try:
             os.close(master_fd)
