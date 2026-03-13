@@ -195,7 +195,12 @@ async def start_ticket(ticket_id: str):
 
     # Guard: prevent double-start and enforce max sessions
     if session_manager.has_active_session(ticket_id):
-        raise HTTPException(409, "Ticket already has an active session")
+        # Ticket is in a startable state but has a leftover tmux session — clean it up
+        if ticket["status"] in ("todo", "queued"):
+            logger.warning("Ticket %s in %s but has stale tmux session — cleaning up", ticket_id, ticket["status"])
+            session_manager.cleanup_session(ticket_id)
+        else:
+            raise HTTPException(409, "Ticket already has an active session")
     if session_manager.active_session_count() >= settings.max_sessions:
         raise HTTPException(
             429, f"Max concurrent sessions ({settings.max_sessions}) reached. Wait for a session to finish."
@@ -247,6 +252,7 @@ async def start_ticket(ticket_id: str):
         await redis_client.update_ticket_fields(ticket_id, {"tmux_session": session_name})
     except Exception as e:
         logger.error("Session start failed for %s, rolling back to TODO: %s", ticket_id, e)
+        session_manager.cleanup_session(ticket_id)  # Kill any partially-created tmux session
         await transition(ticket_id, TicketStatus.TODO, started_at="")
         await broadcast({
             "type": "ticket_updated",
@@ -370,9 +376,18 @@ async def retry_ticket(ticket_id: str, body: dict | None = None):
     from claude_hub.services import session_manager
     from claude_hub.services.ticket_service import InvalidTransition, transition
 
+    ticket = await redis_client.get_ticket(ticket_id)
+    if not ticket:
+        raise HTTPException(404, "Ticket not found")
+
     # Guard: prevent double-start and enforce max sessions
     if session_manager.has_active_session(ticket_id):
-        raise HTTPException(409, "Ticket already has an active session")
+        # If ticket is in a retryable state but has a leftover tmux session — clean it up
+        if ticket["status"] in ("failed", "todo", "queued"):
+            logger.warning("Ticket %s in %s but has stale tmux session — cleaning up", ticket_id, ticket["status"])
+            session_manager.cleanup_session(ticket_id)
+        else:
+            raise HTTPException(409, "Ticket already has an active session")
     if session_manager.active_session_count() >= settings.max_sessions:
         raise HTTPException(
             429, f"Max concurrent sessions ({settings.max_sessions}) reached. Wait for a session to finish."
