@@ -1,5 +1,10 @@
 import { useCallback, useState } from 'react'
 
+export interface NotificationAction {
+  label: string
+  callback: () => void
+}
+
 export interface Notification {
   id: string
   type: 'error' | 'warning' | 'info' | 'success'
@@ -7,6 +12,7 @@ export interface Notification {
   timestamp: number
   bannerVisible: boolean
   read: boolean
+  action?: NotificationAction
 }
 
 let nextId = 0
@@ -14,9 +20,9 @@ let nextId = 0
 export function useNotifications() {
   const [notifications, setNotifications] = useState<Notification[]>([])
 
-  const addNotification = useCallback((type: Notification['type'], message: string) => {
+  const addNotification = useCallback((type: Notification['type'], message: string, action?: NotificationAction) => {
     const id = `n-${++nextId}`
-    const notification: Notification = { id, type, message, timestamp: Date.now(), bannerVisible: true, read: false }
+    const notification: Notification = { id, type, message, timestamp: Date.now(), bannerVisible: true, read: false, action }
     setNotifications((prev) => [...prev.slice(-49), notification])
 
     // Auto-hide banner after 6 seconds (notification stays in list)
@@ -29,6 +35,10 @@ export function useNotifications() {
     setNotifications((prev) => prev.filter((n) => n.id !== id))
   }, [])
 
+  const markRead = useCallback((id: string) => {
+    setNotifications((prev) => prev.map((n) => n.id === id ? { ...n, read: true } : n))
+  }, [])
+
   const markAllRead = useCallback(() => {
     setNotifications((prev) => prev.map((n) => ({ ...n, read: true })))
   }, [])
@@ -37,5 +47,5 @@ export function useNotifications() {
     setNotifications([])
   }, [])
 
-  return { notifications, addNotification, dismiss, markAllRead, clearAll }
+  return { notifications, addNotification, dismiss, markRead, markAllRead, clearAll }
 }

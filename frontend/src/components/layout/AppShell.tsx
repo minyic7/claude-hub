@@ -21,8 +21,11 @@ interface AppShellProps {
   onProjectChange: (id: string | null) => void
   notifications: Notification[]
   onDismissNotification: (id: string) => void
+  onMarkRead: (id: string) => void
   onMarkAllRead: () => void
   onClearAll: () => void
+  openSettingsRequested?: boolean
+  onSettingsOpened?: () => void
   deployState: DeployState
   deployRuns: WorkflowRun[]
   children: ReactNode
@@ -30,7 +33,8 @@ interface AppShellProps {
 
 export function AppShell({
   connected, projects, tickets, activeProjectId, onProjectChange,
-  notifications, onDismissNotification, onMarkAllRead, onClearAll, deployState, deployRuns, children,
+  notifications, onDismissNotification, onMarkRead, onMarkAllRead, onClearAll,
+  openSettingsRequested, onSettingsOpened, deployState, deployRuns, children,
 }: AppShellProps) {
   const [showCreateTicket, setShowCreateTicket] = useState(false)
   const [showCreateProject, setShowCreateProject] = useState(false)
@@ -40,6 +44,14 @@ export function AppShell({
   const [showKanbanTerminal, setShowKanbanTerminal] = useState(true)
 
   const activeProject = activeProjectId ? projects.get(activeProjectId) : null
+
+  // Open settings when requested externally (e.g. from notification action)
+  useEffect(() => {
+    if (openSettingsRequested) {
+      setShowSettings(true)
+      onSettingsOpened?.()
+    }
+  }, [openSettingsRequested, onSettingsOpened])
 
   // Compute ticket stats
   const stats = useMemo(() => {
@@ -170,7 +182,7 @@ export function AppShell({
               <Bell size={16} />
               {unreadCount > 0 && (
                 <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-[var(--color-accent-red)] px-1 text-[10px] font-bold text-white">
-                  {unreadCount}
+                  {unreadCount > 99 ? '99+' : unreadCount}
                 </span>
               )}
             </button>
@@ -205,13 +217,10 @@ export function AppShell({
                       <p className="px-3 py-4 text-center text-xs text-[var(--color-text-muted)]">No notifications</p>
                     ) : (
                       notifications.slice().reverse().map((n) => (
-                        <button
+                        <div
                           key={n.id}
-                          onClick={() => {
-                            onDismissNotification(n.id)
-                            setShowNotifications(false)
-                          }}
-                          className="flex w-full items-start gap-2 border-b border-[var(--color-border)]/50 px-3 py-2 text-left hover:bg-[var(--color-bg-secondary)]"
+                          onClick={() => onMarkRead(n.id)}
+                          className={`flex w-full items-start gap-2 border-b border-[var(--color-border)]/50 px-3 py-2 text-left hover:bg-[var(--color-bg-secondary)] cursor-pointer ${n.read ? 'opacity-60' : ''}`}
                         >
                           <span className={`mt-0.5 inline-block h-2 w-2 shrink-0 rounded-full ${n.read ? 'opacity-30' : ''} ${
                             n.type === 'error' ? 'bg-[var(--color-accent-red)]' :
@@ -221,11 +230,21 @@ export function AppShell({
                           }`} />
                           <div className="min-w-0 flex-1">
                             <p className="text-xs text-[var(--color-text-primary)] line-clamp-2">{n.message}</p>
-                            <p className="mt-0.5 text-[10px] text-[var(--color-text-muted)]">
-                              {new Date(n.timestamp).toLocaleTimeString()}
-                            </p>
+                            <div className="mt-0.5 flex items-center gap-2">
+                              <span className="text-[10px] text-[var(--color-text-muted)]">
+                                {new Date(n.timestamp).toLocaleTimeString()}
+                              </span>
+                              {n.action && (
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); n.action!.callback(); setShowNotifications(false) }}
+                                  className="text-[10px] font-medium text-[var(--color-accent-blue)] hover:text-[var(--color-text-primary)] transition-colors"
+                                >
+                                  {n.action.label}
+                                </button>
+                              )}
+                            </div>
                           </div>
-                        </button>
+                        </div>
                       ))
                     )}
                   </div>
