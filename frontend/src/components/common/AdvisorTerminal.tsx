@@ -215,9 +215,7 @@ export function AdvisorTerminal({ projectId, onClose }: AdvisorTerminalProps) {
               <RefreshCw size={10} className={restarting ? 'animate-spin' : ''} />
               {restarting ? 'Restarting...' : 'Restart'}
             </button>
-            <span className="text-[10px] text-[var(--color-text-muted)]">Scroll: Ctrl+B [ then ↑/PgUp, q exit</span>
-            <span className="mx-1 text-[10px] text-[var(--color-text-muted)]">·</span>
-            <span className="text-[10px] text-[var(--color-text-muted)]">Shift+Esc to close</span>
+            <span className="text-[10px] text-[var(--color-text-muted)] whitespace-nowrap">Scroll: Ctrl+B [ ↑/PgUp, q exit · Shift+Esc close</span>
             <button
               onClick={onClose}
               className="rounded p-1 text-[var(--color-text-muted)] hover:bg-[var(--color-bg-secondary)] hover:text-[var(--color-text-primary)] transition-colors"
