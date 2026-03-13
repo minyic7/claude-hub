@@ -99,8 +99,6 @@ async def kanban_terminal(websocket: WebSocket, project_id: str, token: str = Qu
                 from claude_hub.routers.settings_router import get_gh_token
                 gh_token = await get_gh_token()
             kanban_manager.start_kanban(project, gh_token)
-            # Give tmux a moment to initialize
-            import asyncio
             await asyncio.sleep(1)
         except Exception as e:
             logger.error("Failed to auto-start kanban for %s: %s", project_id, e)
