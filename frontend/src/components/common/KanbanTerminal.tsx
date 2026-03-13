@@ -1,17 +1,22 @@
 import { useEffect, useRef, useCallback, useState } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
-import { X, TerminalSquare, RefreshCw } from 'lucide-react'
+import { TerminalSquare, RefreshCw, PanelRightClose } from 'lucide-react'
 import { api, getToken } from '../../lib/api'
 import '@xterm/xterm/css/xterm.css'
+
+const MIN_WIDTH = 300
+const MAX_WIDTH_VW = 70
+const DEFAULT_WIDTH = 600
 
 interface KanbanTerminalProps {
   projectId: string
   projectName?: string
+  visible: boolean
   onClose: () => void
 }
 
-export function KanbanTerminal({ projectId, projectName, onClose }: KanbanTerminalProps) {
+export function KanbanTerminal({ projectId, projectName, visible, onClose }: KanbanTerminalProps) {
   const termRef = useRef<HTMLDivElement>(null)
   const terminalRef = useRef<Terminal | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
@@ -19,11 +24,12 @@ export function KanbanTerminal({ projectId, projectName, onClose }: KanbanTermin
   const retriesRef = useRef(0)
   const [restarting, setRestarting] = useState(false)
   const [connecting, setConnecting] = useState(true)
+  const [width, setWidth] = useState(DEFAULT_WIDTH)
+  const draggingRef = useRef(false)
 
   const sendResize = useCallback((cols: number, rows: number) => {
     const ws = wsRef.current
     if (ws && ws.readyState === WebSocket.OPEN) {
-      // Resize protocol: 0x01 byte + JSON
       const json = JSON.stringify({ cols, rows })
       const payload = new Uint8Array(1 + json.length)
       payload[0] = 0x01
@@ -40,7 +46,6 @@ export function KanbanTerminal({ projectId, projectName, onClose }: KanbanTermin
     const qs = token ? `?token=${encodeURIComponent(token)}` : ''
     const wsUrl = `${proto}//${window.location.host}/ws/kanban/${projectId}/terminal${qs}`
 
-    // Close any existing connection before creating a new one
     if (wsRef.current) {
       wsRef.current.close()
     }
@@ -64,21 +69,19 @@ export function KanbanTerminal({ projectId, projectName, onClose }: KanbanTermin
     }
 
     ws.onclose = (event) => {
-      // Ignore close events from superseded connections
       if (wsRef.current !== ws) return
       if (event.code === 4003) {
         terminal.write('\r\n\x1b[31mFailed to start session.\x1b[0m\r\n')
-      } else if (event.code === 1006 && retriesRef.current < 3) {
-        // Abnormal close — likely race with previous session cleanup, silent retry
+      } else if (event.code === 1006 && retriesRef.current < 5) {
+        const delay = Math.min(200 * Math.pow(2, retriesRef.current), 3000)
         retriesRef.current++
         setConnecting(true)
-        setTimeout(() => connectWs(terminal), 500)
+        setTimeout(() => connectWs(terminal), delay)
       } else if (event.code !== 1000 && event.code !== 1005) {
         terminal.write(`\r\n\x1b[31mConnection closed (${event.code}).\x1b[0m\r\n`)
       }
     }
 
-    // Terminal input → WebSocket
     terminal.onData((data) => {
       if (ws.readyState === WebSocket.OPEN) {
         ws.send(new TextEncoder().encode(data))
@@ -116,7 +119,6 @@ export function KanbanTerminal({ projectId, projectName, onClose }: KanbanTermin
     terminal.loadAddon(fitAddon)
     terminal.open(termRef.current)
 
-    // Fit after a frame to ensure container has dimensions
     requestAnimationFrame(() => {
       fitAddon.fit()
     })
@@ -124,7 +126,6 @@ export function KanbanTerminal({ projectId, projectName, onClose }: KanbanTermin
     terminalRef.current = terminal
     fitAddonRef.current = fitAddon
 
-    // Clipboard paste (Ctrl+V / Cmd+V) → send to terminal
     terminal.attachCustomKeyEventHandler((e) => {
       if (e.type === 'keydown' && (e.ctrlKey || e.metaKey)) {
         if (e.key === 'v') {
@@ -134,7 +135,7 @@ export function KanbanTerminal({ projectId, projectName, onClose }: KanbanTermin
               ws.send(new TextEncoder().encode(text))
             }
           }).catch(() => {})
-          return false // prevent default
+          return false
         }
         if (e.key === 'c') {
           const sel = terminal.getSelection()
@@ -147,17 +148,11 @@ export function KanbanTerminal({ projectId, projectName, onClose }: KanbanTermin
       return true
     })
 
-    // Connect WebSocket (auto-starts session if needed)
     connectWs(terminal)
 
-    // Handle window resize
-    const handleResize = () => {
+    const resizeObserver = new ResizeObserver(() => {
       fitAddon.fit()
       sendResize(terminal.cols, terminal.rows)
-    }
-
-    const resizeObserver = new ResizeObserver(() => {
-      handleResize()
     })
     resizeObserver.observe(termRef.current)
 
@@ -171,8 +166,20 @@ export function KanbanTerminal({ projectId, projectName, onClose }: KanbanTermin
     }
   }, [projectId, sendResize, connectWs])
 
-  // Escape key to close
+  // Re-fit when becoming visible or width changes
   useEffect(() => {
+    if (visible && fitAddonRef.current && terminalRef.current) {
+      requestAnimationFrame(() => {
+        fitAddonRef.current?.fit()
+        const t = terminalRef.current
+        if (t) sendResize(t.cols, t.rows)
+      })
+    }
+  }, [visible, width, sendResize])
+
+  // Escape key to hide (only when visible)
+  useEffect(() => {
+    if (!visible) return
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && e.shiftKey) {
         onClose()
@@ -180,13 +187,42 @@ export function KanbanTerminal({ projectId, projectName, onClose }: KanbanTermin
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [onClose])
+  }, [visible, onClose])
+
+  // Drag resize handler
+  const handleDragStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    draggingRef.current = true
+
+    const startX = e.clientX
+    const startWidth = width
+    const maxWidth = window.innerWidth * MAX_WIDTH_VW / 100
+
+    const onMove = (ev: MouseEvent) => {
+      if (!draggingRef.current) return
+      const delta = startX - ev.clientX
+      const newWidth = Math.min(Math.max(startWidth + delta, MIN_WIDTH), maxWidth)
+      setWidth(newWidth)
+    }
+
+    const onUp = () => {
+      draggingRef.current = false
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+    }
+
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+  }, [width])
 
   const handleRestart = async () => {
     setRestarting(true)
     try {
       await api.kanban.restart(projectId)
-      // Close and reconnect
       wsRef.current?.close()
       const terminal = terminalRef.current
       if (terminal) {
@@ -203,20 +239,30 @@ export function KanbanTerminal({ projectId, projectName, onClose }: KanbanTermin
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-      <div className="relative flex h-[80vh] w-[90vw] max-w-5xl flex-col rounded-lg border border-[var(--color-border)] bg-[#1a1b26] shadow-2xl">
+    <div
+      className={`fixed top-0 right-0 bottom-0 z-50 flex transition-transform duration-200 ${visible ? 'translate-x-0' : 'translate-x-full'}`}
+      style={{ width }}
+    >
+      {/* Drag handle */}
+      <div
+        onMouseDown={handleDragStart}
+        className="w-1 cursor-col-resize bg-[var(--color-border)] hover:bg-[var(--color-accent-blue)] transition-colors shrink-0"
+      />
+
+      {/* Panel */}
+      <div className="flex flex-1 flex-col bg-[#1a1b26] border-l border-[var(--color-border)] overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-[var(--color-border)] px-3 py-2">
-          <div className="flex items-center gap-2">
+        <div className="flex items-center justify-between border-b border-[var(--color-border)] px-3 py-2 shrink-0">
+          <div className="flex items-center gap-2 min-w-0">
             <TerminalSquare size={14} className={connecting ? 'text-[var(--color-text-muted)] animate-pulse' : 'text-[var(--color-accent-blue)]'} />
-            <span className="text-xs font-semibold text-[var(--color-text-muted)]">
+            <span className="text-xs font-semibold text-[var(--color-text-muted)] truncate">
               {projectName || 'Kanban Claude Code'}
             </span>
-            <span className="font-mono text-[10px] text-[var(--color-text-muted)]/40 select-all" title={projectId}>
+            <span className="font-mono text-[10px] text-[var(--color-text-muted)]/40 select-all shrink-0" title={projectId}>
               {projectId.slice(0, 8)}
             </span>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 shrink-0">
             <button
               onClick={handleRestart}
               disabled={restarting}
@@ -226,17 +272,17 @@ export function KanbanTerminal({ projectId, projectName, onClose }: KanbanTermin
               <RefreshCw size={10} className={restarting ? 'animate-spin' : ''} />
               {restarting ? 'Restarting...' : 'Restart'}
             </button>
-            <span className="text-[10px] text-[var(--color-text-muted)] whitespace-nowrap">Scroll: Ctrl+B [ ↑/PgUp, q exit · Shift+Esc close</span>
             <button
               onClick={onClose}
               className="rounded p-1 text-[var(--color-text-muted)] hover:bg-[var(--color-bg-secondary)] hover:text-[var(--color-text-primary)] transition-colors"
+              title="Hide terminal (Shift+Esc)"
             >
-              <X size={14} />
+              <PanelRightClose size={14} />
             </button>
           </div>
         </div>
         {/* Terminal */}
-        <div ref={termRef} className="flex-1 p-1" />
+        <div ref={termRef} className="flex-1 p-1 min-h-0" />
       </div>
     </div>
   )

@@ -277,10 +277,11 @@ export function AppShell({
       )}
       <CreateProjectModal open={showCreateProject} onClose={() => setShowCreateProject(false)} />
       <AgentSettingsModal open={showSettings} onClose={() => setShowSettings(false)} />
-      {showKanbanTerminal && activeProjectId && (
+      {activeProjectId && (
         <KanbanTerminal
           projectId={activeProjectId}
           projectName={activeProject?.name}
+          visible={showKanbanTerminal}
           onClose={() => setShowKanbanTerminal(false)}
         />
       )}
