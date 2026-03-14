@@ -29,13 +29,14 @@ interface AppShellProps {
   onSettingsOpened?: () => void
   deployState: DeployState
   deployRuns: WorkflowRun[]
+  detailOpen?: boolean
   children: ReactNode
 }
 
 export function AppShell({
   connected, projects, tickets, activeProjectId, onProjectChange,
   notifications, onMarkRead, onMarkAllRead, onClearAll,
-  openSettingsRequested, openSettingsTab, onSettingsOpened, deployState, deployRuns, children,
+  openSettingsRequested, openSettingsTab, onSettingsOpened, deployState, deployRuns, detailOpen, children,
 }: AppShellProps) {
   const [showCreateTicket, setShowCreateTicket] = useState(false)
   const [showCreateProject, setShowCreateProject] = useState(false)
@@ -321,8 +322,8 @@ export function AppShell({
       <CreateProjectModal open={showCreateProject} onClose={() => setShowCreateProject(false)} />
       <AgentSettingsModal open={showSettings} onClose={() => setShowSettings(false)} initialTab={openSettingsTab as 'system' | 'agent' | 'account'} />
 
-      {/* Mobile FAB */}
-      {isMobile && activeProjectId && (
+      {/* Mobile FAB — hidden when any bottom sheet is open */}
+      {isMobile && activeProjectId && !detailOpen && !showCreateTicket && (
         <button
           onClick={() => setShowCreateTicket(true)}
           className="fixed bottom-6 right-6 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-[var(--color-accent-blue)] text-white shadow-lg active:scale-95 transition-transform"
