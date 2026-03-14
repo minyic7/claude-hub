@@ -11,6 +11,8 @@ from claude_hub.config import settings
 from claude_hub.routers import kanban, github_actions, projects, tickets, webhooks, ws
 from claude_hub.routers.auth_router import router as auth_router
 from claude_hub.routers.settings_router import router as settings_router
+from claude_hub.routers.po import router as po_router
+from claude_hub.services.po_manager import po_manager
 
 logging.basicConfig(
     level=getattr(logging, settings.log_level.upper(), logging.INFO),
@@ -103,9 +105,11 @@ async def lifespan(app: FastAPI):
     await redis_client.connect()
     logger.info("Redis connected")
     await _recover_orphaned_tickets()
+    await po_manager.start_all_enabled()
     poll_task = asyncio.create_task(_pr_poll_loop())
     kanban_sync_task = asyncio.create_task(_kanban_sync_loop())
     yield
+    await po_manager.stop_all()
     poll_task.cancel()
     kanban_sync_task.cancel()
     try:
@@ -140,6 +144,7 @@ app.include_router(tickets.router, dependencies=auth_dep)
 app.include_router(settings_router, dependencies=auth_dep)
 app.include_router(github_actions.router, dependencies=auth_dep)
 app.include_router(kanban.router, dependencies=auth_dep)
+app.include_router(po_router, dependencies=auth_dep)
 # WS auth is handled inside the endpoint (query param), not via router dependency
 app.include_router(ws.router)
 app.include_router(kanban.ws_router)
