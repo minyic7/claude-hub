@@ -407,6 +407,7 @@ async def retry_ticket(ticket_id: str, body: dict | None = None):
     try:
         updated = await transition(ticket_id, TicketStatus.IN_PROGRESS,
                                    failed_reason="",
+                                   agent_review="[]",
                                    started_at=datetime.now(timezone.utc).isoformat())
     except ValueError:
         raise HTTPException(404, "Ticket not found")
