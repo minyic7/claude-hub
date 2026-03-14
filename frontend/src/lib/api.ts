@@ -152,6 +152,15 @@ export const api = {
       request<{ synced: string[] }>('/tickets/sync-review-status', { method: 'POST' }),
     ciStatus: (id: string) =>
       request<CIStatus>(`/tickets/${id}/ci-status`),
+    addNote: (id: string, content: string, type: string = 'comment') =>
+      request<Ticket>(`/tickets/${id}/notes`, {
+        method: 'POST',
+        body: JSON.stringify({ content, type }),
+      }),
+    revert: (id: string) =>
+      request<Ticket>(`/tickets/${id}/revert`, { method: 'POST' }),
+    duplicate: (id: string) =>
+      request<Ticket>(`/tickets/${id}/duplicate`, { method: 'POST' }),
   },
   settings: {
     getAgent: () => request<AgentSettings>('/settings/agent'),

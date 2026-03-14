@@ -13,9 +13,10 @@ interface KanbanColumnProps {
   deployingBranches?: Set<string>
   mergeQueueLocked?: boolean
   onMergeInitiated?: () => void
+  compact?: boolean
 }
 
-export function KanbanColumn({ label, tickets, activities, onTicketClick, onOptimistic, deployingBranches, mergeQueueLocked, onMergeInitiated }: KanbanColumnProps) {
+export function KanbanColumn({ label, tickets, activities, onTicketClick, onOptimistic, deployingBranches, mergeQueueLocked, onMergeInitiated, compact }: KanbanColumnProps) {
   const [archiveExpanded, setArchiveExpanded] = useState(false)
 
   const { active, archived } = useMemo(() => {
@@ -61,7 +62,7 @@ export function KanbanColumn({ label, tickets, activities, onTicketClick, onOpti
   }
 
   return (
-    <div className="flex min-w-[280px] flex-1 flex-col">
+    <div className={`flex flex-1 flex-col ${compact ? 'min-w-0' : 'min-w-[280px]'}`}>
       <div className="mb-3 flex items-center gap-2 px-1">
         <h2 className="text-xs font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
           {label}

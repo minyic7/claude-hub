@@ -1,3 +1,4 @@
+import logging
 import uuid
 from datetime import datetime, timezone
 
@@ -6,6 +7,9 @@ from fastapi import APIRouter, HTTPException
 from claude_hub import redis_client
 from claude_hub.models.ticket import Project, ProjectCreate, ProjectUpdate
 from claude_hub.routers.ws import broadcast
+from claude_hub.services.webhook_registration import delete_webhook, register_webhook
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/projects", tags=["projects"])
 
@@ -37,6 +41,13 @@ async def create_project(body: ProjectCreate):
     )
     await redis_client.save_project(project.model_dump(mode="json"))
 
+    # Auto-register GitHub webhook
+    if body.gh_token and body.repo_url:
+        wh = register_webhook(body.repo_url, body.gh_token)
+        logger.info("Webhook registration for %s: %s", body.repo_url, wh)
+        if wh.get("webhook_id"):
+            await redis_client.update_project_fields(project_id, {"webhook_id": str(wh["webhook_id"])})
+
     response = project.model_dump(mode="json")
     response["gh_token"] = _mask_token(response["gh_token"])
 
@@ -64,6 +75,21 @@ async def update_project(project_id: str, body: ProjectUpdate):
         raise HTTPException(400, "No fields to update")
 
     await redis_client.update_project_fields(project_id, updates)
+
+    # Re-register webhook if gh_token or repo_url changed
+    if "gh_token" in updates or "repo_url" in updates:
+        # Delete old webhook if we have one
+        old_wh_id = project.get("webhook_id")
+        if old_wh_id and project.get("gh_token") and project.get("repo_url"):
+            delete_webhook(project["repo_url"], project["gh_token"], int(old_wh_id))
+
+        full = await redis_client.get_project(project_id)
+        if full and full.get("gh_token") and full.get("repo_url"):
+            wh = register_webhook(full["repo_url"], full["gh_token"])
+            logger.info("Webhook re-registration for %s: %s", full["repo_url"], wh)
+            if wh.get("webhook_id"):
+                await redis_client.update_project_fields(project_id, {"webhook_id": str(wh["webhook_id"])})
+
     updated = await redis_client.get_project(project_id)
     updated["gh_token"] = _mask_token(updated.get("gh_token", ""))
     await broadcast({"type": "project_updated", "data": updated})
@@ -72,9 +98,15 @@ async def update_project(project_id: str, body: ProjectUpdate):
 
 @router.delete("/{project_id}", status_code=204)
 async def delete_project(project_id: str):
-    deleted = await redis_client.delete_project(project_id)
-    if not deleted:
+    # Clean up webhook before deleting
+    project = await redis_client.get_project(project_id)
+    if not project:
         raise HTTPException(404, "Project not found")
+    wh_id = project.get("webhook_id")
+    if wh_id and project.get("gh_token") and project.get("repo_url"):
+        delete_webhook(project["repo_url"], project["gh_token"], int(wh_id))
+
+    await redis_client.delete_project(project_id)
     await broadcast({"type": "project_deleted", "project_id": project_id})
 
 

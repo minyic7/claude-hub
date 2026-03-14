@@ -139,6 +139,59 @@ def get_failed_log(clone_path: str, gh_token: str = "", max_lines: int = 80) -> 
     return "\n".join(lines)
 
 
+def get_pr_review_status(clone_path: str, pr_number: int, gh_token: str = "") -> dict:
+    """Check PR review status on GitHub.
+
+    Returns:
+        {
+            "status": "approved" | "changes_requested" | "pending" | "no_reviews",
+            "reviews": [...],
+            "summary": "human readable summary"
+        }
+    """
+    # Get latest review from each reviewer (GitHub considers only the latest per user)
+    result = _run_gh(
+        ["gh", "api", f"repos/{{owner}}/{{repo}}/pulls/{pr_number}/reviews",
+         "--jq", "[.[] | {user: .user.login, state: .state}]"],
+        cwd=clone_path, gh_token=gh_token,
+    )
+
+    if result.returncode != 0 or not result.stdout.strip():
+        return {"status": "no_reviews", "reviews": [], "summary": "No reviews found"}
+
+    try:
+        reviews = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        return {"status": "no_reviews", "reviews": [], "summary": "Could not parse reviews"}
+
+    if not reviews:
+        return {"status": "no_reviews", "reviews": [], "summary": "No reviews yet"}
+
+    # Keep only the latest review per user
+    latest: dict[str, str] = {}
+    for r in reviews:
+        user = r.get("user", "unknown")
+        state = r.get("state", "").upper()
+        if state in ("APPROVED", "CHANGES_REQUESTED", "DISMISSED"):
+            latest[user] = state
+
+    if not latest:
+        return {"status": "pending", "reviews": reviews, "summary": "Reviews pending"}
+
+    changes_requested_by = [u for u, s in latest.items() if s == "CHANGES_REQUESTED"]
+    approved_by = [u for u, s in latest.items() if s == "APPROVED"]
+
+    if changes_requested_by:
+        summary = f"Changes requested by: {', '.join(changes_requested_by)}"
+        return {"status": "changes_requested", "reviews": reviews, "summary": summary}
+
+    if approved_by:
+        summary = f"Approved by: {', '.join(approved_by)}"
+        return {"status": "approved", "reviews": reviews, "summary": summary}
+
+    return {"status": "pending", "reviews": reviews, "summary": "Reviews pending"}
+
+
 async def merge_pr(ticket_id: str, clone_path: str, pr_number: int, gh_token: str = "") -> None:
     """Actually merge the PR on GitHub."""
     env = None
@@ -182,6 +235,17 @@ async def wait_for_ci_and_merge(
         logger.info("CI status for %s: %s", ticket_id, ci["summary"])
 
         if ci["status"] == "passed":
+            # Check PR reviews before merging
+            review = get_pr_review_status(clone_path, pr_number, gh_token)
+            if review["status"] == "changes_requested":
+                from claude_hub.routers.tickets import process_queue
+                reason = f"CI passed but merge blocked: {review['summary']}"
+                updated = await transition(ticket_id, TicketStatus.FAILED, failed_reason=reason)
+                await broadcast({"type": "ticket_updated", "ticket_id": ticket_id, "data": updated})
+                logger.warning("Review blocked merge for %s: %s", ticket_id, review["summary"])
+                await process_queue()
+                return
+
             try:
                 from claude_hub.services import session_manager
                 from claude_hub.routers.tickets import process_queue

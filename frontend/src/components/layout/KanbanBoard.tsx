@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   DndContext,
   DragOverlay,
@@ -20,6 +20,7 @@ import { TicketCard } from '../kanban/TicketCard'
 import { SortableTicketCard } from '../kanban/SortableTicketCard'
 import { Button } from '../common/Button'
 import { api } from '../../lib/api'
+import { useIsMobile } from '../../hooks/useIsMobile'
 
 // Prevent drag from starting on buttons or interactive elements
 class SmartMouseSensor extends MouseSensor {
@@ -52,6 +53,8 @@ const BRANCH_TYPES: BranchType[] = ['feature', 'bugfix', 'hotfix', 'chore', 'ref
 export function KanbanBoard({
   columns, activities, allTickets, activeProjectId, onTicketClick, onOptimistic, deployingBranches, mergeQueueLocked, onMergeInitiated, branchTypeFilter, onBranchTypeFilter,
 }: KanbanBoardProps) {
+  const isMobile = useIsMobile()
+  const [mobileTab, setMobileTab] = useState<string>('todo')
   const [activeId, setActiveId] = useState<string | null>(null)
   const [dragSource, setDragSource] = useState<'todo' | 'queue' | null>(null)
   const [todoOrder, setTodoOrder] = useState<string[] | null>(null)
@@ -271,11 +274,34 @@ export function KanbanBoard({
           </div>
         )}
 
-        <div className="flex flex-1 gap-4 overflow-x-auto p-4">
-        {columns.map((col) => {
+        {/* Mobile column tabs */}
+        {isMobile && (
+          <div className="flex shrink-0 border-b border-[var(--color-border)]">
+            {columns.map((col) => {
+              const count = col.tickets.filter((t) => !t.archived).length
+              return (
+                <button
+                  key={col.status}
+                  onClick={() => setMobileTab(col.status)}
+                  className={`flex-1 px-2 py-2 text-xs font-medium transition-colors ${
+                    mobileTab === col.status
+                      ? 'border-b-2 border-[var(--color-accent-blue)] text-[var(--color-accent-blue)]'
+                      : 'text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]'
+                  }`}
+                >
+                  {col.label}
+                  {count > 0 && <span className="ml-1 opacity-60">{count}</span>}
+                </button>
+              )
+            })}
+          </div>
+        )}
+
+        <div className={`flex flex-1 gap-4 overflow-x-auto p-4 ${isMobile ? 'flex-col' : ''}`}>
+        {columns.filter((col) => !isMobile || col.status === mobileTab).map((col) => {
           if (col.status === 'todo') {
             return (
-              <div key="todo" className="flex min-w-[280px] flex-1 flex-col">
+              <div key="todo" className={`flex flex-1 flex-col ${isMobile ? 'min-w-0' : 'min-w-[280px]'}`}>
                 <div className="mb-3 flex items-center gap-2 px-1">
                   <h2 className="text-xs font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
                     {col.label}
@@ -457,6 +483,7 @@ export function KanbanBoard({
               deployingBranches={deployingBranches}
               mergeQueueLocked={mergeQueueLocked}
               onMergeInitiated={onMergeInitiated}
+              compact={isMobile}
             />
           )
         })}

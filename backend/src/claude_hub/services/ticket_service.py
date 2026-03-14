@@ -1,3 +1,4 @@
+import json
 from datetime import datetime, timezone
 
 from claude_hub.models.ticket import TicketStatus
@@ -10,9 +11,9 @@ VALID_TRANSITIONS: dict[TicketStatus, list[TicketStatus]] = {
     TicketStatus.BLOCKED: [TicketStatus.IN_PROGRESS, TicketStatus.FAILED],
     TicketStatus.VERIFYING: [TicketStatus.REVIEWING, TicketStatus.REVIEW, TicketStatus.FAILED],
     TicketStatus.REVIEWING: [TicketStatus.REVIEW, TicketStatus.IN_PROGRESS, TicketStatus.FAILED],
-    TicketStatus.REVIEW: [TicketStatus.MERGING, TicketStatus.MERGED, TicketStatus.IN_PROGRESS],
+    TicketStatus.REVIEW: [TicketStatus.MERGING, TicketStatus.MERGED, TicketStatus.IN_PROGRESS, TicketStatus.TODO],
     TicketStatus.MERGING: [TicketStatus.MERGED, TicketStatus.FAILED],
-    TicketStatus.FAILED: [TicketStatus.IN_PROGRESS, TicketStatus.REVIEW],
+    TicketStatus.FAILED: [TicketStatus.IN_PROGRESS, TicketStatus.REVIEW, TicketStatus.TODO],
     TicketStatus.MERGED: [],
 }
 
@@ -48,3 +49,38 @@ async def transition(ticket_id: str, target: TicketStatus, **extra_fields: objec
         send_kanban_update(project_id)
 
     return updated
+
+
+async def append_ticket_note(
+    ticket_id: str,
+    note_type: str,
+    content: str,
+    author: str = "user",
+) -> dict:
+    """Append a structured note to a ticket. Returns updated ticket."""
+    ticket = await redis_client.get_ticket(ticket_id)
+    if not ticket:
+        raise ValueError(f"Ticket {ticket_id} not found")
+
+    # Parse existing notes (stored as JSON string in Redis)
+    existing = ticket.get("notes")
+    if isinstance(existing, str):
+        try:
+            notes = json.loads(existing)
+        except json.JSONDecodeError:
+            notes = []
+    elif isinstance(existing, list):
+        notes = existing
+    else:
+        notes = []
+
+    note = {
+        "type": note_type,
+        "content": content,
+        "author": author,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+    notes.append(note)
+
+    await redis_client.update_ticket_fields(ticket_id, {"notes": json.dumps(notes)})
+    return await redis_client.get_ticket(ticket_id)

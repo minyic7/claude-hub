@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { Bell, Check, ChevronDown, FolderPlus, PanelRightOpen, Plus, Settings, Wifi, WifiOff } from 'lucide-react'
+import { useIsMobile } from '../../hooks/useIsMobile'
 import { DeployStatusWidget } from '../common/DeployStatusWidget'
 import { ThemeToggle } from '../common/ThemeToggle'
 import { Button } from '../common/Button'
@@ -41,6 +42,7 @@ export function AppShell({
   const [showProjectMenu, setShowProjectMenu] = useState(false)
   const [showNotifications, setShowNotifications] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
+  const isMobile = useIsMobile()
   const [showKanbanTerminal, setShowKanbanTerminal] = useState(true)
 
   const activeProject = activeProjectId ? projects.get(activeProjectId) : null
@@ -154,22 +156,24 @@ export function AppShell({
 
           <DeployStatusWidget state={deployState} runs={deployRuns} />
 
-          {/* Stats */}
-          <div className="flex items-center gap-2 text-xs font-mono text-[var(--color-text-muted)]">
-            <span>{stats.total} tickets{stats.archived > 0 && <> · {stats.archived} archived</>}</span>
-            {stats.running > 0 && (
-              <span className="flex items-center gap-1">
-                <span className="inline-block h-2 w-2 rounded-full bg-[var(--color-accent-blue)] animate-pulse" />
-                {stats.running} running
-              </span>
-            )}
-            {stats.blocked > 0 && (
-              <span className="flex items-center gap-1 text-[var(--color-accent-red)]">
-                <span className="inline-block h-2 w-2 rounded-full bg-[var(--color-accent-red)]" />
-                {stats.blocked} blocked
-              </span>
-            )}
-          </div>
+          {/* Stats (hidden on mobile) */}
+          {!isMobile && (
+            <div className="flex items-center gap-2 text-xs font-mono text-[var(--color-text-muted)]">
+              <span>{stats.total} tickets{stats.archived > 0 && <> · {stats.archived} archived</>}</span>
+              {stats.running > 0 && (
+                <span className="flex items-center gap-1">
+                  <span className="inline-block h-2 w-2 rounded-full bg-[var(--color-accent-blue)] animate-pulse" />
+                  {stats.running} running
+                </span>
+              )}
+              {stats.blocked > 0 && (
+                <span className="flex items-center gap-1 text-[var(--color-accent-red)]">
+                  <span className="inline-block h-2 w-2 rounded-full bg-[var(--color-accent-red)]" />
+                  {stats.blocked} blocked
+                </span>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="flex items-center gap-3">
@@ -253,9 +257,11 @@ export function AppShell({
             )}
           </div>
 
-          <Button size="sm" onClick={() => setShowCreateTicket(true)} disabled={!activeProjectId}>
-            <Plus size={14} className="mr-1" /> New Ticket
-          </Button>
+          {!isMobile && (
+            <Button size="sm" onClick={() => setShowCreateTicket(true)} disabled={!activeProjectId}>
+              <Plus size={14} className="mr-1" /> New Ticket
+            </Button>
+          )}
           <button
             onClick={() => setShowSettings(true)}
             className="rounded-md p-1.5 text-[var(--color-text-muted)] hover:bg-[var(--color-bg-secondary)] hover:text-[var(--color-text-primary)]"
@@ -264,7 +270,7 @@ export function AppShell({
             <Settings size={16} />
           </button>
           <ThemeToggle />
-          {activeProjectId && !showKanbanTerminal && (
+          {activeProjectId && !showKanbanTerminal && !isMobile && (
             <button
               onClick={() => setShowKanbanTerminal(true)}
               className="rounded-md p-1.5 text-[var(--color-text-muted)] hover:bg-[var(--color-bg-secondary)] hover:text-[var(--color-text-primary)]"
@@ -294,7 +300,7 @@ export function AppShell({
             children
           )}
         </div>
-        {activeProjectId && (
+        {activeProjectId && !isMobile && (
           <KanbanTerminal
             projectId={activeProjectId}
             projectName={activeProject?.name}
@@ -314,6 +320,16 @@ export function AppShell({
       )}
       <CreateProjectModal open={showCreateProject} onClose={() => setShowCreateProject(false)} />
       <AgentSettingsModal open={showSettings} onClose={() => setShowSettings(false)} initialTab={openSettingsTab as 'system' | 'agent' | 'account'} />
+
+      {/* Mobile FAB */}
+      {isMobile && activeProjectId && (
+        <button
+          onClick={() => setShowCreateTicket(true)}
+          className="fixed bottom-6 right-6 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-[var(--color-accent-blue)] text-white shadow-lg active:scale-95 transition-transform"
+        >
+          <Plus size={24} />
+        </button>
+      )}
     </div>
   )
 }

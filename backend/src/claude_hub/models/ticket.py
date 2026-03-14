@@ -94,6 +94,9 @@ class Ticket(BaseModel):
     # Cost
     agent_cost_usd: float = 0.0
 
+    # Notes (append-only structured notes)
+    notes: list[dict] = Field(default_factory=list)
+
     # Timestamps
     created_at: datetime
     started_at: datetime | None = None

@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react'
-import { AlertCircle, ArrowLeft, Check, CircleDot, ExternalLink, GitBranch, GitMerge, Loader2, MessageSquareWarning, Pencil, RefreshCw, RotateCcw, Send, Square, Trash2, X } from 'lucide-react'
-import type { Ticket, TicketStatus } from '../../types/ticket'
+import { useEffect, useRef, useState } from 'react'
+import { AlertCircle, ArrowLeft, Check, CircleDot, Copy, ExternalLink, GitBranch, GitMerge, Loader2, MessageSquareWarning, Pencil, RefreshCw, RotateCcw, Send, Square, StickyNote, Trash2, Undo2, X } from 'lucide-react'
+import { useIsMobile } from '../../hooks/useIsMobile'
+import type { Ticket, TicketNote, TicketStatus } from '../../types/ticket'
 import type { ActivityEvent } from '../../types/activity'
 import { Badge } from '../common/Badge'
 import { Button } from '../common/Button'
@@ -47,6 +48,9 @@ function depStatusColor(status: TicketStatus): string {
 }
 
 export function TicketDetail({ ticket, activities, allTickets, onClose, onDelete, onTicketClick, mergeQueueLocked, onMergeInitiated }: TicketDetailProps) {
+  const isMobile = useIsMobile()
+  const sheetRef = useRef<HTMLDivElement>(null)
+  const dragStartY = useRef<number | null>(null)
   const [showChangesForm, setShowChangesForm] = useState(false)
   const [feedback, setFeedback] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -60,6 +64,11 @@ export function TicketDetail({ ticket, activities, allTickets, onClose, onDelete
   const [editDependsOn, setEditDependsOn] = useState<string[]>(ticket.depends_on)
   const [saving, setSaving] = useState(false)
   const [ciStatus, setCiStatus] = useState<CIStatus | null>(null)
+  const [confirmRevert, setConfirmRevert] = useState(false)
+  const [reverting, setReverting] = useState(false)
+  const [duplicating, setDuplicating] = useState(false)
+  const [noteText, setNoteText] = useState('')
+  const [addingNote, setAddingNote] = useState(false)
 
   // Poll CI status when ticket is merging or in review
   useEffect(() => {
@@ -119,6 +128,36 @@ export function TicketDetail({ ticket, activities, allTickets, onClose, onDelete
     setResolving(true)
     try { await api.tickets.resolveConflicts(ticket.id) } catch { /* global handler */ } finally {
       setResolving(false)
+    }
+  }
+
+  const handleRevert = async () => {
+    setReverting(true)
+    try {
+      await api.tickets.revert(ticket.id)
+    } catch { /* global handler */ } finally {
+      setReverting(false)
+      setConfirmRevert(false)
+    }
+  }
+
+  const handleDuplicate = async () => {
+    setDuplicating(true)
+    try {
+      await api.tickets.duplicate(ticket.id)
+    } catch { /* global handler */ } finally {
+      setDuplicating(false)
+    }
+  }
+
+  const handleAddNote = async () => {
+    if (!noteText.trim() || addingNote) return
+    setAddingNote(true)
+    try {
+      await api.tickets.addNote(ticket.id, noteText.trim())
+      setNoteText('')
+    } catch { /* global handler */ } finally {
+      setAddingNote(false)
     }
   }
 
@@ -201,8 +240,38 @@ export function TicketDetail({ ticket, activities, allTickets, onClose, onDelete
     .filter((t) => t.project_id === ticket.project_id && t.id !== ticket.id)
     .sort((a, b) => a.title.localeCompare(b.title))
 
+  // Mobile swipe-to-close
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (!isMobile) return
+    const el = sheetRef.current
+    if (el && el.scrollTop <= 0) {
+      dragStartY.current = e.touches[0].clientY
+    }
+  }
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (!isMobile || dragStartY.current === null) return
+    const delta = e.changedTouches[0].clientY - dragStartY.current
+    dragStartY.current = null
+    if (delta > 120) onClose()
+  }
+
   return (
-    <div className="detail-panel flex w-[420px] shrink-0 flex-col border-l border-[var(--color-border)] bg-[var(--color-bg-panel)]">
+    <div
+      ref={sheetRef}
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+      className={
+        isMobile
+          ? 'fixed inset-0 z-50 flex flex-col bg-[var(--color-bg-panel)] animate-slide-up'
+          : 'detail-panel flex w-[420px] shrink-0 flex-col border-l border-[var(--color-border)] bg-[var(--color-bg-panel)]'
+      }
+    >
+      {/* Mobile drag handle */}
+      {isMobile && (
+        <div className="flex justify-center py-2 shrink-0">
+          <div className="h-1 w-10 rounded-full bg-[var(--color-text-muted)]/30" />
+        </div>
+      )}
       {/* Header */}
       <div className="flex items-center justify-between border-b border-[var(--color-border)] p-3">
         <button
@@ -224,6 +293,9 @@ export function TicketDetail({ ticket, activities, allTickets, onClose, onDelete
           )}
           {ticket.status === 'failed' && (
             <>
+              <Button size="sm" variant="secondary" onClick={() => setConfirmRevert(true)}>
+                <Undo2 size={12} className="mr-1" /> Revert
+              </Button>
               <Button size="sm" variant="secondary" onClick={handleMarkReview}>
                 Mark Review
               </Button>
@@ -234,6 +306,9 @@ export function TicketDetail({ ticket, activities, allTickets, onClose, onDelete
           )}
           {ticket.status === 'review' && (
             <>
+              <Button size="sm" variant="secondary" onClick={() => setConfirmRevert(true)}>
+                <Undo2 size={12} className="mr-1" /> Revert
+              </Button>
               <Button size="sm" variant="secondary" onClick={() => setShowChangesForm(!showChangesForm)}>
                 <MessageSquareWarning size={12} className="mr-1" /> Changes
               </Button>
@@ -246,6 +321,11 @@ export function TicketDetail({ ticket, activities, allTickets, onClose, onDelete
             <span className="flex items-center gap-1.5 text-xs text-[var(--color-accent-green)]">
               <Loader2 size={12} className="animate-spin" /> Waiting for CI...
             </span>
+          )}
+          {ticket.status === 'merged' && (
+            <Button size="sm" variant="secondary" onClick={handleDuplicate} disabled={duplicating}>
+              <Copy size={12} className="mr-1" /> {duplicating ? 'Duplicating...' : 'Re-run as New'}
+            </Button>
           )}
           {ticket.status === 'todo' && !editing && (
             <Button size="sm" variant="secondary" onClick={handleStartEdit}>
@@ -565,6 +645,15 @@ export function TicketDetail({ ticket, activities, allTickets, onClose, onDelete
         </div>
       )}
 
+      {/* Notes */}
+      <NotesSection
+        notes={parseNotes(ticket.notes)}
+        noteText={noteText}
+        onNoteTextChange={setNoteText}
+        onAddNote={handleAddNote}
+        addingNote={addingNote}
+      />
+
       {/* Activity log */}
       <div className="flex flex-1 flex-col overflow-hidden p-3">
         <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
@@ -628,6 +717,93 @@ export function TicketDetail({ ticket, activities, allTickets, onClose, onDelete
         confirmLabel="Stop"
         loading={stopping}
       />
+
+      <ConfirmationDialog
+        open={confirmRevert}
+        onClose={() => setConfirmRevert(false)}
+        onConfirm={handleRevert}
+        title="Revert to TODO"
+        description="This will reset the ticket back to TODO status. Branch and PR info will be preserved."
+        ticketTitle={ticket.title}
+        confirmLabel="Revert"
+        loading={reverting}
+      />
+    </div>
+  )
+}
+
+/** Parse notes from Redis (may be JSON string or already an array) */
+function parseNotes(raw: TicketNote[] | string | undefined): TicketNote[] {
+  if (!raw) return []
+  if (typeof raw === 'string') {
+    try { return JSON.parse(raw) } catch { return [] }
+  }
+  return raw
+}
+
+const NOTE_TYPE_STYLES: Record<string, { bg: string; text: string; label: string }> = {
+  comment: { bg: 'bg-[var(--color-accent-blue)]/10', text: 'text-[var(--color-accent-blue)]', label: 'Comment' },
+  progress: { bg: 'bg-[var(--color-accent-green)]/10', text: 'text-[var(--color-accent-green)]', label: 'Progress' },
+  blocker: { bg: 'bg-[var(--color-accent-red)]/10', text: 'text-[var(--color-accent-red)]', label: 'Blocker' },
+  review: { bg: 'bg-[var(--color-accent-yellow)]/10', text: 'text-[var(--color-accent-yellow)]', label: 'Review' },
+  system: { bg: 'bg-[var(--color-bg-secondary)]', text: 'text-[var(--color-text-muted)]', label: 'System' },
+}
+
+function NotesSection({
+  notes, noteText, onNoteTextChange, onAddNote, addingNote,
+}: {
+  notes: TicketNote[]
+  noteText: string
+  onNoteTextChange: (v: string) => void
+  onAddNote: () => void
+  addingNote: boolean
+}) {
+  return (
+    <div className="border-b border-[var(--color-border)] p-3">
+      <h3 className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
+        <StickyNote size={12} /> Notes {notes.length > 0 && `(${notes.length})`}
+      </h3>
+
+      {/* Existing notes */}
+      {notes.length > 0 && (
+        <div className="mb-2 max-h-40 space-y-1.5 overflow-y-auto">
+          {notes.map((note, i) => {
+            const style = NOTE_TYPE_STYLES[note.type] || NOTE_TYPE_STYLES.comment
+            return (
+              <div key={i} className="rounded-md border border-[var(--color-border)]/50 px-2.5 py-1.5">
+                <div className="flex items-center gap-2 text-[10px]">
+                  <span className={`rounded px-1.5 py-0.5 font-medium ${style.bg} ${style.text}`}>
+                    {style.label}
+                  </span>
+                  <span className="text-[var(--color-text-muted)]">
+                    {note.author} · {new Date(note.timestamp).toLocaleString()}
+                  </span>
+                </div>
+                <p className="mt-1 text-xs text-[var(--color-text-secondary)] whitespace-pre-wrap">{note.content}</p>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Add note input */}
+      <div className="flex gap-2">
+        <input
+          type="text"
+          value={noteText}
+          onChange={(e) => onNoteTextChange(e.target.value)}
+          placeholder="Add a note..."
+          onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); onAddNote() } }}
+          className="flex-1 rounded border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-2.5 py-1.5 text-xs text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)] focus:border-[var(--color-accent-blue)] focus:outline-none"
+        />
+        <button
+          onClick={onAddNote}
+          disabled={!noteText.trim() || addingNote}
+          className="rounded bg-[var(--color-accent-blue)] px-2.5 py-1.5 text-xs text-white transition-opacity hover:opacity-80 disabled:opacity-40"
+        >
+          {addingNote ? '...' : 'Add'}
+        </button>
+      </div>
     </div>
   )
 }

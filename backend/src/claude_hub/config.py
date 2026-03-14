@@ -26,6 +26,9 @@ class Settings(BaseSettings):
     auth_token_hours: int = 24
     dev_mode: bool = False  # Enable CORS for dev (frontend on different port)
 
+    # Webhook auto-registration (set to public URL for GitHub webhook delivery)
+    webhook_url: str = ""  # e.g. "https://my-server.example.com/api/webhooks/github"
+
     # Settings below are managed via Settings UI (stored in Redis).
     # Values here are only used as initial defaults before first UI save.
     max_sessions: int = 4

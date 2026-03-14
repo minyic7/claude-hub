@@ -13,6 +13,7 @@ from claude_hub.config import settings
 from claude_hub.models.ticket import Ticket, TicketCreate, TicketStatus, TicketUpdate
 from claude_hub.routers.ws import broadcast
 from claude_hub.services.kanban_manager import send_kanban_update
+from claude_hub.services.ticket_service import append_ticket_note
 
 router = APIRouter(prefix="/api/tickets", tags=["tickets"])
 
@@ -289,16 +290,19 @@ async def stop_ticket(ticket_id: str):
     session_manager.stop_session(ticket_id)
     session_manager.update_session_status(ticket_id, "failed")
 
+    # Record system note
+    await append_ticket_note(ticket_id, "system", "Session stopped by user", author="system")
+
     await broadcast({
         "type": "ticket_updated",
         "ticket_id": ticket_id,
-        "data": updated,
+        "data": await redis_client.get_ticket(ticket_id),
     })
 
     # Session stopped — process queue
     await process_queue()
 
-    return updated
+    return await redis_client.get_ticket(ticket_id)
 
 
 @router.post("/{ticket_id}/answer")
@@ -668,6 +672,13 @@ async def _verify_and_review(ticket_id: str) -> None:
             from claude_hub.services.github_verify import mark_pr_ready
             mark_pr_ready(clone_path, ticket["branch"], gh_token)
 
+            # Record progress note
+            await append_ticket_note(
+                ticket_id, "progress",
+                f"Session completed. PR #{result.pr_number or 'N/A'} ready for review.",
+                author="claude_code",
+            )
+
             if agent_enabled and agent_cfg.get("api_key"):
                 await _run_agent_review(ticket_id, agent_cfg)
             else:
@@ -681,6 +692,13 @@ async def _verify_and_review(ticket_id: str) -> None:
                 })
                 await process_queue()
         else:
+            # Record blocker note
+            await append_ticket_note(
+                ticket_id, "blocker",
+                f"Verification failed: {result.reason}",
+                author="claude_code",
+            )
+
             updated = await transition(ticket_id, TicketStatus.FAILED,
                                        failed_reason=result.reason)
             await broadcast({
@@ -1166,6 +1184,12 @@ async def merge_ticket(ticket_id: str):
     project = await _get_project_for_ticket(ticket)
     gh_token = project.get("gh_token", "") or settings.gh_token
 
+    # Check PR review status before merging
+    from claude_hub.services.ci_check import get_pr_review_status
+    review = get_pr_review_status(clone_path, pr_number, gh_token)
+    if review["status"] == "changes_requested":
+        raise HTTPException(400, f"Cannot merge: {review['summary']}")
+
     # Check CI status before merging
     ci = get_ci_status(clone_path, branch, gh_token, pr_number=pr_number)
 
@@ -1208,4 +1232,124 @@ async def merge_ticket(ticket_id: str):
     # Merged — session slot freed, process queue
     await process_queue()
 
+    return updated
+
+
+# ── Notes ──────────────────────────────────────────────────────────────────────
+
+from pydantic import BaseModel as _BaseModel
+
+
+class _NoteBody(_BaseModel):
+    type: str = "comment"  # comment | progress | blocker | review | system
+    content: str
+
+
+@router.post("/{ticket_id}/notes")
+async def add_note(ticket_id: str, body: _NoteBody):
+    ticket = await redis_client.get_ticket(ticket_id)
+    if not ticket:
+        raise HTTPException(404, "Ticket not found")
+
+    valid_types = {"comment", "progress", "blocker", "review", "system"}
+    note_type = body.type if body.type in valid_types else "comment"
+
+    updated = await append_ticket_note(ticket_id, note_type, body.content, author="user")
+    await broadcast({"type": "ticket_updated", "ticket_id": ticket_id, "data": updated})
+    return updated
+
+
+# ── Revert to TODO ─────────────────────────────────────────────────────────────
+
+
+@router.post("/{ticket_id}/revert")
+async def revert_ticket(ticket_id: str):
+    """Revert a FAILED or REVIEW ticket back to TODO status."""
+    ticket = await redis_client.get_ticket(ticket_id)
+    if not ticket:
+        raise HTTPException(404, "Ticket not found")
+
+    current = ticket.get("status")
+    if current not in ("failed", "review"):
+        raise HTTPException(409, f"Cannot revert ticket in {current} status (only failed or review)")
+
+    from claude_hub.services.ticket_service import InvalidTransition, transition
+
+    try:
+        updated = await transition(ticket_id, TicketStatus.TODO)
+    except InvalidTransition as e:
+        raise HTTPException(409, str(e))
+
+    # Clear runtime fields but keep branch/PR info for reference
+    clear_fields = {
+        "failed_reason": "",
+        "tmux_session": "",
+        "started_at": "",
+        "completed_at": "",
+        "review_status": "",
+        "reviewer": "",
+    }
+    await redis_client.update_ticket_fields(ticket_id, clear_fields)
+
+    # Append system note
+    await append_ticket_note(
+        ticket_id, "system",
+        f"Reverted from {current} to todo",
+        author="system",
+    )
+
+    updated = await redis_client.get_ticket(ticket_id)
+    await broadcast({"type": "ticket_updated", "ticket_id": ticket_id, "data": updated})
+    send_kanban_update(ticket.get("project_id", ""))
+    return updated
+
+
+# ── Duplicate as New Ticket ────────────────────────────────────────────────────
+
+
+@router.post("/{ticket_id}/duplicate", status_code=201)
+async def duplicate_ticket(ticket_id: str):
+    """Create a new TODO ticket by cloning an existing ticket's title/description."""
+    source = await redis_client.get_ticket(ticket_id)
+    if not source:
+        raise HTTPException(404, "Ticket not found")
+
+    project = await redis_client.get_project(source.get("project_id", ""))
+    if not project:
+        raise HTTPException(404, "Project not found")
+
+    new_id = str(uuid.uuid4())
+    seq = await redis_client.next_ticket_seq(source["project_id"])
+    branch_type = source.get("branch_type", "feature")
+
+    new_ticket = Ticket(
+        id=new_id,
+        project_id=source["project_id"],
+        seq=seq,
+        title=source["title"],
+        description=source.get("description", ""),
+        branch_type=branch_type,
+        branch=_make_branch(branch_type, source["title"], new_id),
+        repo_url=source.get("repo_url", project["repo_url"]),
+        base_branch=source.get("base_branch", project.get("base_branch", "main")),
+        priority=source.get("priority", 0),
+        source="duplicate",
+        created_at=datetime.now(timezone.utc),
+        status_changed_at=datetime.now(timezone.utc),
+    )
+
+    await redis_client.save_ticket(new_ticket.model_dump(mode="json"))
+
+    # Add system note referencing source ticket
+    source_seq = source.get("seq", 0)
+    ref = f"#{source_seq}" if source_seq else ticket_id[:8]
+    await append_ticket_note(
+        new_id, "system",
+        f"Duplicated from {ref} ({source.get('title', '')})",
+        author="system",
+    )
+
+    updated = await redis_client.get_ticket(new_id)
+    await broadcast({"type": "ticket_updated", "ticket_id": new_id, "data": updated})
+    send_kanban_update(source["project_id"])
     return updated

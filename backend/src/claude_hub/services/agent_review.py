@@ -169,6 +169,16 @@ async def review_pr(ticket_id: str, ticket: dict, agent_settings: dict | None = 
         await _record_activity(ticket_id, "review",
                                f"Review REJECTED: {summary} (issues: {critical} critical, {major} major)")
 
+    # Append structured review note
+    from claude_hub.services.ticket_service import append_ticket_note
+    issues_text = ""
+    if issues:
+        issues_text = "\n".join(f"- [{i.get('severity', '?')}] {i.get('file', '?')}: {i.get('description', '')}" for i in issues[:5])
+    note_content = f"{'APPROVED' if verdict == 'approve' else 'REJECTED'} (round {round_number}): {summary}"
+    if issues_text:
+        note_content += f"\n{issues_text}"
+    await append_ticket_note(ticket_id, "review", note_content, author="agent_review")
+
     return result
 
 

@@ -1,5 +1,5 @@
 import { type FormEvent, type MouseEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { AlertCircle, Archive, ArchiveRestore, Check, CircleDot, ClipboardCheck, Clock, GitMerge, Loader2, Lock, MessageCircleQuestion, Pencil, Play, Plug, Rocket, RotateCcw, ExternalLink, Send, X } from 'lucide-react'
+import { AlertCircle, Archive, ArchiveRestore, Check, CircleDot, ClipboardCheck, Clock, Eye, GitMerge, Loader2, Lock, MessageCircleQuestion, Pencil, Play, Plug, Rocket, RotateCcw, ExternalLink, Send, X } from 'lucide-react'
 import type { Ticket, TicketStatus } from '../../types/ticket'
 import type { ActivityEvent } from '../../types/activity'
 import { Badge } from '../common/Badge'
@@ -296,6 +296,8 @@ export function TicketCard({ ticket, latestActivity, activityEvents, onClick, on
             {ticket.status === 'failed' && <Badge color="red">FAILED</Badge>}
             {ticket.status === 'verifying' && <Badge color="yellow">VERIFYING</Badge>}
             {ticket.status === 'reviewing' && <Badge color="yellow">REVIEWING</Badge>}
+            {ticket.review_status === 'approved' && <Badge color="green">APPROVED</Badge>}
+            {ticket.review_status === 'changes_requested' && <Badge color="red">CHANGES REQUESTED</Badge>}
             {isIdle && <Badge color="gray">IDLE</Badge>}
             {ticket.tmux_session && ticket.status !== 'in_progress' && ticket.status !== 'verifying' && ticket.status !== 'reviewing' && (
               <span className="flex items-center gap-0.5 text-[10px] text-[var(--color-accent-blue)]" title="Live tmux session">
@@ -434,6 +436,16 @@ export function TicketCard({ ticket, latestActivity, activityEvents, onClick, on
 
       {ticket.status === 'review' && (
         <div className="space-y-1.5">
+          {ticket.review_status === 'changes_requested' && (
+            <div className="flex items-center gap-1 rounded bg-[var(--color-accent-red)]/10 px-2 py-1 text-xs text-[var(--color-accent-red)]">
+              <Eye size={12} className="shrink-0" /> Changes requested{ticket.reviewer ? ` by ${ticket.reviewer}` : ''}
+            </div>
+          )}
+          {ticket.review_status === 'approved' && (
+            <div className="flex items-center gap-1 rounded bg-[var(--color-accent-green)]/10 px-2 py-1 text-xs text-[var(--color-accent-green)]">
+              <Check size={12} className="shrink-0" /> Approved{ticket.reviewer ? ` by ${ticket.reviewer}` : ''}
+            </div>
+          )}
           {ticket.has_conflicts && (
             <div className="flex items-center gap-1 rounded bg-[var(--color-accent-red)]/10 px-2 py-1 text-xs text-[var(--color-accent-red)]">
               <AlertCircle size={12} className="shrink-0" /> Merge conflicts detected
@@ -457,7 +469,7 @@ export function TicketCard({ ticket, latestActivity, activityEvents, onClick, on
                 PR #{ticket.pr_number} <ExternalLink size={10} />
               </a>
             )}
-            <Button size="sm" onClick={handleMerge} disabled={ticket.has_conflicts || mergeQueueLocked}>
+            <Button size="sm" onClick={handleMerge} disabled={ticket.has_conflicts || mergeQueueLocked || ticket.review_status === 'changes_requested'}>
               <GitMerge size={12} className="mr-1" /> Merge
             </Button>
           </div>

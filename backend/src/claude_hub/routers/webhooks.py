@@ -26,7 +26,7 @@ async def github_webhook(
     #     if not hmac.compare_digest(expected, x_hub_signature_256):
     #         raise HTTPException(403, "Invalid signature")
 
-    if x_github_event != "pull_request":
+    if x_github_event not in ("pull_request", "pull_request_review"):
         return {"status": "ignored", "event": x_github_event}
 
     try:
@@ -34,6 +34,10 @@ async def github_webhook(
     except json.JSONDecodeError:
         raise HTTPException(400, "Invalid JSON")
 
+    if x_github_event == "pull_request_review":
+        return await _handle_pr_review(payload)
+
+    # pull_request event
     action = payload.get("action")
     if action != "closed" or not payload.get("pull_request", {}).get("merged"):
         return {"status": "ignored", "action": action}
@@ -61,5 +65,49 @@ async def github_webhook(
             except Exception as e:
                 logger.error("Failed to auto-merge ticket %s: %s", ticket["id"], e)
                 return {"status": "error", "message": str(e)}
+
+    return {"status": "no_matching_ticket", "pr_number": pr_number}
+
+
+async def _handle_pr_review(payload: dict) -> dict:
+    """Handle pull_request_review events — notify frontend of review status changes."""
+    action = payload.get("action")
+    if action not in ("submitted", "dismissed"):
+        return {"status": "ignored", "action": action}
+
+    review_state = payload.get("review", {}).get("state", "").upper()
+    pr_number = payload.get("pull_request", {}).get("number")
+    reviewer = payload.get("review", {}).get("user", {}).get("login", "unknown")
+
+    if not pr_number:
+        return {"status": "ignored", "reason": "no PR number"}
+
+    logger.info("PR #%d review %s by %s (action: %s)", pr_number, review_state, reviewer, action)
+
+    # Find ticket with this PR number in review/merging states
+    for status in ("review", "merging"):
+        tickets = await redis_client.list_tickets(status)
+        for ticket in tickets:
+            if ticket.get("pr_number") == pr_number:
+                if action == "dismissed":
+                    # Review dismissed — clear review status
+                    review_info: dict = {"review_status": "", "reviewer": ""}
+                elif review_state == "COMMENTED":
+                    # Comment-only reviews don't affect merge gate
+                    return {"status": "ignored", "reason": "comment only"}
+                else:
+                    review_info = {
+                        "review_status": review_state.lower(),
+                        "reviewer": reviewer,
+                    }
+                await redis_client.update_ticket_fields(ticket["id"], review_info)
+                updated = await redis_client.get_ticket(ticket["id"])
+                await broadcast({
+                    "type": "ticket_updated",
+                    "ticket_id": ticket["id"],
+                    "data": updated,
+                })
+                logger.info("Updated review status for ticket %s: %s", ticket["id"], review_state)
+                return {"status": "updated", "ticket_id": ticket["id"], "review_state": review_state}
 
     return {"status": "no_matching_ticket", "pr_number": pr_number}

@@ -1,3 +1,10 @@
+export interface TicketNote {
+  type: 'comment' | 'progress' | 'blocker' | 'review' | 'system'
+  content: string
+  author: string
+  timestamp: string
+}
+
 export type BranchType = 'feature' | 'bugfix' | 'hotfix' | 'chore' | 'refactor' | 'docs' | 'test'
 
 export type TicketStatus =
@@ -55,6 +62,9 @@ export interface Ticket {
   agent_cost_usd: number
   agent_tokens: number
   agent_review?: string | null
+  review_status?: string | null
+  reviewer?: string | null
+  notes?: TicketNote[]
   created_at: string
   started_at: string | null
   completed_at: string | null
