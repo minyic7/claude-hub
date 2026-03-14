@@ -225,6 +225,7 @@ export interface AgentSettings {
   // System
   max_sessions: number
   gh_token: string
+  webhook_url: string
   // Agent
   enabled: boolean
   provider: AgentProvider

@@ -18,6 +18,7 @@ _DEFAULTS = {
     # System
     "max_sessions": 4,
     "gh_token": "",
+    "webhook_url": "",
     # Agent
     "enabled": True,
     "provider": "anthropic",
@@ -131,6 +132,9 @@ async def update_settings(body: dict):
         token = body["gh_token"]
         if token and "..." not in token:
             current["gh_token"] = token
+
+    if "webhook_url" in body:
+        current["webhook_url"] = body["webhook_url"].strip()
 
     r = redis_client.get_pool()
     await r.set(REDIS_KEY, json.dumps(current))

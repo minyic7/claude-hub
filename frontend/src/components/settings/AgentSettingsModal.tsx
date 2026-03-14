@@ -154,6 +154,20 @@ export function AgentSettingsModal({ open, onClose, initialTab }: Props) {
                     Fallback token for projects without their own.
                   </p>
                 </div>
+
+                <div>
+                  <label className="mb-1 block text-sm text-[var(--color-text-primary)]">Webhook URL</label>
+                  <input
+                    type="url"
+                    value={settings.webhook_url}
+                    onChange={(e) => setSettings({ ...settings, webhook_url: e.target.value })}
+                    placeholder="https://your-server.com/api/webhooks/github"
+                    className="w-full rounded border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2 py-1.5 text-xs text-[var(--color-text-primary)] font-mono"
+                  />
+                  <p className="mt-0.5 text-[10px] text-[var(--color-text-muted)]">
+                    Public URL for GitHub webhook delivery. Auto-registered when creating/updating projects.
+                  </p>
+                </div>
               </>
             )}
 
