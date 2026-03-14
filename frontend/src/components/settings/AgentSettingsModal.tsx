@@ -340,6 +340,24 @@ export function AgentSettingsModal({ open, onClose, initialTab }: Props) {
                   </button>
                 </label>
 
+                {/* Auto-resolve conversations */}
+                <label className="flex items-center justify-between">
+                  <div>
+                    <span className="text-sm text-[var(--color-text-primary)]">Auto-resolve Conversations</span>
+                    <p className="text-[10px] text-[var(--color-text-muted)]">Allow agent to resolve GitHub review threads after fixing</p>
+                  </div>
+                  <button
+                    onClick={() => setSettings({ ...settings, auto_resolve_conversations: !settings.auto_resolve_conversations })}
+                    className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${
+                      settings.auto_resolve_conversations ? 'bg-[var(--color-accent-blue)]' : 'bg-[var(--color-border)]'
+                    }`}
+                  >
+                    <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
+                      settings.auto_resolve_conversations ? 'left-[22px]' : 'left-0.5'
+                    }`} />
+                  </button>
+                </label>
+
                 {/* Budget */}
                 <div>
                   <label className="mb-1 block text-sm text-[var(--color-text-primary)]">Budget (USD)</label>

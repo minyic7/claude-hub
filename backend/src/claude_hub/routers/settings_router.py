@@ -28,6 +28,7 @@ _DEFAULTS = {
     "batch_size": 8,
     "max_context_messages": 25,
     "web_search": False,
+    "auto_resolve_conversations": False,
     "budget_per_ticket_usd": 2.00,
     "budget_daily_usd": 50.00,
     "budget_monthly_usd": 500.00,
@@ -114,6 +115,9 @@ async def update_settings(body: dict):
 
     if "web_search" in body:
         current["web_search"] = bool(body["web_search"])
+
+    if "auto_resolve_conversations" in body:
+        current["auto_resolve_conversations"] = bool(body["auto_resolve_conversations"])
 
     if "budget_per_ticket_usd" in body:
         current["budget_per_ticket_usd"] = max(0.1, float(body["budget_per_ticket_usd"]))

@@ -849,6 +849,31 @@ async def request_changes(ticket_id: str, body: dict):
     )
     if pr_number:
         task += f"\nDo NOT create a new PR — push to the same branch so the existing PR #{pr_number} is updated."
+
+    # Auto-resolve conversations if enabled
+    from claude_hub.routers.settings_router import get_agent_settings
+    agent_cfg = await get_agent_settings()
+    if agent_cfg.get("auto_resolve_conversations") and pr_number:
+        repo_url = project.get("repo_url", "")
+        from claude_hub.services.webhook_registration import _parse_owner_repo
+        parsed = _parse_owner_repo(repo_url)
+        if parsed:
+            threads = _get_unresolved_threads(parsed[0], parsed[1], pr_number, gh_token)
+            if threads:
+                resolve_section = "\n\n## Resolve Review Conversations\n"
+                resolve_section += (
+                    "After addressing ALL the feedback above and pushing your changes, "
+                    "resolve each conversation thread using the GitHub GraphQL API.\n"
+                    "For each thread below, run:\n"
+                    "```\n"
+                    'gh api graphql -f query=\'mutation { resolveReviewThread(input: {threadId: "THREAD_ID"}) { thread { isResolved } } }\'\n'
+                    "```\n\n"
+                    "Threads to resolve (ONLY after you have addressed the corresponding feedback):\n"
+                )
+                for t in threads:
+                    resolve_section += f"- Thread `{t['thread_id']}` — {t['author']} on `{t['path']}`: {t['body'][:100]}\n"
+                task += resolve_section
+
     task += _PUSH_VERIFICATION_INSTRUCTION
 
     try:
@@ -1242,6 +1267,105 @@ async def sync_pr_reviews(ticket_id: str):
     return {"synced": synced_count}
 
 
+def _get_unresolved_threads(owner: str, repo: str, pr_number: int, gh_token: str) -> list[dict]:
+    """Fetch unresolved review threads from GitHub GraphQL API."""
+    import json as _json
+    import os
+    import subprocess
+
+    query = """
+    query($owner: String!, $repo: String!, $pr: Int!) {
+      repository(owner: $owner, name: $repo) {
+        pullRequest(number: $pr) {
+          reviewThreads(first: 100) {
+            nodes {
+              id
+              isResolved
+              comments(first: 5) {
+                nodes {
+                  body
+                  author { login }
+                  path
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    """
+    env = {**os.environ, "GH_TOKEN": gh_token}
+    result = subprocess.run(
+        ["gh", "api", "graphql",
+         "-f", f"query={query}",
+         "-f", f"owner={owner}",
+         "-f", f"repo={repo}",
+         "-F", f"pr={pr_number}"],
+        capture_output=True, text=True, env=env,
+    )
+    if result.returncode != 0:
+        logger.warning("GraphQL query failed: %s", result.stderr.strip())
+        return []
+
+    try:
+        data = _json.loads(result.stdout)
+    except _json.JSONDecodeError:
+        return []
+
+    threads = (data.get("data", {}).get("repository", {})
+               .get("pullRequest", {}).get("reviewThreads", {}).get("nodes", []))
+
+    unresolved = []
+    for thread in threads:
+        if thread.get("isResolved"):
+            continue
+        comments = thread.get("comments", {}).get("nodes", [])
+        if not comments:
+            continue
+        first = comments[0]
+        unresolved.append({
+            "thread_id": thread["id"],
+            "path": first.get("path", ""),
+            "author": first.get("author", {}).get("login", "unknown"),
+            "body": first.get("body", ""),
+        })
+
+    return unresolved
+
+
+@router.get("/{ticket_id}/unresolved-threads")
+async def get_unresolved_threads(ticket_id: str):
+    """Get unresolved review threads for a ticket's PR."""
+    ticket = await redis_client.get_ticket(ticket_id)
+    if not ticket:
+        raise HTTPException(404, "Ticket not found")
+
+    pr_number = ticket.get("pr_number")
+    if not pr_number:
+        return {"unresolved": [], "count": 0}
+
+    project = await _get_project_for_ticket(ticket)
+    gh_token = project.get("gh_token", "") or settings.gh_token
+    repo_url = project.get("repo_url", "")
+    if not gh_token or not repo_url:
+        return {"unresolved": [], "count": 0}
+
+    from claude_hub.services.webhook_registration import _parse_owner_repo
+    parsed = _parse_owner_repo(repo_url)
+    if not parsed:
+        return {"unresolved": [], "count": 0}
+
+    owner, repo = parsed
+    threads = _get_unresolved_threads(owner, repo, pr_number, gh_token)
+
+    # Update ticket field
+    await redis_client.update_ticket_fields(ticket_id, {
+        "unresolved_thread_count": str(len(threads))
+    })
+
+    return {"unresolved": threads, "count": len(threads)}
+
+
 @router.get("/{ticket_id}/ci-status")
 async def get_ticket_ci_status(ticket_id: str):
     """Get CI check status for a ticket's branch."""
@@ -1296,6 +1420,21 @@ async def merge_ticket(ticket_id: str):
     review = get_pr_review_status(clone_path, pr_number, gh_token)
     if review["status"] == "changes_requested":
         raise HTTPException(400, f"Cannot merge: {review['summary']}")
+
+    # Check unresolved review threads before merging
+    repo_url = project.get("repo_url", "")
+    if repo_url:
+        from claude_hub.services.webhook_registration import _parse_owner_repo
+        parsed = _parse_owner_repo(repo_url)
+        if parsed:
+            threads = _get_unresolved_threads(parsed[0], parsed[1], pr_number, gh_token)
+            if threads:
+                count = len(threads)
+                raise HTTPException(
+                    400,
+                    f"Cannot merge: {count} unresolved conversation{'s' if count > 1 else ''}. "
+                    f"Resolve them on GitHub before merging."
+                )
 
     # Check CI status before merging
     ci = get_ci_status(clone_path, branch, gh_token, pr_number=pr_number)

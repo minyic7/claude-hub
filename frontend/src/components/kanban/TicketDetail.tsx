@@ -68,8 +68,26 @@ export function TicketDetail({ ticket, activities, allTickets, onClose, onDelete
   const [reverting, setReverting] = useState(false)
   const [duplicating, setDuplicating] = useState(false)
   const [syncingReviews, setSyncingReviews] = useState(false)
+  const [unresolvedCount, setUnresolvedCount] = useState<number | null>(null)
   const [noteText, setNoteText] = useState('')
   const [addingNote, setAddingNote] = useState(false)
+
+  // Fetch unresolved threads when ticket is in review
+  useEffect(() => {
+    if (ticket.status !== 'review' || !ticket.pr_number) {
+      setUnresolvedCount(null)
+      return
+    }
+    let cancelled = false
+    const fetch = async () => {
+      try {
+        const res = await api.tickets.unresolvedThreads(ticket.id)
+        if (!cancelled) setUnresolvedCount(res.count)
+      } catch { /* ignore */ }
+    }
+    fetch()
+    return () => { cancelled = true }
+  }, [ticket.id, ticket.status, ticket.pr_number])
 
   // Poll CI status when ticket is merging or in review
   useEffect(() => {
@@ -109,7 +127,14 @@ export function TicketDetail({ ticket, activities, allTickets, onClose, onDelete
 
   const handleSyncReviews = async () => {
     setSyncingReviews(true)
-    try { await api.tickets.syncReviews(ticket.id) } catch { /* global handler */ }
+    try {
+      await api.tickets.syncReviews(ticket.id)
+      // Also refresh unresolved thread count
+      if (ticket.pr_number) {
+        const res = await api.tickets.unresolvedThreads(ticket.id)
+        setUnresolvedCount(res.count)
+      }
+    } catch { /* global handler */ }
     finally { setSyncingReviews(false) }
   }
 
@@ -327,8 +352,18 @@ export function TicketDetail({ ticket, activities, allTickets, onClose, onDelete
               <Button size="sm" variant="secondary" onClick={handleSyncReviews} disabled={syncingReviews}>
                 <RefreshCw size={12} className={`mr-1 ${syncingReviews ? 'animate-spin' : ''}`} /> Sync
               </Button>
-              <Button size="sm" onClick={handleMerge} disabled={ticket.has_conflicts || mergeQueueLocked}>
+              <Button
+                size="sm"
+                onClick={handleMerge}
+                disabled={ticket.has_conflicts || mergeQueueLocked || (unresolvedCount != null && unresolvedCount > 0)}
+                title={unresolvedCount ? `${unresolvedCount} unresolved conversation${unresolvedCount > 1 ? 's' : ''}` : undefined}
+              >
                 <GitMerge size={12} className="mr-1" /> Merge
+                {unresolvedCount != null && unresolvedCount > 0 && (
+                  <span className="ml-1 rounded-full bg-[var(--color-accent-yellow)] px-1.5 text-[10px] text-black">
+                    {unresolvedCount}
+                  </span>
+                )}
               </Button>
             </>
           )}
