@@ -63,11 +63,15 @@ function groupConsecutive(events: ActivityEvent[]): GroupedItem[] {
   return result
 }
 
+const LONG_MESSAGE_THRESHOLD = 150
+
 function EventRow({ event, isAgent }: { event: ActivityEvent; isAgent: boolean }) {
+  const [expanded, setExpanded] = useState(false)
   const config = typeConfig[event.type] || typeConfig.info
   const Icon = config.icon
   const fullTime = new Date(event.timestamp).toLocaleString()
   const time = relativeTime(event.timestamp)
+  const isLong = event.summary.length > LONG_MESSAGE_THRESHOLD
 
   return (
     <div className={`flex items-start gap-2 rounded px-2 py-1 text-xs ${isAgent ? 'bg-[var(--color-accent-blue)]/5' : ''}`}>
@@ -77,7 +81,15 @@ function EventRow({ event, isAgent }: { event: ActivityEvent; isAgent: boolean }
         {isAgent && event.type === 'intervention' && <span className="font-medium text-[var(--color-accent-purple)]">TicketAgent → CC: </span>}
         {isAgent && event.type !== 'intervention' && <span className="font-medium text-[var(--color-accent-purple)]">TicketAgent: </span>}
         {event.source === 'user' && <span className="font-medium text-[var(--color-accent-green)]">You: </span>}
-        {event.summary}
+        <span className={isLong && !expanded ? 'line-clamp-3' : undefined}>{event.summary}</span>
+        {isLong && (
+          <button
+            onClick={() => setExpanded((prev) => !prev)}
+            className="ml-1 text-[var(--color-accent-blue)] hover:underline"
+          >
+            {expanded ? 'Show less' : 'Show more'}
+          </button>
+        )}
       </span>
     </div>
   )
