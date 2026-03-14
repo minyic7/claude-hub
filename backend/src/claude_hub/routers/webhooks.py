@@ -46,9 +46,11 @@ async def github_webhook(
         return {"status": "ignored", "action": action}
 
     pr_number = payload["pull_request"]["number"]
+    base_branch = payload.get("pull_request", {}).get("base", {}).get("ref", "main")
     logger.info("Received PR merge event: PR #%d", pr_number)
 
     # Find ticket with this PR number
+    merged_ticket_id = None
     tickets = await redis_client.list_tickets("review")
     for ticket in tickets:
         if ticket.get("pr_number") == pr_number:
@@ -63,12 +65,18 @@ async def github_webhook(
                     "ticket_id": ticket["id"],
                     "data": updated,
                 })
+                merged_ticket_id = ticket["id"]
                 logger.info("Auto-merged ticket %s via webhook", ticket["id"])
-                return {"status": "merged", "ticket_id": ticket["id"]}
             except Exception as e:
                 logger.error("Failed to auto-merge ticket %s: %s", ticket["id"], e)
                 return {"status": "error", "message": str(e)}
 
+    # After a PR merges, update other review branches to include latest main
+    import asyncio
+    asyncio.create_task(_update_review_branches(pr_number, base_branch))
+
+    if merged_ticket_id:
+        return {"status": "merged", "ticket_id": merged_ticket_id}
     return {"status": "no_matching_ticket", "pr_number": pr_number}
 
 
@@ -163,3 +171,71 @@ async def _handle_pr_review_comment(payload: dict) -> dict:
                 return {"status": "noted", "ticket_id": ticket["id"]}
 
     return {"status": "no_matching_ticket", "pr_number": pr_number}
+
+
+async def _update_review_branches(merged_pr_number: int, base_branch: str) -> None:
+    """After a PR merges, merge base branch into other review ticket branches.
+
+    This ensures parallel branches stay up-to-date with main. If merge
+    conflicts arise, they are flagged for the existing conflict resolution flow.
+    """
+    import os
+    import subprocess
+    from claude_hub.services.ticket_service import append_ticket_note
+
+    for status in ("review", "reviewing", "verifying"):
+        tickets = await redis_client.list_tickets(status)
+        for ticket in tickets:
+            pr_number = ticket.get("pr_number")
+            clone_path = ticket.get("clone_path", "")
+
+            if not clone_path or not pr_number or pr_number == merged_pr_number:
+                continue
+
+            project = await redis_client.get_project(ticket.get("project_id", ""))
+            gh_token = (project or {}).get("gh_token", "")
+            env = {**os.environ, "GH_TOKEN": gh_token} if gh_token else None
+
+            try:
+                subprocess.run(
+                    ["git", "fetch", "origin"],
+                    cwd=clone_path, capture_output=True, text=True, env=env,
+                )
+
+                result = subprocess.run(
+                    ["git", "merge", f"origin/{base_branch}", "--no-edit"],
+                    cwd=clone_path, capture_output=True, text=True, env=env,
+                )
+
+                if result.returncode == 0:
+                    push_result = subprocess.run(
+                        ["git", "push"],
+                        cwd=clone_path, capture_output=True, text=True, env=env,
+                    )
+                    if push_result.returncode == 0:
+                        await append_ticket_note(
+                            ticket["id"], "system",
+                            f"Auto-merged {base_branch} into branch after PR #{merged_pr_number} was merged.",
+                            author="system",
+                        )
+                        updated = await redis_client.get_ticket(ticket["id"])
+                        await broadcast({"type": "ticket_updated", "ticket_id": ticket["id"], "data": updated})
+                        logger.info("Updated branch for ticket %s (PR #%d) with latest %s",
+                                    ticket["id"], pr_number, base_branch)
+                else:
+                    subprocess.run(
+                        ["git", "merge", "--abort"],
+                        cwd=clone_path, capture_output=True, text=True,
+                    )
+                    await append_ticket_note(
+                        ticket["id"], "system",
+                        f"Merge conflict with {base_branch} after PR #{merged_pr_number} merged. Auto-resolving...",
+                        author="system",
+                    )
+                    await redis_client.update_ticket_fields(ticket["id"], {"has_conflicts": "True"})
+                    updated = await redis_client.get_ticket(ticket["id"])
+                    await broadcast({"type": "ticket_updated", "ticket_id": ticket["id"], "data": updated})
+                    logger.info("Merge conflict for ticket %s (PR #%d) — flagged for resolution", ticket["id"], pr_number)
+
+            except Exception as e:
+                logger.warning("Failed to update branch for ticket %s: %s", ticket["id"], e)
