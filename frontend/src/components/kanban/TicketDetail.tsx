@@ -139,8 +139,10 @@ export function TicketDetail({ ticket, activities, allTickets, onClose, onDelete
   }
 
   const handleMerge = async () => {
-    onMergeInitiated?.()
-    try { await api.tickets.merge(ticket.id) } catch { /* global handler */ }
+    try {
+      await api.tickets.merge(ticket.id)
+      onMergeInitiated?.()
+    } catch { /* global handler */ }
   }
 
   const handleRequestChanges = async () => {

@@ -99,9 +99,10 @@ export function TicketCard({ ticket, latestActivity, activityEvents, onClick, on
     { status: 'failed', failed_reason: ticket.failed_reason },
   )
   const handleMerge = safeAction(
-    () => {
+    async () => {
+      const result = await api.tickets.merge(ticket.id)
       onMergeInitiated?.()
-      return api.tickets.merge(ticket.id)
+      return result
     },
     { status: 'merged' },
     { status: 'review' },
@@ -469,8 +470,13 @@ export function TicketCard({ ticket, latestActivity, activityEvents, onClick, on
                 PR #{ticket.pr_number} <ExternalLink size={10} />
               </a>
             )}
-            <Button size="sm" onClick={handleMerge} disabled={ticket.has_conflicts || mergeQueueLocked || ticket.review_status === 'changes_requested'}>
+            <Button size="sm" onClick={handleMerge} disabled={ticket.has_conflicts || mergeQueueLocked || ticket.review_status === 'changes_requested' || (ticket.unresolved_thread_count != null && ticket.unresolved_thread_count > 0)}>
               <GitMerge size={12} className="mr-1" /> Merge
+              {ticket.unresolved_thread_count != null && ticket.unresolved_thread_count > 0 && (
+                <span className="ml-1 rounded-full bg-[var(--color-accent-yellow)] px-1.5 text-[10px] text-black">
+                  {ticket.unresolved_thread_count}
+                </span>
+              )}
             </Button>
           </div>
         </div>

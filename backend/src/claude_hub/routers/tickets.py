@@ -1259,12 +1259,17 @@ async def sync_pr_reviews(ticket_id: str):
                 existing_contents.add(note)
                 synced_count += 1
 
-    # Broadcast update
-    if synced_count > 0:
-        updated = await redis_client.get_ticket(ticket_id)
-        await broadcast({"type": "ticket_updated", "ticket_id": ticket_id, "data": updated})
+    # Also sync unresolved thread count
+    threads = _get_unresolved_threads(owner, repo, pr_number, gh_token)
+    await redis_client.update_ticket_fields(ticket_id, {
+        "unresolved_thread_count": str(len(threads))
+    })
 
-    return {"synced": synced_count}
+    # Broadcast update
+    updated = await redis_client.get_ticket(ticket_id)
+    await broadcast({"type": "ticket_updated", "ticket_id": ticket_id, "data": updated})
+
+    return {"synced": synced_count, "unresolved_threads": len(threads)}
 
 
 def _get_unresolved_threads(owner: str, repo: str, pr_number: int, gh_token: str) -> list[dict]:
