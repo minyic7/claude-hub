@@ -166,6 +166,25 @@ export function TicketDetail({ ticket, activities, allTickets, onClose, onDelete
 
   const isRunning = ticket.status === 'in_progress' || ticket.status === 'verifying' || ticket.status === 'reviewing'
 
+  // Idle detection for stuck IN_PROGRESS tickets (no activity for 2+ minutes)
+  const [isIdle, setIsIdle] = useState(false)
+  useEffect(() => {
+    if (ticket.status !== 'in_progress' || activities.length === 0) {
+      setIsIdle(false)
+      return
+    }
+    const checkIdle = () => {
+      const last = activities[activities.length - 1]
+      if (last) {
+        const lastTime = new Date(last.timestamp).getTime()
+        setIsIdle(Date.now() - lastTime > 120_000)
+      }
+    }
+    checkIdle()
+    const timer = setInterval(checkIdle, 10_000)
+    return () => clearInterval(timer)
+  }, [ticket.status, activities])
+
   // Resolve dependencies
   const deps = ticket.depends_on.map((depId) => {
     const dep = allTickets.get(depId)
@@ -196,6 +215,11 @@ export function TicketDetail({ ticket, activities, allTickets, onClose, onDelete
           {isRunning && (
             <Button size="sm" variant="danger" onClick={() => setConfirmStop(true)}>
               <Square size={12} className="mr-1" /> Stop
+            </Button>
+          )}
+          {ticket.status === 'in_progress' && isIdle && (
+            <Button size="sm" variant="secondary" onClick={handleRetry}>
+              <RotateCcw size={12} className="mr-1" /> Retry
             </Button>
           )}
           {ticket.status === 'failed' && (

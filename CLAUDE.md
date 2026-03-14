@@ -54,3 +54,11 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 - `docker-compose.dev.yml` — Dev overlay (Redis port exposed)
 - `docker-compose.prod.yml` — Prod overlay (app + watchtower)
 - `.env` — Local config (not committed)
+
+## Production Server (Mac Mini)
+
+- **Tailscale IP:** 100.107.201.81 (`minyis-mac-mini`)
+- **SSH:** `ssh minyis-mac-mini`
+- **Deploy path:** `/Users/minyic/claude-hub/`
+- **Docker:** `/usr/local/bin/docker` (must use full path or `export PATH=/usr/local/bin:$PATH`)
+- **App port:** 7700

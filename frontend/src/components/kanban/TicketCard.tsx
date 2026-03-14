@@ -389,6 +389,15 @@ export function TicketCard({ ticket, latestActivity, activityEvents, onClick, on
         </div>
       )}
 
+      {ticket.status === 'in_progress' && isIdle && (
+        <div className="flex items-center gap-2">
+          <p className="flex-1 text-xs text-[var(--color-accent-yellow)]">Session may be stuck</p>
+          <Button size="sm" variant="secondary" onClick={handleRetry}>
+            <RotateCcw size={12} className="mr-1" /> Retry
+          </Button>
+        </div>
+      )}
+
       {isBlocked && ticket.blocked_question && (
         <div className="space-y-2">
           <div className="flex gap-1.5 rounded bg-[var(--color-accent-red)]/10 p-2">
