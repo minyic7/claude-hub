@@ -88,14 +88,14 @@ export function AppShell({
     <div className="flex h-screen flex-col bg-[var(--color-bg-secondary)]">
       {/* Top bar */}
       <header className="flex h-12 shrink-0 items-center justify-between border-b border-[var(--color-border)] bg-[var(--color-bg-panel)] px-4">
-        <div className={`flex items-center gap-3${isMobile ? ' flex-1 min-w-0' : ''}`}>
-          {!isMobile && <h1 className="text-sm font-bold text-[var(--color-text-primary)]">Claude Hub</h1>}
+        <div className="flex items-center gap-3">
+          <h1 className="text-sm font-bold text-[var(--color-text-primary)]">Claude Hub</h1>
 
           {/* Project selector */}
-          <div className={`relative${isMobile ? ' flex-1 min-w-0' : ''}`}>
+          <div className="relative">
             <button
               onClick={() => setShowProjectMenu(!showProjectMenu)}
-              className={`flex items-center gap-1.5 rounded-md border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2.5 py-1 text-xs text-[var(--color-text-primary)] hover:border-[var(--color-accent-blue)]/40 transition-colors${isMobile ? ' w-full min-w-0' : ''}`}
+              className={`flex items-center gap-1.5 rounded-md border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2.5 py-1 text-xs text-[var(--color-text-primary)] hover:border-[var(--color-accent-blue)]/40 transition-colors${isMobile ? ' w-full' : ''}`}
             >
               {activeProject ? (
                 <>
@@ -113,7 +113,7 @@ export function AppShell({
             {showProjectMenu && (
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setShowProjectMenu(false)} />
-                <div className={`absolute left-0 top-full z-50 mt-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-panel)] py-1 shadow-lg${isMobile ? ' right-0 w-auto min-w-full' : ' w-64'}`}>
+                <div className="absolute left-0 top-full z-50 mt-1 w-64 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-panel)] py-1 shadow-lg">
                   {[...projects.values()].map((p) => (
                     <button
                       key={p.id}
