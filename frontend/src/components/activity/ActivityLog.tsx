@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Brain, FileText, Terminal, MessageSquare, AlertTriangle, CheckCircle, Info, XCircle, Eye, User, ClipboardCheck, Search, ChevronRight, ChevronDown, Trash2 } from 'lucide-react'
+import { Brain, FileText, Terminal, MessageSquare, AlertTriangle, CheckCircle, Info, XCircle, Eye, User, ClipboardCheck, Search, ChevronRight, ChevronDown, Trash2, ArrowUp, ArrowDown } from 'lucide-react'
 import type { ActivityEvent } from '../../types/activity'
 import { relativeTime } from '../../utils/relativeTime'
 
@@ -87,6 +87,7 @@ export function ActivityLog({ events, onClear }: ActivityLogProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const [userScrolledUp, setUserScrolledUp] = useState(false)
+  const [notAtTop, setNotAtTop] = useState(false)
   const [, setTick] = useState(0)
   const [searchQuery, setSearchQuery] = useState('')
   const [disabledTypes, setDisabledTypes] = useState<Set<string>>(new Set())
@@ -102,6 +103,7 @@ export function ActivityLog({ events, onClear }: ActivityLogProps) {
     if (!el) return
     const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40
     setUserScrolledUp(!atBottom)
+    setNotAtTop(el.scrollTop > 40)
   }, [])
 
   const filteredEvents = useMemo(() => {
@@ -225,7 +227,8 @@ export function ActivityLog({ events, onClear }: ActivityLogProps) {
       </div>
 
       {/* Event list */}
-      <div ref={containerRef} onScroll={handleScroll} className="flex flex-col gap-1 overflow-y-auto">
+      <div className="relative min-h-0 flex-1">
+      <div ref={containerRef} onScroll={handleScroll} className="flex h-full flex-col gap-1 overflow-y-auto">
         {visibleItems.map((item) => {
           if (item.kind === 'single') {
             return <EventRow key={`e-${item.index}`} event={item.event} isAgent={item.event.source === 'ticket_agent'} />
@@ -270,6 +273,29 @@ export function ActivityLog({ events, onClear }: ActivityLogProps) {
           )
         })}
         <div ref={bottomRef} />
+      </div>
+
+      {/* Floating scroll buttons */}
+      <div className="pointer-events-none absolute bottom-2 right-3 flex flex-col gap-1">
+        {notAtTop && (
+          <button
+            onClick={() => containerRef.current?.scrollTo({ top: 0, behavior: 'smooth' })}
+            className="pointer-events-auto flex h-6 w-6 items-center justify-center rounded-full bg-[var(--color-bg-tertiary)] text-[var(--color-text-muted)] opacity-60 shadow transition-opacity hover:opacity-100"
+            title="Scroll to top"
+          >
+            <ArrowUp size={12} />
+          </button>
+        )}
+        {userScrolledUp && (
+          <button
+            onClick={() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' })}
+            className="pointer-events-auto flex h-6 w-6 items-center justify-center rounded-full bg-[var(--color-bg-tertiary)] text-[var(--color-text-muted)] opacity-60 shadow transition-opacity hover:opacity-100"
+            title="Scroll to bottom"
+          >
+            <ArrowDown size={12} />
+          </button>
+        )}
+      </div>
       </div>
     </div>
   )
