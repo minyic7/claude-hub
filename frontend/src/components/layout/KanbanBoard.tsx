@@ -22,6 +22,7 @@ import { Button } from '../common/Button'
 import { api } from '../../lib/api'
 import { useContainerWidth } from '../../hooks/useContainerWidth'
 import { useAdaptiveColumns } from '../../hooks/useAdaptiveColumns'
+import { useIsMobile } from '../../hooks/useIsMobile'
 
 // Prevent drag from starting on buttons or interactive elements
 class SmartMouseSensor extends MouseSensor {
@@ -224,8 +225,9 @@ export function KanbanBoard({
   }, [selectedIds, orderedTodo, exitSelectMode])
 
   // Adaptive column count
+  const isMobile = useIsMobile()
   const [boardRef, containerWidth] = useContainerWidth<HTMLDivElement>()
-  const { visibleColumns, foldedColumns, activeTab, onTabClick } = useAdaptiveColumns(columns, containerWidth)
+  const { visibleColumns, foldedColumns, activeTab, onTabClick } = useAdaptiveColumns(columns, containerWidth, isMobile)
 
   // Compute branch type counts from all tickets for filter chips
   const branchTypeCounts = useMemo(() => {

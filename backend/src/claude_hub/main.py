@@ -31,6 +31,25 @@ async def _pr_poll_loop() -> None:
             logger.error("PR poll error: %s", e)
 
 
+async def _kanban_sync_loop() -> None:
+    """Background loop: sync kanban branches with main every 30 seconds."""
+    while True:
+        try:
+            await asyncio.sleep(30)
+            from claude_hub.services.kanban_manager import sync_kanban_branch, is_alive
+            from claude_hub import redis_client as rc
+            projects = await rc.list_projects()
+            for project in projects:
+                if is_alive(project["id"]):
+                    result = sync_kanban_branch(project["id"], project.get("gh_token", ""))
+                    if result["status"] == "updated":
+                        logger.info("Kanban sync for %s: %s", project["id"], result["message"])
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.error("Kanban sync error: %s", e)
+
+
 async def _recover_orphaned_tickets() -> None:
     """On startup, find IN_PROGRESS/BLOCKED tickets with dead tmux sessions → auto-restart."""
     from claude_hub.services import session_manager, clone_manager
@@ -85,8 +104,10 @@ async def lifespan(app: FastAPI):
     logger.info("Redis connected")
     await _recover_orphaned_tickets()
     poll_task = asyncio.create_task(_pr_poll_loop())
+    kanban_sync_task = asyncio.create_task(_kanban_sync_loop())
     yield
     poll_task.cancel()
+    kanban_sync_task.cancel()
     try:
         await poll_task
     except asyncio.CancelledError:

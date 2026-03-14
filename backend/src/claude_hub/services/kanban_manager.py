@@ -157,7 +157,7 @@ You are a full Claude Code instance with access to the repository. You can:
 
 ## Kanban State Awareness
 - **On startup**: Always run `get_kanban_state` to build your mental model of the current board.
-- **After `[KANBAN_UPDATE]`**: Always silently re-run `get_kanban_state` to refresh your mental model before your next response to the user. Do NOT tell the user you received the update or are refreshing — just do it in the background.
+- **Before every response**: Silently re-run `get_kanban_state` to ensure your mental model is current. Tickets may have changed status since your last check. Do NOT mention this refresh to the user — just do it.
 - **Maintain a mental model**: Keep track of all ticket titles, descriptions, statuses, and dependencies so you can detect overlaps and suggest relationships.
 
 ## Duplicate / Overlap Detection
@@ -219,11 +219,15 @@ curl -s -X POST {auth_header}{api_base_url}/api/tickets/reorder \\
 ```
 
 ## Important Rules
-- When you receive a `[KANBAN_UPDATE]` marker, silently re-run `get_kanban_state` to refresh your mental model. Do NOT mention the update to the user.
+- **Always refer to tickets by their `#seq` number** (e.g., #5, #10) when communicating with the user. The `seq` field is the human-friendly ticket number. Use the full UUID `id` only when making API calls.
 - Always check for duplicates before creating tickets
 - Ask at least one clarifying question before creating a ticket (unless the request is already very specific)
-- When suggesting dependencies, reference specific ticket IDs and titles so the user can verify
+- When suggesting dependencies, reference tickets by `#seq` and title (e.g., "#5 Add auth endpoint") so the user can verify
 - Be conversational and helpful, not robotic
+
+## Branch Sync
+- Your branch is auto-synced with `{base_branch}` every 30 seconds and after PR merges.
+- Before answering user questions about code, run `git log --oneline -1 origin/{base_branch}` to confirm you have the latest. If behind, run `git merge origin/{base_branch} --no-edit` first.
 
 ## Git Safety — CRITICAL
 - You are on the `kanban-claude-hub` branch (created from `{base_branch}`). Work here freely.
@@ -428,20 +432,53 @@ def restart_kanban(project: dict, gh_token: str = "") -> str:
     return start_kanban(project, gh_token)
 
 
+def sync_kanban_branch(project_id: str, gh_token: str = "") -> dict:
+    """Merge latest base branch into the kanban working branch.
+
+    Returns {"status": "updated"|"up_to_date"|"conflict"|"error", "message": str}
+    """
+    kanban_dir = os.path.join(settings.data_dir, "kanbans", project_id)
+    if not os.path.exists(kanban_dir):
+        return {"status": "error", "message": "Kanban directory not found"}
+
+    env = {**os.environ}
+    if gh_token:
+        env["GH_TOKEN"] = gh_token
+
+    # Fetch latest
+    subprocess.run(["git", "fetch", "origin"], cwd=kanban_dir, capture_output=True, env=env)
+
+    # Check if behind
+    result = subprocess.run(
+        ["git", "rev-list", "--count", "HEAD..origin/main"],
+        cwd=kanban_dir, capture_output=True, text=True, env=env,
+    )
+    behind = int(result.stdout.strip()) if result.returncode == 0 and result.stdout.strip().isdigit() else 0
+    if behind == 0:
+        return {"status": "up_to_date", "message": "Already up to date"}
+
+    # Try merge
+    result = subprocess.run(
+        ["git", "merge", "origin/main", "--no-edit"],
+        cwd=kanban_dir, capture_output=True, text=True, env=env,
+    )
+    if result.returncode != 0:
+        subprocess.run(["git", "merge", "--abort"], cwd=kanban_dir, capture_output=True)
+        logger.warning("Kanban branch merge conflict for project %s: %s", project_id, result.stderr.strip())
+        # Reset to main to unblock — kanban branch is ephemeral
+        subprocess.run(["git", "reset", "--hard", "origin/main"], cwd=kanban_dir, capture_output=True, env=env)
+        logger.info("Reset kanban branch to origin/main for project %s", project_id)
+        return {"status": "conflict", "message": "Conflict resolved by resetting to main"}
+
+    # Push updated branch
+    subprocess.run(["git", "push"], cwd=kanban_dir, capture_output=True, env=env)
+    logger.info("Synced kanban branch for project %s (%d commits from main)", project_id, behind)
+    return {"status": "updated", "message": f"Merged {behind} new commit(s) from main"}
+
+
 def send_kanban_update(project_id: str) -> None:
-    """Send [KANBAN_UPDATE] marker to the kanban session if it's alive."""
-    name = _session_name(project_id)
-    if not _tmux_exists(name) or _tmux_is_dead(name):
-        return
-    try:
-        subprocess.run(
-            ["tmux", "send-keys", "-t", name, "-l", "[KANBAN_UPDATE]"],
-            capture_output=True,
-        )
-        subprocess.run(
-            ["tmux", "send-keys", "-t", name, "Enter"],
-            capture_output=True,
-        )
-        logger.debug("Sent KANBAN_UPDATE to kanban %s", name)
-    except Exception as e:
-        logger.warning("Failed to send KANBAN_UPDATE to %s: %s", name, e)
+    """No-op: kanban CC now refreshes state on each user interaction via CLAUDE.md instructions.
+
+    Previously sent [KANBAN_UPDATE] via tmux send-keys, which interrupted user conversations.
+    """
+    pass

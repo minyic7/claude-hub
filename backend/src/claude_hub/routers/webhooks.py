@@ -71,13 +71,23 @@ async def github_webhook(
                 logger.error("Failed to auto-merge ticket %s: %s", ticket["id"], e)
                 return {"status": "error", "message": str(e)}
 
-    # After a PR merges, update other review branches to include latest main
+    # After a PR merges, update other review branches and kanban branches
     import asyncio
     asyncio.create_task(_update_review_branches(pr_number, base_branch))
+    asyncio.create_task(_sync_all_kanban_branches())
 
     if merged_ticket_id:
         return {"status": "merged", "ticket_id": merged_ticket_id}
     return {"status": "no_matching_ticket", "pr_number": pr_number}
+
+
+async def _sync_all_kanban_branches() -> None:
+    """Sync all active kanban branches with latest main."""
+    from claude_hub.services.kanban_manager import sync_kanban_branch, is_alive
+    projects = await redis_client.list_projects()
+    for project in projects:
+        if is_alive(project["id"]):
+            sync_kanban_branch(project["id"], project.get("gh_token", ""))
 
 
 async def _handle_pr_review(payload: dict) -> dict:
