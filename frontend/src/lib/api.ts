@@ -150,6 +150,8 @@ export const api = {
       request<Record<string, unknown>[]>(`/tickets/${id}/activity?since=${since}`),
     syncReviewStatus: () =>
       request<{ synced: string[] }>('/tickets/sync-review-status', { method: 'POST' }),
+    syncReviews: (id: string) =>
+      request<{ synced: number }>(`/tickets/${id}/sync-reviews`, { method: 'POST' }),
     ciStatus: (id: string) =>
       request<CIStatus>(`/tickets/${id}/ci-status`),
     addNote: (id: string, content: string, type: string = 'comment') =>

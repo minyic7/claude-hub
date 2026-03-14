@@ -67,6 +67,7 @@ export function TicketDetail({ ticket, activities, allTickets, onClose, onDelete
   const [confirmRevert, setConfirmRevert] = useState(false)
   const [reverting, setReverting] = useState(false)
   const [duplicating, setDuplicating] = useState(false)
+  const [syncingReviews, setSyncingReviews] = useState(false)
   const [noteText, setNoteText] = useState('')
   const [addingNote, setAddingNote] = useState(false)
 
@@ -104,6 +105,12 @@ export function TicketDetail({ ticket, activities, allTickets, onClose, onDelete
 
   const handleMarkReview = async () => {
     try { await api.tickets.markReview(ticket.id) } catch { /* global handler */ }
+  }
+
+  const handleSyncReviews = async () => {
+    setSyncingReviews(true)
+    try { await api.tickets.syncReviews(ticket.id) } catch { /* global handler */ }
+    finally { setSyncingReviews(false) }
   }
 
   const handleMerge = async () => {
@@ -299,6 +306,11 @@ export function TicketDetail({ ticket, activities, allTickets, onClose, onDelete
               <Button size="sm" variant="secondary" onClick={handleMarkReview}>
                 Mark Review
               </Button>
+              {ticket.pr_number && (
+                <Button size="sm" variant="secondary" onClick={handleSyncReviews} disabled={syncingReviews}>
+                  <RefreshCw size={12} className={`mr-1 ${syncingReviews ? 'animate-spin' : ''}`} /> Sync
+                </Button>
+              )}
               <Button size="sm" onClick={handleRetry}>
                 <RotateCcw size={12} className="mr-1" /> Retry
               </Button>
@@ -311,6 +323,9 @@ export function TicketDetail({ ticket, activities, allTickets, onClose, onDelete
               </Button>
               <Button size="sm" variant="secondary" onClick={() => setShowChangesForm(!showChangesForm)}>
                 <MessageSquareWarning size={12} className="mr-1" /> Changes
+              </Button>
+              <Button size="sm" variant="secondary" onClick={handleSyncReviews} disabled={syncingReviews}>
+                <RefreshCw size={12} className={`mr-1 ${syncingReviews ? 'animate-spin' : ''}`} /> Sync
               </Button>
               <Button size="sm" onClick={handleMerge} disabled={ticket.has_conflicts || mergeQueueLocked}>
                 <GitMerge size={12} className="mr-1" /> Merge

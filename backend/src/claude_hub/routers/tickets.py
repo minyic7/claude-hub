@@ -1135,6 +1135,113 @@ async def sync_review_status():
     return {"synced": synced}
 
 
+@router.post("/{ticket_id}/sync-reviews")
+async def sync_pr_reviews(ticket_id: str):
+    """Fetch all PR reviews and comments from GitHub and sync as ticket notes."""
+    import json as _json
+    import os
+    import subprocess
+
+    from claude_hub.services.ticket_service import append_ticket_note
+
+    ticket = await redis_client.get_ticket(ticket_id)
+    if not ticket:
+        raise HTTPException(404, "Ticket not found")
+
+    pr_number = ticket.get("pr_number")
+    if not pr_number:
+        return {"synced": 0, "message": "No PR linked to this ticket"}
+
+    project = await _get_project_for_ticket(ticket)
+    gh_token = project.get("gh_token", "") or settings.gh_token
+    repo_url = project.get("repo_url", "")
+    if not gh_token or not repo_url:
+        return {"synced": 0, "message": "No GitHub token or repo URL"}
+
+    # Parse owner/repo
+    from claude_hub.services.webhook_registration import _parse_owner_repo
+    parsed = _parse_owner_repo(repo_url)
+    if not parsed:
+        return {"synced": 0, "message": f"Cannot parse repo URL: {repo_url}"}
+    owner, repo = parsed
+    env = {**os.environ, "GH_TOKEN": gh_token}
+
+    # Get existing notes to deduplicate
+    existing_notes = ticket.get("notes")
+    if isinstance(existing_notes, str):
+        try:
+            existing_notes = _json.loads(existing_notes)
+        except _json.JSONDecodeError:
+            existing_notes = []
+    existing_notes = existing_notes or []
+    existing_contents = {n.get("content", "") for n in existing_notes}
+
+    synced_count = 0
+
+    # 1. Fetch PR reviews (approve/reject/comment)
+    result = subprocess.run(
+        ["gh", "api", f"repos/{owner}/{repo}/pulls/{pr_number}/reviews",
+         "--jq", '[.[] | {id: .id, state: .state, body: .body, user: .user.login, submitted_at: .submitted_at}]'],
+        capture_output=True, text=True, env=env,
+    )
+    if result.returncode == 0 and result.stdout.strip():
+        try:
+            reviews = _json.loads(result.stdout)
+        except _json.JSONDecodeError:
+            reviews = []
+
+        for review in reviews:
+            body = (review.get("body") or "").strip()
+            state = review.get("state", "").upper()
+            user = review.get("user", "unknown")
+
+            # Update review_status from latest non-comment review
+            if state in ("APPROVED", "CHANGES_REQUESTED"):
+                await redis_client.update_ticket_fields(ticket_id, {
+                    "review_status": state.lower(),
+                    "reviewer": user,
+                })
+
+            if not body:
+                continue
+            note = f"PR review ({state}) by {user}:\n{body}"
+            if note not in existing_contents:
+                await append_ticket_note(ticket_id, "review", note, author=user)
+                existing_contents.add(note)
+                synced_count += 1
+
+    # 2. Fetch PR review comments (inline diff comments)
+    result = subprocess.run(
+        ["gh", "api", f"repos/{owner}/{repo}/pulls/{pr_number}/comments",
+         "--jq", '[.[] | {id: .id, body: .body, path: .path, user: .user.login, created_at: .created_at}]'],
+        capture_output=True, text=True, env=env,
+    )
+    if result.returncode == 0 and result.stdout.strip():
+        try:
+            comments = _json.loads(result.stdout)
+        except _json.JSONDecodeError:
+            comments = []
+
+        for comment in comments:
+            body = (comment.get("body") or "").strip()
+            user = comment.get("user", "unknown")
+            path = comment.get("path", "")
+            if not body:
+                continue
+            note = f"Review comment by {user} on `{path}`:\n{body}" if path else f"Review comment by {user}:\n{body}"
+            if note not in existing_contents:
+                await append_ticket_note(ticket_id, "review", note, author=user)
+                existing_contents.add(note)
+                synced_count += 1
+
+    # Broadcast update
+    if synced_count > 0:
+        updated = await redis_client.get_ticket(ticket_id)
+        await broadcast({"type": "ticket_updated", "ticket_id": ticket_id, "data": updated})
+
+    return {"synced": synced_count}
+
+
 @router.get("/{ticket_id}/ci-status")
 async def get_ticket_ci_status(ticket_id: str):
     """Get CI check status for a ticket's branch."""
