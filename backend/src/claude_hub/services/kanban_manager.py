@@ -225,6 +225,10 @@ curl -s -X POST {auth_header}{api_base_url}/api/tickets/reorder \\
 - When suggesting dependencies, reference specific ticket IDs and titles so the user can verify
 - Be conversational and helpful, not robotic
 
+## Branch Sync
+- Your branch is auto-synced with `{base_branch}` every 30 seconds and after PR merges.
+- Before answering user questions about code, run `git log --oneline -1 origin/{base_branch}` to confirm you have the latest. If behind, run `git merge origin/{base_branch} --no-edit` first.
+
 ## Git Safety — CRITICAL
 - You are on the `kanban-claude-hub` branch (created from `{base_branch}`). Work here freely.
 - **NEVER push to `{base_branch}`** directly.
@@ -426,6 +430,50 @@ def restart_kanban(project: dict, gh_token: str = "") -> str:
         subprocess.run(["tmux", "kill-session", "-t", name], capture_output=True)
         logger.info("Killed existing kanban session %s", name)
     return start_kanban(project, gh_token)
+
+
+def sync_kanban_branch(project_id: str, gh_token: str = "") -> dict:
+    """Merge latest base branch into the kanban working branch.
+
+    Returns {"status": "updated"|"up_to_date"|"conflict"|"error", "message": str}
+    """
+    kanban_dir = os.path.join(settings.data_dir, "kanbans", project_id)
+    if not os.path.exists(kanban_dir):
+        return {"status": "error", "message": "Kanban directory not found"}
+
+    env = {**os.environ}
+    if gh_token:
+        env["GH_TOKEN"] = gh_token
+
+    # Fetch latest
+    subprocess.run(["git", "fetch", "origin"], cwd=kanban_dir, capture_output=True, env=env)
+
+    # Check if behind
+    result = subprocess.run(
+        ["git", "rev-list", "--count", "HEAD..origin/main"],
+        cwd=kanban_dir, capture_output=True, text=True, env=env,
+    )
+    behind = int(result.stdout.strip()) if result.returncode == 0 and result.stdout.strip().isdigit() else 0
+    if behind == 0:
+        return {"status": "up_to_date", "message": "Already up to date"}
+
+    # Try merge
+    result = subprocess.run(
+        ["git", "merge", "origin/main", "--no-edit"],
+        cwd=kanban_dir, capture_output=True, text=True, env=env,
+    )
+    if result.returncode != 0:
+        subprocess.run(["git", "merge", "--abort"], cwd=kanban_dir, capture_output=True)
+        logger.warning("Kanban branch merge conflict for project %s: %s", project_id, result.stderr.strip())
+        # Reset to main to unblock — kanban branch is ephemeral
+        subprocess.run(["git", "reset", "--hard", "origin/main"], cwd=kanban_dir, capture_output=True, env=env)
+        logger.info("Reset kanban branch to origin/main for project %s", project_id)
+        return {"status": "conflict", "message": "Conflict resolved by resetting to main"}
+
+    # Push updated branch
+    subprocess.run(["git", "push"], cwd=kanban_dir, capture_output=True, env=env)
+    logger.info("Synced kanban branch for project %s (%d commits from main)", project_id, behind)
+    return {"status": "updated", "message": f"Merged {behind} new commit(s) from main"}
 
 
 def send_kanban_update(project_id: str) -> None:
