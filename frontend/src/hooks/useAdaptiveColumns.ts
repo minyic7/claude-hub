@@ -13,8 +13,8 @@ function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value))
 }
 
-export function useAdaptiveColumns(columns: KanbanColumn[], containerWidth: number) {
-  const visibleCount = clamp(Math.floor(containerWidth / COLUMN_MIN_WIDTH), 1, 4)
+export function useAdaptiveColumns(columns: KanbanColumn[], containerWidth: number, isMobile = false) {
+  const visibleCount = isMobile ? 1 : clamp(Math.floor(containerWidth / COLUMN_MIN_WIDTH), 1, 4)
 
   // Active tab: the folded column currently swapped into view
   const [activeTab, setActiveTabRaw] = useState<TicketStatus | null>(() => {
