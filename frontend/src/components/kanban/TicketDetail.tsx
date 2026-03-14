@@ -383,6 +383,35 @@ export function TicketDetail({ ticket, activities, allTickets, onClose, onDelete
         </div>
       )}
 
+      {/* Unresolved conversations banner */}
+      {ticket.status === 'review' && ticket.pr_number && (
+        <div className="border-b border-[var(--color-border)] p-3">
+          {unresolvedCount == null ? (
+            <div className="flex items-center justify-between rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-3 py-2 text-xs text-[var(--color-text-muted)]">
+              <span>Review conversations not yet synced from GitHub</span>
+              <button
+                onClick={handleSyncReviews}
+                disabled={syncingReviews}
+                className="flex items-center gap-1 text-[var(--color-accent-blue)] hover:underline"
+              >
+                <RefreshCw size={10} className={syncingReviews ? 'animate-spin' : ''} /> Sync now
+              </button>
+            </div>
+          ) : unresolvedCount > 0 ? (
+            <div className="flex items-center justify-between rounded-lg border border-[var(--color-accent-yellow)]/30 bg-[var(--color-accent-yellow)]/5 px-3 py-2 text-xs text-[var(--color-accent-yellow)]">
+              <span>{unresolvedCount} unresolved conversation{unresolvedCount > 1 ? 's' : ''} — resolve on GitHub before merging</span>
+              <button
+                onClick={handleSyncReviews}
+                disabled={syncingReviews}
+                className="flex items-center gap-1 hover:underline"
+              >
+                <RefreshCw size={10} className={syncingReviews ? 'animate-spin' : ''} /> Refresh
+              </button>
+            </div>
+          ) : null}
+        </div>
+      )}
+
       {/* Edit form (TODO only) */}
       {editing && ticket.status === 'todo' && (
         <div className="border-b border-[var(--color-border)] p-3 space-y-3">
