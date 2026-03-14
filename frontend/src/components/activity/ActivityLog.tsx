@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Brain, FileText, Terminal, MessageSquare, AlertTriangle, CheckCircle, Info, XCircle, Eye, User, ClipboardCheck, Search, ChevronRight, ChevronDown } from 'lucide-react'
+import { Brain, FileText, Terminal, MessageSquare, AlertTriangle, CheckCircle, Info, XCircle, Eye, User, ClipboardCheck, Search, ChevronRight, ChevronDown, Trash2, ArrowUp, ArrowDown } from 'lucide-react'
 import type { ActivityEvent } from '../../types/activity'
 import { relativeTime } from '../../utils/relativeTime'
 
 interface ActivityLogProps {
   events: ActivityEvent[]
+  onClear?: () => void
 }
 
 const typeConfig: Record<string, { icon: typeof Brain; className: string; label: string }> = {
@@ -62,11 +63,15 @@ function groupConsecutive(events: ActivityEvent[]): GroupedItem[] {
   return result
 }
 
+const LONG_MESSAGE_THRESHOLD = 150
+
 function EventRow({ event, isAgent }: { event: ActivityEvent; isAgent: boolean }) {
+  const [expanded, setExpanded] = useState(false)
   const config = typeConfig[event.type] || typeConfig.info
   const Icon = config.icon
   const fullTime = new Date(event.timestamp).toLocaleString()
   const time = relativeTime(event.timestamp)
+  const isLong = event.summary.length > LONG_MESSAGE_THRESHOLD
 
   return (
     <div className={`flex items-start gap-2 rounded px-2 py-1 text-xs ${isAgent ? 'bg-[var(--color-accent-blue)]/5' : ''}`}>
@@ -76,16 +81,25 @@ function EventRow({ event, isAgent }: { event: ActivityEvent; isAgent: boolean }
         {isAgent && event.type === 'intervention' && <span className="font-medium text-[var(--color-accent-purple)]">TicketAgent → CC: </span>}
         {isAgent && event.type !== 'intervention' && <span className="font-medium text-[var(--color-accent-purple)]">TicketAgent: </span>}
         {event.source === 'user' && <span className="font-medium text-[var(--color-accent-green)]">You: </span>}
-        {event.summary}
+        <span className={isLong && !expanded ? 'line-clamp-3' : undefined}>{event.summary}</span>
+        {isLong && (
+          <button
+            onClick={() => setExpanded((prev) => !prev)}
+            className="ml-1 text-[var(--color-accent-blue)] hover:underline"
+          >
+            {expanded ? 'Show less' : 'Show more'}
+          </button>
+        )}
       </span>
     </div>
   )
 }
 
-export function ActivityLog({ events }: ActivityLogProps) {
+export function ActivityLog({ events, onClear }: ActivityLogProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const [userScrolledUp, setUserScrolledUp] = useState(false)
+  const [notAtTop, setNotAtTop] = useState(false)
   const [, setTick] = useState(0)
   const [searchQuery, setSearchQuery] = useState('')
   const [disabledTypes, setDisabledTypes] = useState<Set<string>>(new Set())
@@ -101,6 +115,7 @@ export function ActivityLog({ events }: ActivityLogProps) {
     if (!el) return
     const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40
     setUserScrolledUp(!atBottom)
+    setNotAtTop(el.scrollTop > 40)
   }, [])
 
   const filteredEvents = useMemo(() => {
@@ -176,16 +191,27 @@ export function ActivityLog({ events }: ActivityLogProps) {
 
   return (
     <div className="flex flex-col gap-2 overflow-hidden">
-      {/* Search box */}
-      <div className="relative shrink-0">
-        <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)]" />
-        <input
-          type="text"
-          placeholder="Search activity..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="w-full rounded border border-[var(--color-border)] bg-[var(--color-bg-secondary)] py-1 pl-7 pr-2 text-xs text-[var(--color-text-primary)] placeholder-[var(--color-text-muted)] outline-none focus:border-[var(--color-accent-blue)]"
-        />
+      {/* Search box + clear button */}
+      <div className="flex shrink-0 items-center gap-1">
+        <div className="relative flex-1">
+          <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)]" />
+          <input
+            type="text"
+            placeholder="Search activity..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full rounded border border-[var(--color-border)] bg-[var(--color-bg-secondary)] py-1 pl-7 pr-2 text-xs text-[var(--color-text-primary)] placeholder-[var(--color-text-muted)] outline-none focus:border-[var(--color-accent-blue)]"
+          />
+        </div>
+        {onClear && (
+          <button
+            onClick={onClear}
+            className="rounded p-1 text-[var(--color-text-muted)] hover:bg-[var(--color-bg-secondary)] hover:text-[var(--color-accent-red)] transition-colors"
+            title="Clear activity log"
+          >
+            <Trash2 size={14} />
+          </button>
+        )}
       </div>
 
       {/* Type filter chips */}
@@ -213,7 +239,8 @@ export function ActivityLog({ events }: ActivityLogProps) {
       </div>
 
       {/* Event list */}
-      <div ref={containerRef} onScroll={handleScroll} className="flex flex-col gap-1 overflow-y-auto">
+      <div className="relative min-h-0 flex-1">
+      <div ref={containerRef} onScroll={handleScroll} className="flex h-full flex-col gap-1 overflow-y-auto">
         {visibleItems.map((item) => {
           if (item.kind === 'single') {
             return <EventRow key={`e-${item.index}`} event={item.event} isAgent={item.event.source === 'ticket_agent'} />
@@ -258,6 +285,29 @@ export function ActivityLog({ events }: ActivityLogProps) {
           )
         })}
         <div ref={bottomRef} />
+      </div>
+
+      {/* Floating scroll buttons */}
+      <div className="pointer-events-none absolute bottom-2 right-3 flex flex-col gap-1">
+        {notAtTop && (
+          <button
+            onClick={() => containerRef.current?.scrollTo({ top: 0, behavior: 'smooth' })}
+            className="pointer-events-auto flex h-6 w-6 items-center justify-center rounded-full bg-[var(--color-bg-tertiary)] text-[var(--color-text-muted)] opacity-60 shadow transition-opacity hover:opacity-100"
+            title="Scroll to top"
+          >
+            <ArrowUp size={12} />
+          </button>
+        )}
+        {userScrolledUp && (
+          <button
+            onClick={() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' })}
+            className="pointer-events-auto flex h-6 w-6 items-center justify-center rounded-full bg-[var(--color-bg-tertiary)] text-[var(--color-text-muted)] opacity-60 shadow transition-opacity hover:opacity-100"
+            title="Scroll to bottom"
+          >
+            <ArrowDown size={12} />
+          </button>
+        )}
+      </div>
       </div>
     </div>
   )
