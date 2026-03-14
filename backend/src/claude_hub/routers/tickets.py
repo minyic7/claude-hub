@@ -20,10 +20,12 @@ router = APIRouter(prefix="/api/tickets", tags=["tickets"])
 # Appended to every task prompt to ensure Claude Code pushes all changes
 _PUSH_VERIFICATION_INSTRUCTION = (
     "\n\n## IMPORTANT — Final Verification (do this LAST before exiting)\n"
-    "Before you finish, run `git status` and `git log --oneline -5` to verify:\n"
-    "1. No uncommitted changes remain (working tree clean)\n"
-    "2. All commits have been pushed to the remote branch\n"
-    "3. A PR exists (create one if missing)\n"
+    "Before you finish:\n"
+    "1. If you modified frontend files, run `cd frontend && pnpm exec tsc -b` to check for TypeScript errors. Fix any errors before pushing.\n"
+    "2. Run `git status` and `git log --oneline -5` to verify:\n"
+    "   - No uncommitted changes remain (working tree clean)\n"
+    "   - All commits have been pushed to the remote branch\n"
+    "   - A PR exists (create one if missing)\n"
     "If anything is missing, fix it before exiting."
 )
 
