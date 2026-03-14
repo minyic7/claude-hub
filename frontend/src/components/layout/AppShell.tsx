@@ -277,20 +277,30 @@ export function AppShell({
       </header>
 
       {/* Main content */}
-      <main className="flex flex-1 overflow-hidden">
-        {projects.size === 0 ? (
-          <div className="flex flex-1 flex-col items-center justify-center gap-4">
-            <p className="text-sm text-[var(--color-text-muted)]">No projects yet. Create one to get started.</p>
-            <Button onClick={() => setShowCreateProject(true)}>
-              <FolderPlus size={14} className="mr-1" /> New Project
-            </Button>
-          </div>
-        ) : !activeProjectId ? (
-          <div className="flex flex-1 items-center justify-center">
-            <p className="text-sm text-[var(--color-text-muted)]">Select a project from the dropdown above.</p>
-          </div>
-        ) : (
-          children
+      <main className="flex flex-1 flex-row overflow-hidden">
+        <div className="flex flex-1 overflow-hidden">
+          {projects.size === 0 ? (
+            <div className="flex flex-1 flex-col items-center justify-center gap-4">
+              <p className="text-sm text-[var(--color-text-muted)]">No projects yet. Create one to get started.</p>
+              <Button onClick={() => setShowCreateProject(true)}>
+                <FolderPlus size={14} className="mr-1" /> New Project
+              </Button>
+            </div>
+          ) : !activeProjectId ? (
+            <div className="flex flex-1 items-center justify-center">
+              <p className="text-sm text-[var(--color-text-muted)]">Select a project from the dropdown above.</p>
+            </div>
+          ) : (
+            children
+          )}
+        </div>
+        {activeProjectId && (
+          <KanbanTerminal
+            projectId={activeProjectId}
+            projectName={activeProject?.name}
+            visible={showKanbanTerminal}
+            onClose={() => setShowKanbanTerminal(false)}
+          />
         )}
       </main>
 
@@ -304,14 +314,6 @@ export function AppShell({
       )}
       <CreateProjectModal open={showCreateProject} onClose={() => setShowCreateProject(false)} />
       <AgentSettingsModal open={showSettings} onClose={() => setShowSettings(false)} initialTab={openSettingsTab as 'system' | 'agent' | 'account'} />
-      {activeProjectId && (
-        <KanbanTerminal
-          projectId={activeProjectId}
-          projectName={activeProject?.name}
-          visible={showKanbanTerminal}
-          onClose={() => setShowKanbanTerminal(false)}
-        />
-      )}
     </div>
   )
 }

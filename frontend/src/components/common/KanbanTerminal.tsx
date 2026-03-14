@@ -8,6 +8,20 @@ import '@xterm/xterm/css/xterm.css'
 const MIN_WIDTH = 300
 const MAX_WIDTH_VW = 70
 const DEFAULT_WIDTH = 600
+const STORAGE_KEY = 'kanban-terminal-flex-basis'
+
+function loadPersistedWidth(): number {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY)
+    if (stored) {
+      const val = parseInt(stored, 10)
+      if (val >= MIN_WIDTH) return val
+    }
+  } catch {
+    // ignore
+  }
+  return DEFAULT_WIDTH
+}
 
 interface KanbanTerminalProps {
   projectId: string
@@ -24,7 +38,7 @@ export function KanbanTerminal({ projectId, projectName, visible, onClose }: Kan
   const retriesRef = useRef(0)
   const [restarting, setRestarting] = useState(false)
   const [connecting, setConnecting] = useState(true)
-  const [width, setWidth] = useState(DEFAULT_WIDTH)
+  const [flexBasis, setFlexBasis] = useState(loadPersistedWidth)
   const draggingRef = useRef(false)
 
   const sendResize = useCallback((cols: number, rows: number) => {
@@ -39,6 +53,17 @@ export function KanbanTerminal({ projectId, projectName, visible, onClose }: Kan
       ws.send(payload.buffer)
     }
   }, [])
+
+  const fitTerminal = useCallback(() => {
+    const fitAddon = fitAddonRef.current
+    const terminal = terminalRef.current
+    if (fitAddon && terminal) {
+      requestAnimationFrame(() => {
+        fitAddon.fit()
+        sendResize(terminal.cols, terminal.rows)
+      })
+    }
+  }, [sendResize])
 
   const connectWs = useCallback((terminal: Terminal) => {
     const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
@@ -174,16 +199,12 @@ export function KanbanTerminal({ projectId, projectName, visible, onClose }: Kan
     }
   }, [projectId, sendResize, connectWs])
 
-  // Re-fit when becoming visible or width changes
+  // Re-fit when becoming visible
   useEffect(() => {
-    if (visible && fitAddonRef.current && terminalRef.current) {
-      requestAnimationFrame(() => {
-        fitAddonRef.current?.fit()
-        const t = terminalRef.current
-        if (t) sendResize(t.cols, t.rows)
-      })
+    if (visible) {
+      fitTerminal()
     }
-  }, [visible, width, sendResize])
+  }, [visible, fitTerminal])
 
   // Escape key to hide (only when visible)
   useEffect(() => {
@@ -203,14 +224,14 @@ export function KanbanTerminal({ projectId, projectName, visible, onClose }: Kan
     draggingRef.current = true
 
     const startX = e.clientX
-    const startWidth = width
+    const startBasis = flexBasis
     const maxWidth = window.innerWidth * MAX_WIDTH_VW / 100
 
     const onMove = (ev: MouseEvent) => {
       if (!draggingRef.current) return
       const delta = startX - ev.clientX
-      const newWidth = Math.min(Math.max(startWidth + delta, MIN_WIDTH), maxWidth)
-      setWidth(newWidth)
+      const newBasis = Math.min(Math.max(startBasis + delta, MIN_WIDTH), maxWidth)
+      setFlexBasis(newBasis)
     }
 
     const onUp = () => {
@@ -219,13 +240,19 @@ export function KanbanTerminal({ projectId, projectName, visible, onClose }: Kan
       document.removeEventListener('mouseup', onUp)
       document.body.style.cursor = ''
       document.body.style.userSelect = ''
+      // Persist and re-fit after drag ends
+      setFlexBasis((current) => {
+        try { localStorage.setItem(STORAGE_KEY, String(current)) } catch { /* ignore */ }
+        return current
+      })
+      fitTerminal()
     }
 
     document.body.style.cursor = 'col-resize'
     document.body.style.userSelect = 'none'
     document.addEventListener('mousemove', onMove)
     document.addEventListener('mouseup', onUp)
-  }, [width])
+  }, [flexBasis, fitTerminal])
 
   const handleRestart = async () => {
     setRestarting(true)
@@ -248,8 +275,8 @@ export function KanbanTerminal({ projectId, projectName, visible, onClose }: Kan
 
   return (
     <div
-      className={`fixed top-0 right-0 bottom-0 z-50 flex transition-transform duration-200 ${visible ? 'translate-x-0' : 'translate-x-full'}`}
-      style={{ width }}
+      className="flex shrink-0 transition-[flex-basis] duration-200 overflow-hidden"
+      style={{ flexBasis: visible ? flexBasis : 0 }}
     >
       {/* Drag handle */}
       <div
@@ -258,7 +285,7 @@ export function KanbanTerminal({ projectId, projectName, visible, onClose }: Kan
       />
 
       {/* Panel */}
-      <div className="flex flex-1 flex-col bg-[#1a1b26] border-l border-[var(--color-border)] overflow-hidden">
+      <div className="flex flex-1 flex-col bg-[#1a1b26] border-l border-[var(--color-border)] overflow-hidden min-w-0">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-[var(--color-border)] px-3 py-2 shrink-0">
           <div className="flex items-center gap-2 min-w-0">
