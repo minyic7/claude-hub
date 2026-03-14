@@ -133,7 +133,7 @@ async def _handle_pr_review(payload: dict) -> dict:
 async def _handle_pr_review_comment(payload: dict) -> dict:
     """Handle pull_request_review_comment events — individual diff comments."""
     action = payload.get("action")
-    if action != "created":
+    if action not in ("created", "edited"):
         return {"status": "ignored", "action": action}
 
     pr_number = payload.get("pull_request", {}).get("number")
@@ -144,14 +144,15 @@ async def _handle_pr_review_comment(payload: dict) -> dict:
     if not pr_number or not body:
         return {"status": "ignored", "reason": "no PR number or empty comment"}
 
-    logger.info("PR #%d review comment by %s on %s", pr_number, commenter, path)
+    prefix = "Review comment" if action == "created" else "Review comment (edited)"
+    logger.info("PR #%d %s by %s on %s", pr_number, prefix.lower(), commenter, path)
 
     for status in ("review", "merging", "failed", "in_progress", "verifying", "reviewing"):
         tickets = await redis_client.list_tickets(status)
         for ticket in tickets:
             if ticket.get("pr_number") == pr_number:
                 from claude_hub.services.ticket_service import append_ticket_note
-                note = f"Review comment by {commenter} on `{path}`:\n{body}" if path else f"Review comment by {commenter}:\n{body}"
+                note = f"{prefix} by {commenter} on `{path}`:\n{body}" if path else f"{prefix} by {commenter}:\n{body}"
                 await append_ticket_note(ticket["id"], "review", note, author=commenter)
                 updated = await redis_client.get_ticket(ticket["id"])
                 await broadcast({
