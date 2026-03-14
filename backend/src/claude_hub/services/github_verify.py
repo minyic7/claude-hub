@@ -7,6 +7,77 @@ from pydantic import BaseModel
 logger = logging.getLogger(__name__)
 
 
+def create_draft_pr(
+    clone_path: str,
+    branch: str,
+    base_branch: str,
+    title: str,
+    gh_token: str = "",
+) -> tuple[str | None, int | None]:
+    """Create a draft PR if none exists. Returns (pr_url, pr_number) or (None, None)."""
+    import os
+    env = {**os.environ, "GH_TOKEN": gh_token} if gh_token else None
+
+    # Check if PR already exists
+    try:
+        result = subprocess.run(
+            ["gh", "pr", "list", "--head", branch, "--json", "number,url", "--limit", "1"],
+            cwd=clone_path, capture_output=True, text=True, env=env,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            prs = json.loads(result.stdout)
+            if prs:
+                return prs[0].get("url"), prs[0].get("number")
+    except Exception:
+        pass
+
+    # Create draft PR
+    try:
+        result = subprocess.run(
+            ["gh", "pr", "create", "--draft", "--base", base_branch, "--head", branch,
+             "--title", title, "--body", "Auto-created by Claude Hub (draft — will be marked ready after verification)"],
+            cwd=clone_path, capture_output=True, text=True, env=env,
+        )
+        if result.returncode == 0:
+            pr_url = result.stdout.strip()
+            logger.info("Created draft PR: %s", pr_url)
+            # Extract PR number from URL
+            try:
+                pr_number = int(pr_url.rstrip("/").split("/")[-1])
+                return pr_url, pr_number
+            except (ValueError, IndexError):
+                return pr_url, None
+        else:
+            logger.warning("Draft PR creation failed: %s", result.stderr.strip())
+    except Exception as e:
+        logger.warning("Draft PR creation error: %s", e)
+
+    return None, None
+
+
+def mark_pr_ready(
+    clone_path: str,
+    branch: str,
+    gh_token: str = "",
+) -> bool:
+    """Mark a draft PR as ready for review. Returns True on success."""
+    import os
+    env = {**os.environ, "GH_TOKEN": gh_token} if gh_token else None
+    try:
+        result = subprocess.run(
+            ["gh", "pr", "ready", branch],
+            cwd=clone_path, capture_output=True, text=True, env=env,
+        )
+        if result.returncode == 0:
+            logger.info("Marked PR ready for branch %s", branch)
+            return True
+        else:
+            logger.warning("gh pr ready failed: %s", result.stderr.strip())
+    except Exception as e:
+        logger.warning("gh pr ready error: %s", e)
+    return False
+
+
 class VerifyResult(BaseModel):
     passed: bool
     reason: str
@@ -89,8 +160,8 @@ def ensure_pushed(
             )
             title = first_msg.stdout.strip() or branch
             result = subprocess.run(
-                ["gh", "pr", "create", "--base", base_branch, "--head", branch,
-                 "--title", title, "--body", "Auto-created by Claude Hub"],
+                ["gh", "pr", "create", "--draft", "--base", base_branch, "--head", branch,
+                 "--title", title, "--body", "Auto-created by Claude Hub (draft — will be marked ready after verification)"],
                 cwd=clone_path, capture_output=True, text=True, env=env,
             )
             if result.returncode == 0:

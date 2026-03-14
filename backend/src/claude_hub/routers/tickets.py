@@ -242,7 +242,7 @@ async def start_ticket(ticket_id: str):
         task = (
             f"{description}\n\n"
             f"You are working on branch '{branch}' (based on '{base_branch}').\n"
-            f"When done, commit your changes, push the branch, and create a PR against '{base_branch}'."
+            f"When done, commit your changes, push the branch, and create a draft PR against '{base_branch}'."
             + _PUSH_VERIFICATION_INSTRUCTION
         )
         session_name, log_path = session_manager.start_session(
@@ -434,10 +434,17 @@ async def retry_ticket(ticket_id: str, body: dict | None = None):
     description = ticket.get("description") or ticket["title"]
     branch = ticket["branch"]
     base_branch = ticket.get("base_branch", "main")
+
+    has_pr = bool(ticket.get("pr_url"))
+    pr_instruction = (
+        f"A PR already exists — do NOT create a new one, just push to the same branch."
+        if has_pr else
+        f"When done, commit your changes, push the branch, and create a draft PR against '{base_branch}'."
+    )
     task = (
         f"{description}\n\n"
         f"You are working on branch '{branch}' (based on '{base_branch}').\n"
-        f"When done, commit your changes, push the branch, and create a PR against '{base_branch}'."
+        f"{pr_instruction}"
         + _PUSH_VERIFICATION_INSTRUCTION
     )
 
@@ -673,11 +680,13 @@ async def _tail_and_broadcast(ticket_id: str, log_path: str) -> None:
             logger.info("Verification for %s: %s", ticket_id, result)
 
             if result.passed:
-                # Store PR info before review
+                # Store PR info and mark draft PR as ready
                 await redis_client.update_ticket_fields(ticket_id, {
                     "pr_url": result.pr_url or "",
                     "pr_number": result.pr_number or 0,
                 })
+                from claude_hub.services.github_verify import mark_pr_ready
+                mark_pr_ready(clone_path, ticket["branch"], gh_token)
 
                 # Agent code review (if enabled)
                 if agent_enabled and agent_cfg.get("api_key"):
