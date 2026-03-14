@@ -1159,6 +1159,17 @@ async def sync_review_status():
                     except Exception as e:
                         logger.warning("Auto-resolve failed for %s: %s", ticket["id"], e)
 
+    # When tickets were merged, update other review branches with latest base
+    if synced:
+        from claude_hub.routers.webhooks import _update_review_branches
+        for merged_id in synced:
+            merged_ticket = await redis_client.get_ticket(merged_id)
+            if merged_ticket:
+                base = merged_ticket.get("base_branch", "main")
+                pr_num = merged_ticket.get("pr_number", 0)
+                import asyncio
+                asyncio.create_task(_update_review_branches(pr_num, base))
+
     return {"synced": synced}
 
 
