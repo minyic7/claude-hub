@@ -84,8 +84,8 @@ async def _handle_pr_review(payload: dict) -> dict:
 
     logger.info("PR #%d review %s by %s (action: %s)", pr_number, review_state, reviewer, action)
 
-    # Find ticket with this PR number in review/merging states
-    for status in ("review", "merging"):
+    # Find ticket with this PR number across all active statuses
+    for status in ("review", "merging", "failed", "in_progress", "verifying", "reviewing"):
         tickets = await redis_client.list_tickets(status)
         for ticket in tickets:
             if ticket.get("pr_number") == pr_number:
@@ -93,8 +93,22 @@ async def _handle_pr_review(payload: dict) -> dict:
                     # Review dismissed — clear review status
                     review_info: dict = {"review_status": "", "reviewer": ""}
                 elif review_state == "COMMENTED":
-                    # Comment-only reviews don't affect merge gate
-                    return {"status": "ignored", "reason": "comment only"}
+                    # Comment-only reviews — append as note but don't change merge gate
+                    review_body = payload.get("review", {}).get("body", "").strip()
+                    if review_body:
+                        from claude_hub.services.ticket_service import append_ticket_note
+                        await append_ticket_note(
+                            ticket["id"], "review",
+                            f"GitHub review comment by {reviewer}: {review_body}",
+                            author=reviewer,
+                        )
+                        updated = await redis_client.get_ticket(ticket["id"])
+                        await broadcast({
+                            "type": "ticket_updated",
+                            "ticket_id": ticket["id"],
+                            "data": updated,
+                        })
+                    return {"status": "noted", "ticket_id": ticket["id"], "review_state": review_state}
                 else:
                     review_info = {
                         "review_status": review_state.lower(),
