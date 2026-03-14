@@ -262,8 +262,8 @@ export function TicketDetail({ ticket, activities, allTickets, onClose, onDelete
       onTouchEnd={handleTouchEnd}
       className={
         isMobile
-          ? 'fixed inset-0 z-50 flex flex-col bg-[var(--color-bg-panel)] animate-slide-up'
-          : 'detail-panel flex w-[420px] shrink-0 flex-col border-l border-[var(--color-border)] bg-[var(--color-bg-panel)]'
+          ? 'fixed inset-0 z-50 flex flex-col overflow-hidden bg-[var(--color-bg-panel)] animate-slide-up'
+          : 'detail-panel flex w-[420px] shrink-0 flex-col overflow-hidden border-l border-[var(--color-border)] bg-[var(--color-bg-panel)]'
       }
     >
       {/* Mobile drag handle */}
@@ -341,6 +341,9 @@ export function TicketDetail({ ticket, activities, allTickets, onClose, onDelete
           </button>
         </div>
       </div>
+
+      {/* Scrollable content area */}
+      <div className="flex-1 overflow-y-auto min-h-0">
 
       {/* Deploy queue banner */}
       {mergeQueueLocked && ticket.status === 'review' && (
@@ -655,13 +658,11 @@ export function TicketDetail({ ticket, activities, allTickets, onClose, onDelete
       />
 
       {/* Activity log */}
-      <div className="flex flex-1 flex-col overflow-hidden p-3">
+      <div className="border-b border-[var(--color-border)] p-3">
         <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
           Activity
         </h3>
-        <div className="flex-1 overflow-y-auto">
-          <ActivityLog events={activities} />
-        </div>
+        <ActivityLog events={activities} />
       </div>
 
       {/* Agent Review Report */}
@@ -673,6 +674,8 @@ export function TicketDetail({ ticket, activities, allTickets, onClose, onDelete
           <AgentReviewReport reviewJson={ticket.agent_review} />
         </div>
       )}
+
+      </div>{/* end scrollable content */}
 
       {/* Message input for active sessions */}
       {(ticket.status === 'in_progress' || ticket.status === 'blocked') && (
