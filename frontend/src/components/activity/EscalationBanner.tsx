@@ -62,7 +62,7 @@ export function EscalationBanner({ ticketId, question }: EscalationBannerProps) 
           type="text"
           value={answer}
           onChange={(e) => setAnswer(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && sendAnswer(answer)}
+          onKeyDown={(e) => e.key === 'Enter' && !e.nativeEvent.isComposing && sendAnswer(answer)}
           placeholder="Or type a custom answer..."
           className="flex-1 rounded-md border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-3 py-1.5 text-sm text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)] focus:border-[var(--color-accent-blue)] focus:outline-none"
         />

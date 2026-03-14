@@ -853,7 +853,7 @@ function NotesSection({
           value={noteText}
           onChange={(e) => onNoteTextChange(e.target.value)}
           placeholder="Add a note..."
-          onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); onAddNote() } }}
+          onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); onAddNote() } }}
           className="flex-1 rounded border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-2.5 py-1.5 text-xs text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)] focus:border-[var(--color-accent-blue)] focus:outline-none"
         />
         <button
