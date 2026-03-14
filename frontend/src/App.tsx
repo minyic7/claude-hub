@@ -8,7 +8,9 @@ import { AppShell } from './components/layout/AppShell'
 import { KanbanBoard } from './components/layout/KanbanBoard'
 import { TicketDetail } from './components/kanban/TicketDetail'
 import { NotificationToast } from './components/common/NotificationToast'
+import { MobileChatView } from './components/common/MobileChatView'
 import { LoginPage } from './components/auth/LoginPage'
+import { useIsMobile } from './hooks/useIsMobile'
 import { api, getToken, setApiErrorHandler } from './lib/api'
 import type { BranchType, Ticket } from './types/ticket'
 
@@ -50,6 +52,7 @@ function AuthedApp() {
 
   const { projects, tickets, activities, connected, lastEscalation, lastTicketNotification, patchTicket } = useWebSocket(wsUrl)
   const { notifications, addNotification, dismiss, markRead, markAllRead, clearAll } = useNotifications()
+  const isMobile = useIsMobile()
   const [openSettingsRequested, setOpenSettingsRequested] = useState(false)
   const [openSettingsTab, setOpenSettingsTab] = useState<string | undefined>()
 
@@ -215,6 +218,13 @@ function AuthedApp() {
       )}
     </AppShell>
     <NotificationToast notifications={notifications} onDismiss={dismiss} />
+    {isMobile && (
+      <MobileChatView
+        tickets={tickets}
+        activities={activities}
+        activeProjectId={activeProjectId}
+      />
+    )}
   </>
   )
 }
