@@ -26,7 +26,7 @@ async def github_webhook(
     #     if not hmac.compare_digest(expected, x_hub_signature_256):
     #         raise HTTPException(403, "Invalid signature")
 
-    if x_github_event not in ("pull_request", "pull_request_review"):
+    if x_github_event not in ("pull_request", "pull_request_review", "pull_request_review_comment"):
         return {"status": "ignored", "event": x_github_event}
 
     try:
@@ -36,6 +36,9 @@ async def github_webhook(
 
     if x_github_event == "pull_request_review":
         return await _handle_pr_review(payload)
+
+    if x_github_event == "pull_request_review_comment":
+        return await _handle_pr_review_comment(payload)
 
     # pull_request event
     action = payload.get("action")
@@ -123,5 +126,39 @@ async def _handle_pr_review(payload: dict) -> dict:
                 })
                 logger.info("Updated review status for ticket %s: %s", ticket["id"], review_state)
                 return {"status": "updated", "ticket_id": ticket["id"], "review_state": review_state}
+
+    return {"status": "no_matching_ticket", "pr_number": pr_number}
+
+
+async def _handle_pr_review_comment(payload: dict) -> dict:
+    """Handle pull_request_review_comment events — individual diff comments."""
+    action = payload.get("action")
+    if action != "created":
+        return {"status": "ignored", "action": action}
+
+    pr_number = payload.get("pull_request", {}).get("number")
+    commenter = payload.get("comment", {}).get("user", {}).get("login", "unknown")
+    body = payload.get("comment", {}).get("body", "").strip()
+    path = payload.get("comment", {}).get("path", "")
+
+    if not pr_number or not body:
+        return {"status": "ignored", "reason": "no PR number or empty comment"}
+
+    logger.info("PR #%d review comment by %s on %s", pr_number, commenter, path)
+
+    for status in ("review", "merging", "failed", "in_progress", "verifying", "reviewing"):
+        tickets = await redis_client.list_tickets(status)
+        for ticket in tickets:
+            if ticket.get("pr_number") == pr_number:
+                from claude_hub.services.ticket_service import append_ticket_note
+                note = f"Review comment by {commenter} on `{path}`:\n{body}" if path else f"Review comment by {commenter}:\n{body}"
+                await append_ticket_note(ticket["id"], "review", note, author=commenter)
+                updated = await redis_client.get_ticket(ticket["id"])
+                await broadcast({
+                    "type": "ticket_updated",
+                    "ticket_id": ticket["id"],
+                    "data": updated,
+                })
+                return {"status": "noted", "ticket_id": ticket["id"]}
 
     return {"status": "no_matching_ticket", "pr_number": pr_number}

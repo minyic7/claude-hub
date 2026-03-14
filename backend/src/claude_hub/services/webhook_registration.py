@@ -11,7 +11,7 @@ from claude_hub.config import settings
 logger = logging.getLogger(__name__)
 
 # Events we want to receive
-WEBHOOK_EVENTS = ["pull_request", "pull_request_review"]
+WEBHOOK_EVENTS = ["pull_request", "pull_request_review", "pull_request_review_comment"]
 
 
 def _parse_owner_repo(repo_url: str) -> tuple[str, str] | None:
