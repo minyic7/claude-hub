@@ -14,16 +14,20 @@ export function useContainerWidth<T extends HTMLElement>(): [React.RefObject<T |
 
     let rafId: number | null = null
     let pending = false
+    // Store latest width in a ref so the RAF callback always uses the most
+    // recent value, even if multiple ResizeObserver events fire before the
+    // next animation frame.
+    let latestWidth = 0
 
     const observer = new ResizeObserver((entries) => {
       const entry = entries[0]
       if (!entry) return
-      const newWidth = entry.contentRect.width
+      latestWidth = entry.contentRect.width
 
       if (!pending) {
         pending = true
         rafId = requestAnimationFrame(() => {
-          setWidth(newWidth)
+          setWidth(latestWidth)
           pending = false
         })
       }

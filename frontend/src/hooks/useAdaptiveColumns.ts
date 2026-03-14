@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import type { KanbanColumn } from './useTickets'
 import type { TicketStatus } from '../types/ticket'
 
@@ -20,7 +20,10 @@ export function useAdaptiveColumns(columns: KanbanColumn[], containerWidth: numb
   const [activeTab, setActiveTabRaw] = useState<TicketStatus | null>(() => {
     try {
       const stored = localStorage.getItem(STORAGE_KEY)
-      return stored as TicketStatus | null
+      if (stored && COLUMN_PRIORITY.includes(stored as TicketStatus)) {
+        return stored as TicketStatus
+      }
+      return null
     } catch {
       return null
     }
@@ -42,43 +45,42 @@ export function useAdaptiveColumns(columns: KanbanColumn[], containerWidth: numb
     }
   }, [])
 
-  // When visibleCount increases, check if active tab column is now naturally visible
-  useEffect(() => {
-    if (visibleCount > prevVisibleCountRef.current && activeTab) {
-      // Determine which columns would be visible without the tab swap
-      const prioritized = [...COLUMN_PRIORITY]
-      const naturallyVisible = prioritized.slice(0, visibleCount)
-      if (naturallyVisible.includes(activeTab)) {
-        setActiveTab(null)
+  // When visibleCount increases, clear activeTab if that column is now naturally visible.
+  // This effect uses a state updater so clearance is applied before the next render's
+  // memoization, preventing the same column from appearing in both board and tab bar.
+  const currentVisibleCount = visibleCount
+  if (currentVisibleCount > prevVisibleCountRef.current) {
+    const naturallyVisible = COLUMN_PRIORITY.slice(0, currentVisibleCount)
+    setActiveTabRaw((prev) => {
+      if (prev && naturallyVisible.includes(prev)) {
+        try { localStorage.removeItem(STORAGE_KEY) } catch { /* */ }
+        return null
       }
-    }
-    prevVisibleCountRef.current = visibleCount
-  }, [visibleCount, activeTab, setActiveTab])
+      return prev
+    })
+  }
+  prevVisibleCountRef.current = currentVisibleCount
 
+  // Invariant: exactly one column can be swapped in via activeTab.
+  // When activeTab is set and it's a folded column, it replaces the lowest-priority
+  // visible column (the last one in the visibleByPriority list).
   const { visibleColumns, foldedColumns } = useMemo(() => {
     if (visibleCount >= columns.length) {
       return { visibleColumns: columns, foldedColumns: [] }
     }
 
-    // Columns sorted by priority (highest priority first = kept visible longest)
-    const prioritized = [...COLUMN_PRIORITY]
+    const visibleStatuses = new Set(COLUMN_PRIORITY.slice(0, visibleCount))
+    const foldedStatuses = new Set(COLUMN_PRIORITY.slice(visibleCount))
 
-    // Pick the top `visibleCount` columns by priority
-    const visibleStatuses = new Set(prioritized.slice(0, visibleCount))
-    const foldedStatuses = new Set(prioritized.slice(visibleCount))
-
-    // If there's an active tab, swap it in: add active tab to visible, remove the lowest-priority visible column
+    // Swap activeTab into visible set if it's currently folded
     if (activeTab && foldedStatuses.has(activeTab)) {
-      // Find the lowest-priority column among visible ones (last in priority order that's visible)
-      const visibleByPriority = prioritized.filter((s) => visibleStatuses.has(s))
+      // Displace the lowest-priority visible column (rightmost in priority order)
+      const visibleByPriority = COLUMN_PRIORITY.filter((s) => visibleStatuses.has(s))
       const displaced = visibleByPriority[visibleByPriority.length - 1]
       visibleStatuses.delete(displaced)
       visibleStatuses.add(activeTab)
       foldedStatuses.delete(activeTab)
       foldedStatuses.add(displaced)
-    } else if (activeTab && visibleStatuses.has(activeTab)) {
-      // Active tab is already visible naturally, clear it
-      // (handled via effect above, but also handle here for safety)
     }
 
     // Maintain original column order for display
@@ -88,9 +90,11 @@ export function useAdaptiveColumns(columns: KanbanColumn[], containerWidth: numb
     return { visibleColumns: visible, foldedColumns: folded }
   }, [columns, visibleCount, activeTab])
 
+  // Clicking a tab always activates it (no toggle). This ensures the user can
+  // always see the column they clicked on.
   const handleTabClick = useCallback((status: TicketStatus) => {
-    setActiveTab(activeTab === status ? null : status)
-  }, [activeTab, setActiveTab])
+    setActiveTab(status)
+  }, [setActiveTab])
 
   return {
     visibleColumns,
