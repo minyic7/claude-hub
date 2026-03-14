@@ -1170,13 +1170,6 @@ async def merge_ticket(ticket_id: str):
     ci = get_ci_status(clone_path, branch, gh_token, pr_number=pr_number)
 
     if ci["status"] == "failed":
-        from claude_hub.services.ci_check import get_failed_log
-        fail_log = get_failed_log(clone_path, gh_token)
-        reason = ci["summary"]
-        if fail_log:
-            reason = f"{reason}\n\n--- CI Log (last 80 lines) ---\n{fail_log}"
-        # Store failure reason so retry can use it
-        await redis_client.update_ticket_fields(ticket_id, {"failed_reason": reason})
         raise HTTPException(400, f"CI check failed: {ci['summary']}")
 
     if ci["status"] == "pending":

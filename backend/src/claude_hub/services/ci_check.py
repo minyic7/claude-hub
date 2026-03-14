@@ -183,23 +183,29 @@ async def wait_for_ci_and_merge(
 
         if ci["status"] == "passed":
             try:
+                from claude_hub.services import session_manager
+                from claude_hub.routers.tickets import process_queue
                 await merge_pr(ticket_id, clone_path, pr_number, gh_token)
                 updated = await transition(
                     ticket_id, TicketStatus.MERGED,
                     completed_at=datetime.now(timezone.utc).isoformat(),
                 )
+                session_manager.cleanup_session(ticket_id)
                 clone_manager.cleanup_clone(ticket_id)
-                await redis_client.update_ticket_fields(ticket_id, {"clone_path": ""})
+                await redis_client.update_ticket_fields(ticket_id, {"clone_path": "", "tmux_session": ""})
                 updated = await redis_client.get_ticket(ticket_id)
                 await broadcast({"type": "ticket_updated", "ticket_id": ticket_id, "data": updated})
                 logger.info("CI passed, merged ticket %s", ticket_id)
+                await process_queue()
             except Exception as e:
                 logger.error("Merge failed for %s: %s", ticket_id, e)
                 updated = await transition(ticket_id, TicketStatus.FAILED, failed_reason=str(e))
                 await broadcast({"type": "ticket_updated", "ticket_id": ticket_id, "data": updated})
+                await process_queue()
             return
 
         if ci["status"] == "failed":
+            from claude_hub.routers.tickets import process_queue
             # Fetch detailed failure logs
             fail_log = get_failed_log(clone_path, gh_token)
             reason = ci["summary"]
@@ -208,10 +214,13 @@ async def wait_for_ci_and_merge(
             updated = await transition(ticket_id, TicketStatus.FAILED, failed_reason=reason)
             await broadcast({"type": "ticket_updated", "ticket_id": ticket_id, "data": updated})
             logger.warning("CI failed for %s: %s", ticket_id, ci["summary"])
+            await process_queue()
             return
 
     # Timeout
+    from claude_hub.routers.tickets import process_queue
     reason = f"CI did not complete within {CI_POLL_TIMEOUT}s"
     updated = await transition(ticket_id, TicketStatus.FAILED, failed_reason=reason)
     await broadcast({"type": "ticket_updated", "ticket_id": ticket_id, "data": updated})
     logger.warning("CI timeout for %s", ticket_id)
+    await process_queue()
