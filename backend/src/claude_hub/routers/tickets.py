@@ -1269,7 +1269,25 @@ async def sync_pr_reviews(ticket_id: str):
     updated = await redis_client.get_ticket(ticket_id)
     await broadcast({"type": "ticket_updated", "ticket_id": ticket_id, "data": updated})
 
-    return {"synced": synced_count, "unresolved_threads": len(threads)}
+    # Auto-trigger request-changes if unresolved threads and setting enabled
+    auto_dispatched = False
+    if threads and updated and updated.get("status") == "review":
+        from claude_hub.routers.settings_router import get_agent_settings
+        agent_cfg = await get_agent_settings()
+        if agent_cfg.get("auto_resolve_conversations"):
+            feedback_lines = ["Address these unresolved review conversations:\n"]
+            for t in threads:
+                path_info = f" on `{t['path']}`" if t.get("path") else ""
+                feedback_lines.append(f"- {t['author']}{path_info}: {t['body']}")
+            feedback = "\n".join(feedback_lines)
+            try:
+                await request_changes(ticket_id, {"feedback": feedback})
+                auto_dispatched = True
+                logger.info("Auto-dispatched request-changes for ticket %s (%d unresolved threads)", ticket_id, len(threads))
+            except Exception as e:
+                logger.warning("Auto request-changes failed for %s: %s", ticket_id, e)
+
+    return {"synced": synced_count, "unresolved_threads": len(threads), "auto_dispatched": auto_dispatched}
 
 
 def _get_unresolved_threads(owner: str, repo: str, pr_number: int, gh_token: str) -> list[dict]:
