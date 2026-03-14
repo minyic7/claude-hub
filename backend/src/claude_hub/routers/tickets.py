@@ -669,7 +669,7 @@ async def _tail_and_broadcast(ticket_id: str, log_path: str) -> None:
             import subprocess
             subprocess.run(["git", "fetch", "origin"], cwd=clone_path, capture_output=True)
 
-            result = verify_agent_work(clone_path, ticket["branch"], ticket["base_branch"])
+            result = verify_agent_work(clone_path, ticket["branch"], ticket["base_branch"], gh_token)
             logger.info("Verification for %s: %s", ticket_id, result)
 
             if result.passed:

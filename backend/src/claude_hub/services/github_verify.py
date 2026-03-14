@@ -105,8 +105,13 @@ def verify_agent_work(
     clone_path: str,
     branch: str,
     base_branch: str,
+    gh_token: str = "",
 ) -> VerifyResult:
     """Verify that the agent produced commits and a PR on the expected branch."""
+    env = None
+    if gh_token:
+        import os
+        env = {**os.environ, "GH_TOKEN": gh_token}
 
     # 1. Check commits ahead of base
     result = subprocess.run(
@@ -126,7 +131,7 @@ def verify_agent_work(
     try:
         result = subprocess.run(
             ["gh", "pr", "list", "--head", branch, "--json", "number,url,state", "--limit", "1"],
-            cwd=clone_path, capture_output=True, text=True,
+            cwd=clone_path, capture_output=True, text=True, env=env,
         )
         if result.returncode == 0 and result.stdout.strip():
             prs = json.loads(result.stdout)
