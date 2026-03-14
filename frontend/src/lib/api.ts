@@ -148,6 +148,8 @@ export const api = {
       }),
     activity: (id: string, since = 0) =>
       request<Record<string, unknown>[]>(`/tickets/${id}/activity?since=${since}`),
+    clearActivity: (id: string) =>
+      request<{ status: string }>(`/tickets/${id}/activity`, { method: 'DELETE' }),
     syncReviewStatus: () =>
       request<{ synced: string[] }>('/tickets/sync-review-status', { method: 'POST' }),
     syncReviews: (id: string) =>
