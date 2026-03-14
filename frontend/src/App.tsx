@@ -186,6 +186,7 @@ function AuthedApp() {
       onSettingsOpened={() => { setOpenSettingsRequested(false); setOpenSettingsTab(undefined) }}
       deployState={deployState}
       deployRuns={deployRuns}
+      detailOpen={!!currentTicket}
     >
       <KanbanBoard
         columns={columns}
