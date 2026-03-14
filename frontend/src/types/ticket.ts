@@ -8,6 +8,7 @@ export interface TicketNote {
 export type BranchType = 'feature' | 'bugfix' | 'hotfix' | 'chore' | 'refactor' | 'docs' | 'test'
 
 export type TicketStatus =
+  | 'po_pending'
   | 'todo'
   | 'queued'
   | 'in_progress'
@@ -58,6 +59,8 @@ export interface Ticket {
   has_conflicts?: boolean
   priority: number
   archived: boolean
+  po_proposed?: boolean
+  po_rationale?: string
   tmux_session: string | null
   agent_cost_usd: number
   agent_tokens: number

@@ -12,3 +12,7 @@ export type WSEvent =
   | { type: 'project_updated'; data: Project }
   | { type: 'project_deleted'; project_id: string }
   | { type: 'activity_cleared'; ticket_id: string }
+  | { type: 'po_status'; project_id: string; status: string; cycle_n: number }
+  | { type: 'po_message'; project_id: string; message: string; cycle_n: number }
+  | { type: 'po_alert'; project_id: string; message: string }
+  | { type: 'ticket_created'; ticket_id: string; data: Ticket }

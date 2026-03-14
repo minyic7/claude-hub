@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 
 interface BadgeProps {
-  color?: 'blue' | 'green' | 'red' | 'yellow' | 'gray'
+  color?: 'blue' | 'green' | 'red' | 'yellow' | 'gray' | 'purple'
   children: ReactNode
 }
 
@@ -11,6 +11,7 @@ const colorMap = {
   red: 'bg-[var(--color-accent-red)]/15 text-[var(--color-accent-red)]',
   yellow: 'bg-[var(--color-accent-yellow)]/15 text-[var(--color-accent-yellow)]',
   gray: 'bg-[var(--color-text-muted)]/15 text-[var(--color-text-muted)]',
+  purple: 'bg-purple-500/15 text-purple-400',
 }
 
 export function Badge({ color = 'gray', children }: BadgeProps) {

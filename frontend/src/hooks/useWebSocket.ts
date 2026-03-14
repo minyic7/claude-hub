@@ -16,6 +16,7 @@ export interface TicketNotification {
 let notifSeq = 0
 
 const statusLabels: Partial<Record<TicketStatus, string>> = {
+  po_pending: 'pending PO approval',
   in_progress: 'started',
   review: 'ready for review',
   merging: 'merging',
@@ -216,6 +217,35 @@ export function useWebSocket(url: string): UseWebSocketReturn {
         setLastEscalation({ ticketId: msg.ticket_id, question: msg.data.question })
         break
       case 'cost_update':
+        break
+
+      case 'ticket_created': {
+        const newTicket = msg.data
+        setTickets((prev) => {
+          const next = new Map(prev)
+          next.set(msg.ticket_id, newTicket)
+          return next
+        })
+        prevTicketsRef.current.set(msg.ticket_id, newTicket)
+        if (initDone.current) {
+          const title = newTicket.title || msg.ticket_id.slice(0, 8)
+          emitNotification(msg.ticket_id, title, 'info', `New ticket: ${title}`)
+        }
+        break
+      }
+
+      case 'po_status':
+      case 'po_message':
+        // PO status/message events — currently handled passively via notifications
+        if (initDone.current && msg.type === 'po_message') {
+          emitNotification('', 'PO Agent', 'info', `PO: ${msg.message}`)
+        }
+        break
+
+      case 'po_alert':
+        if (initDone.current) {
+          emitNotification('', 'PO Agent', 'warning', `PO Alert: ${msg.message}`)
+        }
         break
     }
   }, [emitNotification])

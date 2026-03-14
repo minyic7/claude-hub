@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
-import { LogOut, Server, Bot, User } from 'lucide-react'
+import { LogOut, Server, Bot, User, Crown } from 'lucide-react'
 import { Modal } from '../common/Modal'
-import { api, clearToken, type AgentSettings, type AgentProvider } from '../../lib/api'
+import { api, clearToken, type AgentSettings, type AgentProvider, type POSettings } from '../../lib/api'
 
 const PROVIDERS: { id: AgentProvider; label: string; description: string }[] = [
   { id: 'anthropic', label: 'Anthropic', description: 'Claude models via Anthropic API' },
@@ -21,21 +21,34 @@ const OPENAI_MODELS = [
   { id: 'o3', label: 'o3', cost: '$$$' },
 ]
 
-type Tab = 'system' | 'agent' | 'account'
+type Tab = 'system' | 'agent' | 'po' | 'account'
 
 const TABS: { id: Tab; label: string; icon: typeof Server }[] = [
   { id: 'system', label: 'System', icon: Server },
   { id: 'agent', label: 'TicketAgent', icon: Bot },
+  { id: 'po', label: 'PO Agent', icon: Crown },
   { id: 'account', label: 'Account', icon: User },
 ]
+
+const DEFAULT_PO: POSettings = {
+  enabled: false,
+  mode: 'semi_auto',
+  cycle_minutes: 30,
+  max_open_tickets: 5,
+  max_daily_tickets: 10,
+  observe_model: 'claude-sonnet-4-6',
+  think_model: 'claude-opus-4-6',
+  compaction_threshold: 20,
+}
 
 interface Props {
   open: boolean
   onClose: () => void
   initialTab?: Tab
+  activeProjectId?: string | null
 }
 
-export function AgentSettingsModal({ open, onClose, initialTab }: Props) {
+export function AgentSettingsModal({ open, onClose, initialTab, activeProjectId }: Props) {
   const [settings, setSettings] = useState<AgentSettings | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -43,6 +56,10 @@ export function AgentSettingsModal({ open, onClose, initialTab }: Props) {
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null)
   const [activeTab, setActiveTab] = useState<Tab>(initialTab || 'system')
+
+  // PO settings (per-project)
+  const [poSettings, setPoSettings] = useState<POSettings>(DEFAULT_PO)
+  const [poLoaded, setPoLoaded] = useState(false)
 
   // Sync initialTab when modal opens
   useEffect(() => {
@@ -54,17 +71,28 @@ export function AgentSettingsModal({ open, onClose, initialTab }: Props) {
       setError('')
       setSaved(false)
       api.settings.getAgent().then(setSettings).catch(() => setError('Failed to load settings'))
+      // Load PO settings for active project
+      if (activeProjectId) {
+        setPoLoaded(false)
+        api.po.getSettings(activeProjectId)
+          .then((s) => { setPoSettings(s); setPoLoaded(true) })
+          .catch(() => { setPoSettings(DEFAULT_PO); setPoLoaded(true) })
+      }
     }
-  }, [open])
+  }, [open, activeProjectId])
 
   const handleSave = async () => {
-    if (!settings) return
     setSaving(true)
     setError('')
     setSaved(false)
     try {
-      const updated = await api.settings.updateAgent(settings)
-      setSettings(updated)
+      if (activeTab === 'po' && activeProjectId) {
+        const updated = await api.po.updateSettings(activeProjectId, poSettings)
+        setPoSettings(updated)
+      } else if (settings) {
+        const updated = await api.settings.updateAgent(settings)
+        setSettings(updated)
+      }
       setSaved(true)
       setTimeout(() => setSaved(false), 2000)
     } catch {
@@ -400,6 +428,122 @@ export function AgentSettingsModal({ open, onClose, initialTab }: Props) {
               </>
             )}
 
+            {/* ── PO Agent Tab ── */}
+            {activeTab === 'po' && (
+              !activeProjectId ? (
+                <p className="text-sm text-[var(--color-text-muted)]">Select a project to configure PO Agent settings.</p>
+              ) : !poLoaded ? (
+                <p className="text-sm text-[var(--color-text-muted)]">Loading...</p>
+              ) : (
+                <>
+                  {/* Enabled */}
+                  <label className="flex items-center justify-between">
+                    <span className="text-sm text-[var(--color-text-primary)]">PO Agent Enabled</span>
+                    <button
+                      onClick={() => setPoSettings({ ...poSettings, enabled: !poSettings.enabled })}
+                      className={`relative h-6 w-11 rounded-full transition-colors ${
+                        poSettings.enabled ? 'bg-[var(--color-accent-blue)]' : 'bg-[var(--color-border)]'
+                      }`}
+                    >
+                      <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
+                        poSettings.enabled ? 'left-[22px]' : 'left-0.5'
+                      }`} />
+                    </button>
+                  </label>
+
+                  {/* Mode */}
+                  <div>
+                    <label className="mb-1 block text-sm text-[var(--color-text-primary)]">Approval Mode</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {(['semi_auto', 'full_auto'] as const).map((m) => (
+                        <button
+                          key={m}
+                          onClick={() => setPoSettings({ ...poSettings, mode: m })}
+                          className={`rounded-md border px-3 py-2 text-xs transition-colors ${
+                            poSettings.mode === m
+                              ? 'border-[var(--color-accent-blue)] bg-[var(--color-accent-blue)]/10 text-[var(--color-accent-blue)]'
+                              : 'border-[var(--color-border)] text-[var(--color-text-muted)] hover:border-[var(--color-text-muted)]'
+                          }`}
+                        >
+                          <div className="font-medium">{m === 'semi_auto' ? 'Semi-Auto' : 'Full Auto'}</div>
+                          <div className="mt-0.5 text-[10px] leading-tight">
+                            {m === 'semi_auto' ? 'Tickets require approval' : 'Tickets created directly'}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Cycle interval */}
+                  <div>
+                    <label className="mb-1 flex items-center justify-between text-sm text-[var(--color-text-primary)]">
+                      <span>Cycle Interval</span>
+                      <span className="font-mono text-xs text-[var(--color-text-muted)]">{poSettings.cycle_minutes} min</span>
+                    </label>
+                    <input
+                      type="range"
+                      min={5}
+                      max={120}
+                      step={5}
+                      value={poSettings.cycle_minutes}
+                      onChange={(e) => setPoSettings({ ...poSettings, cycle_minutes: Number(e.target.value) })}
+                      className="w-full accent-[var(--color-accent-blue)]"
+                    />
+                    <div className="flex justify-between text-[10px] text-[var(--color-text-muted)]">
+                      <span>Frequent (5 min)</span>
+                      <span>Relaxed (2 hr)</span>
+                    </div>
+                  </div>
+
+                  {/* Capacity */}
+                  <div>
+                    <label className="mb-1 block text-sm text-[var(--color-text-primary)]">Capacity Limits</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <span className="text-[10px] text-[var(--color-text-muted)]">Max Open Tickets</span>
+                        <input
+                          type="number"
+                          min={1}
+                          max={20}
+                          value={poSettings.max_open_tickets}
+                          onChange={(e) => setPoSettings({ ...poSettings, max_open_tickets: Number(e.target.value) })}
+                          className="w-full rounded border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2 py-1 text-xs text-[var(--color-text-primary)]"
+                        />
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-[var(--color-text-muted)]">Max Daily Tickets</span>
+                        <input
+                          type="number"
+                          min={1}
+                          max={50}
+                          value={poSettings.max_daily_tickets}
+                          onChange={(e) => setPoSettings({ ...poSettings, max_daily_tickets: Number(e.target.value) })}
+                          className="w-full rounded border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2 py-1 text-xs text-[var(--color-text-primary)]"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Compaction threshold */}
+                  <div>
+                    <label className="mb-1 flex items-center justify-between text-sm text-[var(--color-text-primary)]">
+                      <span>Compaction Threshold</span>
+                      <span className="font-mono text-xs text-[var(--color-text-muted)]">{poSettings.compaction_threshold} cycles</span>
+                    </label>
+                    <input
+                      type="range"
+                      min={5}
+                      max={50}
+                      step={5}
+                      value={poSettings.compaction_threshold}
+                      onChange={(e) => setPoSettings({ ...poSettings, compaction_threshold: Number(e.target.value) })}
+                      className="w-full accent-[var(--color-accent-blue)]"
+                    />
+                  </div>
+                </>
+              )
+            )}
+
             {/* ── Account Tab ── */}
             {activeTab === 'account' && (
               <div className="flex flex-col items-start gap-4">
@@ -417,7 +561,7 @@ export function AgentSettingsModal({ open, onClose, initialTab }: Props) {
             )}
           </div>
 
-          {/* Footer — save/cancel (only for system & agent tabs) */}
+          {/* Footer — save/cancel (only for system, agent & po tabs) */}
           {activeTab !== 'account' && (
             <div className="flex items-center justify-end gap-2 border-t border-[var(--color-border)] pt-3 mt-3">
               {error && <span className="text-xs text-[var(--color-accent-red)] mr-auto">{error}</span>}

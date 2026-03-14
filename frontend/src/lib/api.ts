@@ -177,6 +177,32 @@ export const api = {
     testConnection: () =>
       request<{ ok: boolean; model: string; message: string }>('/settings/agent/test', { method: 'POST' }),
   },
+  po: {
+    getSettings: (projectId: string) =>
+      request<POSettings>(`/projects/${projectId}/po/settings`),
+    updateSettings: (projectId: string, data: POSettings) =>
+      request<POSettings>(`/projects/${projectId}/po/settings`, {
+        method: 'PUT', body: JSON.stringify(data),
+      }),
+    status: (projectId: string) =>
+      request<POStatus>(`/projects/${projectId}/po/status`),
+    run: (projectId: string) =>
+      request<{ status: string }>(`/projects/${projectId}/po/run`, { method: 'POST' }),
+    chat: (projectId: string, message: string) =>
+      request<{ response: string }>(`/projects/${projectId}/po/chat`, {
+        method: 'POST', body: JSON.stringify({ message }),
+      }),
+    chatHistory: (projectId: string, limit = 50) =>
+      request<{ messages: POMessage[] }>(`/projects/${projectId}/po/chat/history?limit=${limit}`),
+    report: (projectId: string) =>
+      request<{ report: string; generated_at: string | null }>(`/projects/${projectId}/po/report`),
+    requestReport: (projectId: string) =>
+      request<{ status: string }>(`/projects/${projectId}/po/report`, { method: 'POST' }),
+    approve: (ticketId: string) =>
+      request<Ticket>(`/tickets/${ticketId}/po/approve`, { method: 'POST' }),
+    reject: (ticketId: string) =>
+      request<{ status: string }>(`/tickets/${ticketId}/po/reject`, { method: 'POST' }),
+  },
   kanban: {
     start: (projectId: string) =>
       request<KanbanStatus>(`/projects/${projectId}/kanban/start`, { method: 'POST' }),
@@ -225,6 +251,29 @@ export interface CIStatus {
   status: 'passed' | 'failed' | 'pending' | 'no_ci'
   checks: CICheck[]
   summary: string
+}
+
+export interface POSettings {
+  enabled: boolean
+  mode: 'semi_auto' | 'full_auto'
+  cycle_minutes: number
+  max_open_tickets: number
+  max_daily_tickets: number
+  observe_model: string
+  think_model: string
+  compaction_threshold: number
+}
+
+export interface POStatus {
+  running: boolean
+  status: string
+  cycle_n: number
+}
+
+export interface POMessage {
+  role: 'user' | 'assistant' | 'system'
+  content: string
+  timestamp: string
 }
 
 export type AgentProvider = 'anthropic' | 'openai' | 'openai_compatible'

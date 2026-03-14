@@ -320,7 +320,7 @@ export function AppShell({
         />
       )}
       <CreateProjectModal open={showCreateProject} onClose={() => setShowCreateProject(false)} />
-      <AgentSettingsModal open={showSettings} onClose={() => setShowSettings(false)} initialTab={openSettingsTab as 'system' | 'agent' | 'account'} />
+      <AgentSettingsModal open={showSettings} onClose={() => setShowSettings(false)} initialTab={openSettingsTab as 'system' | 'agent' | 'po' | 'account'} activeProjectId={activeProjectId} />
 
       {/* Mobile FAB — hidden when any bottom sheet is open */}
       {isMobile && activeProjectId && !detailOpen && !showCreateTicket && (
