@@ -550,6 +550,16 @@ export function TicketDetail({ ticket, activities, allTickets, onClose, onDelete
           <span className="flex items-center gap-1 text-[var(--color-text-muted)]">
             <GitBranch size={11} /> {ticket.branch}
           </span>
+          {ticket.pr_url && (
+            <a
+              href={ticket.pr_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1 text-[var(--color-accent-blue)] hover:underline"
+            >
+              PR #{ticket.pr_number} <ExternalLink size={10} />
+            </a>
+          )}
         </div>
         {ticket.description && (
           <p className="mt-2 text-xs text-[var(--color-text-secondary)]">{ticket.description}</p>
@@ -648,6 +658,16 @@ export function TicketDetail({ ticket, activities, allTickets, onClose, onDelete
         </div>
       )}
 
+      {/* Agent Review Report */}
+      {ticket.agent_review && (
+        <div className="border-b border-[var(--color-border)] px-3 py-2">
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
+            Agent Review
+          </h3>
+          <AgentReviewReport reviewJson={ticket.agent_review} />
+        </div>
+      )}
+
       {/* Notes */}
       <NotesSection
         notes={parseNotes(ticket.notes)}
@@ -665,16 +685,6 @@ export function TicketDetail({ ticket, activities, allTickets, onClose, onDelete
         <ActivityLog events={activities} />
       </div>
 
-      {/* Agent Review Report */}
-      {ticket.agent_review && (
-        <div className="border-t border-[var(--color-border)] px-3 py-2">
-          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
-            Agent Review
-          </h3>
-          <AgentReviewReport reviewJson={ticket.agent_review} />
-        </div>
-      )}
-
       </div>{/* end scrollable content */}
 
       {/* Message input for active sessions */}
@@ -683,21 +693,11 @@ export function TicketDetail({ ticket, activities, allTickets, onClose, onDelete
       )}
 
       {/* Footer */}
-      <div className="border-t border-[var(--color-border)] p-3 text-xs text-[var(--color-text-muted)]">
-        {ticket.tmux_session && (
+      {ticket.tmux_session && (
+        <div className="border-t border-[var(--color-border)] px-3 py-2 text-xs text-[var(--color-text-muted)]">
           <p className="font-mono">tmux attach -t {ticket.tmux_session}</p>
-        )}
-        {ticket.pr_url && (
-          <a
-            href={ticket.pr_url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="mt-1 flex items-center gap-1 text-[var(--color-accent-blue)] hover:underline"
-          >
-            PR #{ticket.pr_number} <ExternalLink size={10} />
-          </a>
-        )}
-      </div>
+        </div>
+      )}
 
       <ConfirmationDialog
         open={confirmDelete}
