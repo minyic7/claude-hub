@@ -175,6 +175,16 @@ async def get_activity(ticket_id: str, since: int = Query(0)):
     return await redis_client.get_activity(ticket_id, since)
 
 
+@router.delete("/{ticket_id}/activity")
+async def clear_activity(ticket_id: str):
+    ticket = await redis_client.get_ticket(ticket_id)
+    if not ticket:
+        raise HTTPException(404, "Ticket not found")
+    await redis_client.clear_activity(ticket_id)
+    await broadcast({"type": "activity_cleared", "ticket_id": ticket_id})
+    return {"status": "cleared"}
+
+
 @router.post("/{ticket_id}/start")
 async def start_ticket(ticket_id: str):
     import asyncio

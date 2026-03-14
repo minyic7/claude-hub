@@ -231,6 +231,12 @@ async def get_recent_activity(ticket_id: str, count: int = 50) -> list[dict]:
     return [json.loads(item) for item in raw]
 
 
+async def clear_activity(ticket_id: str) -> bool:
+    """Delete all activity events for a ticket."""
+    r = _r()
+    return bool(await r.delete(f"ticket:{ticket_id}:activity"))
+
+
 # ─── Queue helpers ──────────────────────────────────────────────────────────
 
 QUEUE_KEY = "tickets:queue"
