@@ -192,7 +192,7 @@ function AuthedApp() {
       deployRuns={deployRuns}
       detailOpen={!!currentTicket}
     >
-      {activeProjectId && <POBar projectId={activeProjectId} />}
+      {activeProjectId && <POBar projectId={activeProjectId} tickets={tickets} />}
       <KanbanBoard
         columns={columns}
         activities={activities}

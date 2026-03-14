@@ -256,12 +256,18 @@ export interface CIStatus {
 export interface POSettings {
   enabled: boolean
   mode: 'semi_auto' | 'full_auto'
-  cycle_minutes: number
-  max_open_tickets: number
-  max_daily_tickets: number
+  max_active_tickets: number
+  max_pending_approval: number
+  max_new_per_cycle: number
+  report_interval_hours: number
+  deployment_type: 'auto' | 'github_pages' | 'docker' | 'docs_only' | 'none'
+  docs_format: 'html' | 'md' | 'auto'
+  git_history_threshold: number
+  git_history_days: number
   observe_model: string
   think_model: string
-  compaction_threshold: number
+  think_budget_tokens: number
+  compaction_model: string
 }
 
 export interface POStatus {
