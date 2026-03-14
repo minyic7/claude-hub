@@ -20,10 +20,10 @@ logger = logging.getLogger(__name__)
 
 
 async def _pr_poll_loop() -> None:
-    """Background loop: check review ticket PR statuses every 30 seconds."""
+    """Background loop: check review ticket PR statuses every 10 seconds."""
     while True:
         try:
-            await asyncio.sleep(30)
+            await asyncio.sleep(10)
             await tickets.sync_review_status()
         except asyncio.CancelledError:
             break

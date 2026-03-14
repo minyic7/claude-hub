@@ -64,6 +64,7 @@ export interface Ticket {
   agent_review?: string | null
   review_status?: string | null
   reviewer?: string | null
+  unresolved_thread_count?: number
   notes?: TicketNote[]
   created_at: string
   started_at: string | null

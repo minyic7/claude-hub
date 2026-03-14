@@ -67,6 +67,8 @@ export function TicketDetail({ ticket, activities, allTickets, onClose, onDelete
   const [confirmRevert, setConfirmRevert] = useState(false)
   const [reverting, setReverting] = useState(false)
   const [duplicating, setDuplicating] = useState(false)
+  const [syncingReviews, setSyncingReviews] = useState(false)
+  const unresolvedCount = ticket.unresolved_thread_count ?? null
   const [noteText, setNoteText] = useState('')
   const [addingNote, setAddingNote] = useState(false)
 
@@ -106,9 +108,17 @@ export function TicketDetail({ ticket, activities, allTickets, onClose, onDelete
     try { await api.tickets.markReview(ticket.id) } catch { /* global handler */ }
   }
 
+  const handleSyncReviews = async () => {
+    setSyncingReviews(true)
+    try { await api.tickets.syncReviews(ticket.id) } catch { /* global handler */ }
+    finally { setSyncingReviews(false) }
+  }
+
   const handleMerge = async () => {
-    onMergeInitiated?.()
-    try { await api.tickets.merge(ticket.id) } catch { /* global handler */ }
+    try {
+      await api.tickets.merge(ticket.id)
+      onMergeInitiated?.()
+    } catch { /* global handler */ }
   }
 
   const handleRequestChanges = async () => {
@@ -299,6 +309,11 @@ export function TicketDetail({ ticket, activities, allTickets, onClose, onDelete
               <Button size="sm" variant="secondary" onClick={handleMarkReview}>
                 Mark Review
               </Button>
+              {ticket.pr_number && (
+                <Button size="sm" variant="secondary" onClick={handleSyncReviews} disabled={syncingReviews}>
+                  <RefreshCw size={12} className={`mr-1 ${syncingReviews ? 'animate-spin' : ''}`} /> Sync
+                </Button>
+              )}
               <Button size="sm" onClick={handleRetry}>
                 <RotateCcw size={12} className="mr-1" /> Retry
               </Button>
@@ -312,8 +327,21 @@ export function TicketDetail({ ticket, activities, allTickets, onClose, onDelete
               <Button size="sm" variant="secondary" onClick={() => setShowChangesForm(!showChangesForm)}>
                 <MessageSquareWarning size={12} className="mr-1" /> Changes
               </Button>
-              <Button size="sm" onClick={handleMerge} disabled={ticket.has_conflicts || mergeQueueLocked}>
+              <Button size="sm" variant="secondary" onClick={handleSyncReviews} disabled={syncingReviews}>
+                <RefreshCw size={12} className={`mr-1 ${syncingReviews ? 'animate-spin' : ''}`} /> Sync
+              </Button>
+              <Button
+                size="sm"
+                onClick={handleMerge}
+                disabled={ticket.has_conflicts || mergeQueueLocked || (unresolvedCount != null && unresolvedCount > 0)}
+                title={unresolvedCount ? `${unresolvedCount} unresolved conversation${unresolvedCount > 1 ? 's' : ''}` : undefined}
+              >
                 <GitMerge size={12} className="mr-1" /> Merge
+                {unresolvedCount != null && unresolvedCount > 0 && (
+                  <span className="ml-1 rounded-full bg-[var(--color-accent-yellow)] px-1.5 text-[10px] text-black">
+                    {unresolvedCount}
+                  </span>
+                )}
               </Button>
             </>
           )}
@@ -352,6 +380,35 @@ export function TicketDetail({ ticket, activities, allTickets, onClose, onDelete
             <Loader2 size={14} className="animate-spin shrink-0" />
             <span>Deploy in progress — merge is queued until current deploy completes</span>
           </div>
+        </div>
+      )}
+
+      {/* Unresolved conversations banner */}
+      {ticket.status === 'review' && ticket.pr_number && (
+        <div className="border-b border-[var(--color-border)] p-3">
+          {unresolvedCount == null ? (
+            <div className="flex items-center justify-between rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-3 py-2 text-xs text-[var(--color-text-muted)]">
+              <span>Review conversations not yet synced from GitHub</span>
+              <button
+                onClick={handleSyncReviews}
+                disabled={syncingReviews}
+                className="flex items-center gap-1 text-[var(--color-accent-blue)] hover:underline"
+              >
+                <RefreshCw size={10} className={syncingReviews ? 'animate-spin' : ''} /> Sync now
+              </button>
+            </div>
+          ) : unresolvedCount > 0 ? (
+            <div className="flex items-center justify-between rounded-lg border border-[var(--color-accent-yellow)]/30 bg-[var(--color-accent-yellow)]/5 px-3 py-2 text-xs text-[var(--color-accent-yellow)]">
+              <span>{unresolvedCount} unresolved conversation{unresolvedCount > 1 ? 's' : ''} — resolve on GitHub before merging</span>
+              <button
+                onClick={handleSyncReviews}
+                disabled={syncingReviews}
+                className="flex items-center gap-1 hover:underline"
+              >
+                <RefreshCw size={10} className={syncingReviews ? 'animate-spin' : ''} /> Refresh
+              </button>
+            </div>
+          ) : null}
         </div>
       )}
 
@@ -550,6 +607,16 @@ export function TicketDetail({ ticket, activities, allTickets, onClose, onDelete
           <span className="flex items-center gap-1 text-[var(--color-text-muted)]">
             <GitBranch size={11} /> {ticket.branch}
           </span>
+          {ticket.pr_url && (
+            <a
+              href={ticket.pr_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1 text-[var(--color-accent-blue)] hover:underline"
+            >
+              PR #{ticket.pr_number} <ExternalLink size={10} />
+            </a>
+          )}
         </div>
         {ticket.description && (
           <p className="mt-2 text-xs text-[var(--color-text-secondary)]">{ticket.description}</p>
@@ -648,6 +715,16 @@ export function TicketDetail({ ticket, activities, allTickets, onClose, onDelete
         </div>
       )}
 
+      {/* Agent Review Report */}
+      {ticket.agent_review && (
+        <div className="border-b border-[var(--color-border)] px-3 py-2">
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
+            Agent Review
+          </h3>
+          <AgentReviewReport reviewJson={ticket.agent_review} />
+        </div>
+      )}
+
       {/* Notes */}
       <NotesSection
         notes={parseNotes(ticket.notes)}
@@ -665,16 +742,6 @@ export function TicketDetail({ ticket, activities, allTickets, onClose, onDelete
         <ActivityLog events={activities} />
       </div>
 
-      {/* Agent Review Report */}
-      {ticket.agent_review && (
-        <div className="border-t border-[var(--color-border)] px-3 py-2">
-          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
-            Agent Review
-          </h3>
-          <AgentReviewReport reviewJson={ticket.agent_review} />
-        </div>
-      )}
-
       </div>{/* end scrollable content */}
 
       {/* Message input for active sessions */}
@@ -683,21 +750,11 @@ export function TicketDetail({ ticket, activities, allTickets, onClose, onDelete
       )}
 
       {/* Footer */}
-      <div className="border-t border-[var(--color-border)] p-3 text-xs text-[var(--color-text-muted)]">
-        {ticket.tmux_session && (
+      {ticket.tmux_session && (
+        <div className="border-t border-[var(--color-border)] px-3 py-2 text-xs text-[var(--color-text-muted)]">
           <p className="font-mono">tmux attach -t {ticket.tmux_session}</p>
-        )}
-        {ticket.pr_url && (
-          <a
-            href={ticket.pr_url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="mt-1 flex items-center gap-1 text-[var(--color-accent-blue)] hover:underline"
-          >
-            PR #{ticket.pr_number} <ExternalLink size={10} />
-          </a>
-        )}
-      </div>
+        </div>
+      )}
 
       <ConfirmationDialog
         open={confirmDelete}

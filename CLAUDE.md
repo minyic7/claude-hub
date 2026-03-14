@@ -62,3 +62,5 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 - **Deploy path:** `/Users/minyic/claude-hub/`
 - **Docker:** `/usr/local/bin/docker` (must use full path or `export PATH=/usr/local/bin:$PATH`)
 - **App port:** 7700
+- **Funnel URL:** `https://minyis-mac-mini.tail564b26.ts.net` (Tailscale Funnel, `tailscale funnel --bg 7700`)
+- **Webhook URL:** `https://minyis-mac-mini.tail564b26.ts.net/api/webhooks/github`

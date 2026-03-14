@@ -150,6 +150,12 @@ export const api = {
       request<Record<string, unknown>[]>(`/tickets/${id}/activity?since=${since}`),
     syncReviewStatus: () =>
       request<{ synced: string[] }>('/tickets/sync-review-status', { method: 'POST' }),
+    syncReviews: (id: string) =>
+      request<{ synced: number }>(`/tickets/${id}/sync-reviews`, { method: 'POST' }),
+    unresolvedThreads: (id: string) =>
+      request<{ unresolved: Array<{ thread_id: string; path: string; author: string; body: string }>; count: number }>(
+        `/tickets/${id}/unresolved-threads`
+      ),
     ciStatus: (id: string) =>
       request<CIStatus>(`/tickets/${id}/ci-status`),
     addNote: (id: string, content: string, type: string = 'comment') =>
@@ -225,6 +231,7 @@ export interface AgentSettings {
   // System
   max_sessions: number
   gh_token: string
+  webhook_url: string
   // Agent
   enabled: boolean
   provider: AgentProvider
@@ -234,6 +241,7 @@ export interface AgentSettings {
   batch_size: number
   max_context_messages: number
   web_search: boolean
+  auto_resolve_conversations: boolean
   budget_per_ticket_usd: number
   budget_daily_usd: number
   budget_monthly_usd: number

@@ -1,8 +1,12 @@
+import asyncio
 import json
+import logging
 from datetime import datetime, timezone
 
 from claude_hub.models.ticket import TicketStatus
 from claude_hub import redis_client
+
+logger = logging.getLogger(__name__)
 
 VALID_TRANSITIONS: dict[TicketStatus, list[TicketStatus]] = {
     TicketStatus.TODO: [TicketStatus.IN_PROGRESS, TicketStatus.QUEUED],
@@ -48,7 +52,21 @@ async def transition(ticket_id: str, target: TicketStatus, **extra_fields: objec
         from claude_hub.services.kanban_manager import send_kanban_update
         send_kanban_update(project_id)
 
+    # Auto-sync PR reviews when entering review status
+    if target == TicketStatus.REVIEW and updated and updated.get("pr_number"):
+        asyncio.create_task(_auto_sync_reviews(ticket_id))
+
     return updated
+
+
+async def _auto_sync_reviews(ticket_id: str) -> None:
+    """Fire-and-forget: sync PR reviews from GitHub when ticket enters review."""
+    try:
+        from claude_hub.routers.tickets import sync_pr_reviews
+        await sync_pr_reviews(ticket_id)
+        logger.info("Auto-synced PR reviews for ticket %s", ticket_id)
+    except Exception as e:
+        logger.warning("Auto-sync reviews failed for %s: %s", ticket_id, e)
 
 
 async def append_ticket_note(

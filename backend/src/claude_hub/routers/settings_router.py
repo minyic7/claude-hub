@@ -18,6 +18,7 @@ _DEFAULTS = {
     # System
     "max_sessions": 4,
     "gh_token": "",
+    "webhook_url": "",
     # Agent
     "enabled": True,
     "provider": "anthropic",
@@ -27,6 +28,7 @@ _DEFAULTS = {
     "batch_size": 8,
     "max_context_messages": 25,
     "web_search": False,
+    "auto_resolve_conversations": False,
     "budget_per_ticket_usd": 2.00,
     "budget_daily_usd": 50.00,
     "budget_monthly_usd": 500.00,
@@ -114,6 +116,9 @@ async def update_settings(body: dict):
     if "web_search" in body:
         current["web_search"] = bool(body["web_search"])
 
+    if "auto_resolve_conversations" in body:
+        current["auto_resolve_conversations"] = bool(body["auto_resolve_conversations"])
+
     if "budget_per_ticket_usd" in body:
         current["budget_per_ticket_usd"] = max(0.1, float(body["budget_per_ticket_usd"]))
 
@@ -132,8 +137,17 @@ async def update_settings(body: dict):
         if token and "..." not in token:
             current["gh_token"] = token
 
+    old_webhook_url = current.get("webhook_url", "")
+    if "webhook_url" in body:
+        current["webhook_url"] = body["webhook_url"].strip()
+
     r = redis_client.get_pool()
     await r.set(REDIS_KEY, json.dumps(current))
+
+    # Auto-register webhooks for all projects when webhook_url changes
+    new_webhook_url = current.get("webhook_url", "")
+    if new_webhook_url and new_webhook_url != old_webhook_url:
+        await _register_webhooks_for_all_projects(new_webhook_url)
 
     # Log without exposing secrets
     log_cfg = {
@@ -148,6 +162,23 @@ async def update_settings(body: dict):
         "api_key": _mask_key(current.get("api_key", "")),
         "gh_token": _mask_key(current.get("gh_token", "")),
     }
+
+
+async def _register_webhooks_for_all_projects(webhook_url: str) -> None:
+    """Register webhooks for all existing projects when webhook_url is set/changed."""
+    from claude_hub.services.webhook_registration import register_webhook
+    projects = await redis_client.list_projects()
+    for project in projects:
+        gh_token = project.get("gh_token", "")
+        repo_url = project.get("repo_url", "")
+        if not gh_token or not repo_url:
+            continue
+        result = register_webhook(repo_url, gh_token, webhook_url_override=webhook_url)
+        logger.info("Webhook registration for %s: %s", repo_url, result)
+        if result.get("webhook_id"):
+            await redis_client.update_project_fields(
+                project["id"], {"webhook_id": str(result["webhook_id"])}
+            )
 
 
 @router.post("/agent/test")

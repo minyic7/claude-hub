@@ -11,7 +11,7 @@ from claude_hub.config import settings
 logger = logging.getLogger(__name__)
 
 # Events we want to receive
-WEBHOOK_EVENTS = ["pull_request", "pull_request_review"]
+WEBHOOK_EVENTS = ["pull_request", "pull_request_review", "pull_request_review_comment"]
 
 
 def _parse_owner_repo(repo_url: str) -> tuple[str, str] | None:
@@ -45,14 +45,21 @@ def delete_webhook(repo_url: str, gh_token: str, webhook_id: int) -> bool:
     return False
 
 
-def register_webhook(repo_url: str, gh_token: str) -> dict:
+def get_webhook_url() -> str:
+    """Get webhook URL from Redis settings, falling back to env var."""
+    # Try Redis settings first (async -> sync via run_in_executor not practical here)
+    # So we read from env var / config as fallback
+    return settings.webhook_url
+
+
+def register_webhook(repo_url: str, gh_token: str, webhook_url_override: str = "") -> dict:
     """Register or update a GitHub webhook for the given repo.
 
     Returns:
         {"status": "created" | "exists" | "updated" | "skipped" | "error",
          "message": str, "webhook_id": int | None}
     """
-    webhook_url = settings.webhook_url
+    webhook_url = webhook_url_override or get_webhook_url()
     if not webhook_url:
         return {"status": "skipped", "message": "No webhook_url configured", "webhook_id": None}
 
