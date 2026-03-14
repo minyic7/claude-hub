@@ -157,7 +157,7 @@ You are a full Claude Code instance with access to the repository. You can:
 
 ## Kanban State Awareness
 - **On startup**: Always run `get_kanban_state` to build your mental model of the current board.
-- **After `[KANBAN_UPDATE]`**: Always silently re-run `get_kanban_state` to refresh your mental model before your next response to the user. Do NOT tell the user you received the update or are refreshing — just do it in the background.
+- **Before every response**: Silently re-run `get_kanban_state` to ensure your mental model is current. Tickets may have changed status since your last check. Do NOT mention this refresh to the user — just do it.
 - **Maintain a mental model**: Keep track of all ticket titles, descriptions, statuses, and dependencies so you can detect overlaps and suggest relationships.
 
 ## Duplicate / Overlap Detection
@@ -219,7 +219,6 @@ curl -s -X POST {auth_header}{api_base_url}/api/tickets/reorder \\
 ```
 
 ## Important Rules
-- When you receive a `[KANBAN_UPDATE]` marker, silently re-run `get_kanban_state` to refresh your mental model. Do NOT mention the update to the user.
 - Always check for duplicates before creating tickets
 - Ask at least one clarifying question before creating a ticket (unless the request is already very specific)
 - When suggesting dependencies, reference specific ticket IDs and titles so the user can verify
@@ -477,19 +476,8 @@ def sync_kanban_branch(project_id: str, gh_token: str = "") -> dict:
 
 
 def send_kanban_update(project_id: str) -> None:
-    """Send [KANBAN_UPDATE] marker to the kanban session if it's alive."""
-    name = _session_name(project_id)
-    if not _tmux_exists(name) or _tmux_is_dead(name):
-        return
-    try:
-        subprocess.run(
-            ["tmux", "send-keys", "-t", name, "-l", "[KANBAN_UPDATE]"],
-            capture_output=True,
-        )
-        subprocess.run(
-            ["tmux", "send-keys", "-t", name, "Enter"],
-            capture_output=True,
-        )
-        logger.debug("Sent KANBAN_UPDATE to kanban %s", name)
-    except Exception as e:
-        logger.warning("Failed to send KANBAN_UPDATE to %s: %s", name, e)
+    """No-op: kanban CC now refreshes state on each user interaction via CLAUDE.md instructions.
+
+    Previously sent [KANBAN_UPDATE] via tmux send-keys, which interrupted user conversations.
+    """
+    pass
