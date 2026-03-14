@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { AlertCircle, ArrowLeft, Check, CircleDot, Copy, ExternalLink, GitBranch, GitMerge, Loader2, MessageSquareWarning, Pencil, RefreshCw, RotateCcw, Send, Square, StickyNote, Trash2, Undo2, X } from 'lucide-react'
 import { useIsMobile } from '../../hooks/useIsMobile'
+import { useVisualViewport } from '../../hooks/useVisualViewport'
 import type { Ticket, TicketNote, TicketStatus } from '../../types/ticket'
 import type { ActivityEvent } from '../../types/activity'
 import { Badge } from '../common/Badge'
@@ -49,6 +50,7 @@ function depStatusColor(status: TicketStatus): string {
 
 export function TicketDetail({ ticket, activities, allTickets, onClose, onDelete, onTicketClick, mergeQueueLocked, onMergeInitiated }: TicketDetailProps) {
   const isMobile = useIsMobile()
+  const keyboardOffset = useVisualViewport(isMobile)
   const sheetRef = useRef<HTMLDivElement>(null)
   const dragStartY = useRef<number | null>(null)
   const [showChangesForm, setShowChangesForm] = useState(false)
@@ -275,6 +277,7 @@ export function TicketDetail({ ticket, activities, allTickets, onClose, onDelete
           ? 'fixed inset-0 z-50 flex flex-col overflow-hidden bg-[var(--color-bg-panel)] animate-slide-up'
           : 'detail-panel flex w-[420px] shrink-0 flex-col overflow-hidden border-l border-[var(--color-border)] bg-[var(--color-bg-panel)]'
       }
+      style={isMobile && keyboardOffset > 0 ? { height: `calc(100% - ${keyboardOffset}px)`, top: 0 } : undefined}
     >
       {/* Mobile drag handle */}
       {isMobile && (
