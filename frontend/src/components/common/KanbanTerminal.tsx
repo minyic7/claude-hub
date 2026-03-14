@@ -28,9 +28,10 @@ interface KanbanTerminalProps {
   projectName?: string
   visible: boolean
   onClose: () => void
+  tabBar?: React.ReactNode
 }
 
-export function KanbanTerminal({ projectId, projectName, visible, onClose }: KanbanTerminalProps) {
+export function KanbanTerminal({ projectId, projectName, visible, onClose, tabBar }: KanbanTerminalProps) {
   const termRef = useRef<HTMLDivElement>(null)
   const terminalRef = useRef<Terminal | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
@@ -286,6 +287,7 @@ export function KanbanTerminal({ projectId, projectName, visible, onClose }: Kan
 
       {/* Panel */}
       <div className="flex flex-1 flex-col bg-[#1a1b26] border-l border-[var(--color-border)] overflow-hidden min-w-0">
+        {tabBar}
         {/* Header */}
         <div className="flex items-center justify-between border-b border-[var(--color-border)] px-3 py-2 shrink-0">
           <div className="flex items-center gap-2 min-w-0">

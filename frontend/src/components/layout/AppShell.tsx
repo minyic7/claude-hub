@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { Bell, Check, ChevronDown, FolderPlus, PanelRightOpen, Plus, Settings, Wifi, WifiOff } from 'lucide-react'
+import { Bell, Check, ChevronDown, Crown, FolderPlus, PanelRightOpen, Plus, Settings, Wifi, WifiOff } from 'lucide-react'
 import { useIsMobile } from '../../hooks/useIsMobile'
 import { DeployStatusWidget } from '../common/DeployStatusWidget'
 import { ThemeToggle } from '../common/ThemeToggle'
@@ -8,6 +8,7 @@ import { CreateTicketModal } from '../tickets/CreateTicketModal'
 import { CreateProjectModal } from '../projects/CreateProjectModal'
 import { AgentSettingsModal } from '../settings/AgentSettingsModal'
 import { KanbanTerminal } from '../common/KanbanTerminal'
+import { POChatPanel } from '../common/POChatPanel'
 import type { DeployState } from '../../hooks/useDeployStatus'
 import type { WorkflowRun } from '../../lib/api'
 import type { Notification } from '../../hooks/useNotifications'
@@ -45,6 +46,7 @@ export function AppShell({
   const [showSettings, setShowSettings] = useState(false)
   const isMobile = useIsMobile()
   const [showKanbanTerminal, setShowKanbanTerminal] = useState(true)
+  const [panelTab, setPanelTab] = useState<'terminal' | 'po'>('terminal')
 
   const activeProject = activeProjectId ? projects.get(activeProjectId) : null
 
@@ -302,12 +304,50 @@ export function AppShell({
           )}
         </div>
         {!isMobile && activeProjectId && (
-          <KanbanTerminal
-            projectId={activeProjectId}
-            projectName={activeProject?.name}
-            visible={showKanbanTerminal}
-            onClose={() => setShowKanbanTerminal(false)}
-          />
+          <>
+            <KanbanTerminal
+              projectId={activeProjectId}
+              projectName={activeProject?.name}
+              visible={showKanbanTerminal && panelTab === 'terminal'}
+              onClose={() => setShowKanbanTerminal(false)}
+              tabBar={showKanbanTerminal && panelTab === 'terminal' ? (
+                <div className="flex items-center border-b border-[var(--color-border)] bg-[var(--color-bg-panel)] shrink-0">
+                  <button
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[var(--color-accent-blue)] border-b-2 border-[var(--color-accent-blue)]"
+                  >
+                    Terminal
+                  </button>
+                  <button
+                    onClick={() => setPanelTab('po')}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] transition-colors"
+                  >
+                    <Crown size={12} /> PO Chat
+                  </button>
+                </div>
+              ) : undefined}
+            />
+            {panelTab === 'po' && showKanbanTerminal && (
+              <POChatPanel
+                projectId={activeProjectId}
+                onClose={() => setShowKanbanTerminal(false)}
+                tabBar={(
+                  <div className="flex items-center border-b border-[var(--color-border)] bg-[var(--color-bg-panel)] shrink-0">
+                    <button
+                      onClick={() => setPanelTab('terminal')}
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] transition-colors"
+                    >
+                      Terminal
+                    </button>
+                    <button
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-purple-400 border-b-2 border-purple-400"
+                    >
+                      <Crown size={12} /> PO Chat
+                    </button>
+                  </div>
+                )}
+              />
+            )}
+          </>
         )}
       </main>
 
