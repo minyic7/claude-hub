@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Brain, FileText, Terminal, MessageSquare, AlertTriangle, CheckCircle, Info, XCircle, Eye, User, ClipboardCheck, Search, ChevronRight, ChevronDown } from 'lucide-react'
+import { Brain, FileText, Terminal, MessageSquare, AlertTriangle, CheckCircle, Info, XCircle, Eye, User, ClipboardCheck, Search, ChevronRight, ChevronDown, Trash2 } from 'lucide-react'
 import type { ActivityEvent } from '../../types/activity'
 import { relativeTime } from '../../utils/relativeTime'
 
 interface ActivityLogProps {
   events: ActivityEvent[]
+  onClear?: () => void
 }
 
 const typeConfig: Record<string, { icon: typeof Brain; className: string; label: string }> = {
@@ -82,7 +83,7 @@ function EventRow({ event, isAgent }: { event: ActivityEvent; isAgent: boolean }
   )
 }
 
-export function ActivityLog({ events }: ActivityLogProps) {
+export function ActivityLog({ events, onClear }: ActivityLogProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const [userScrolledUp, setUserScrolledUp] = useState(false)
@@ -176,16 +177,27 @@ export function ActivityLog({ events }: ActivityLogProps) {
 
   return (
     <div className="flex flex-col gap-2 overflow-hidden">
-      {/* Search box */}
-      <div className="relative shrink-0">
-        <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)]" />
-        <input
-          type="text"
-          placeholder="Search activity..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="w-full rounded border border-[var(--color-border)] bg-[var(--color-bg-secondary)] py-1 pl-7 pr-2 text-xs text-[var(--color-text-primary)] placeholder-[var(--color-text-muted)] outline-none focus:border-[var(--color-accent-blue)]"
-        />
+      {/* Search box + clear button */}
+      <div className="flex shrink-0 items-center gap-1">
+        <div className="relative flex-1">
+          <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)]" />
+          <input
+            type="text"
+            placeholder="Search activity..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full rounded border border-[var(--color-border)] bg-[var(--color-bg-secondary)] py-1 pl-7 pr-2 text-xs text-[var(--color-text-primary)] placeholder-[var(--color-text-muted)] outline-none focus:border-[var(--color-accent-blue)]"
+          />
+        </div>
+        {onClear && (
+          <button
+            onClick={onClear}
+            className="rounded p-1 text-[var(--color-text-muted)] hover:bg-[var(--color-bg-secondary)] hover:text-[var(--color-accent-red)] transition-colors"
+            title="Clear activity log"
+          >
+            <Trash2 size={14} />
+          </button>
+        )}
       </div>
 
       {/* Type filter chips */}

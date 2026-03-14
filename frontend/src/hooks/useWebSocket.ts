@@ -204,6 +204,14 @@ export function useWebSocket(url: string): UseWebSocketReturn {
         break
       }
 
+      case 'activity_cleared':
+        setActivities((prev) => {
+          const next = new Map(prev)
+          next.delete(msg.ticket_id)
+          return next
+        })
+        break
+
       case 'escalation':
         setLastEscalation({ ticketId: msg.ticket_id, question: msg.data.question })
         break

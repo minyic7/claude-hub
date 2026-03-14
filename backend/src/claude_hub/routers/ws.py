@@ -52,7 +52,7 @@ async def websocket_endpoint(websocket: WebSocket, token: str = Query(default=""
         # Include last 50 activities for active tickets (for reconnect sync)
         activities: dict[str, list] = {}
         for t in tickets:
-            if t.get("status") in ("in_progress", "blocked", "verifying"):
+            if t.get("status") in ("in_progress", "blocked", "verifying", "review", "reviewing", "failed", "merged", "merging"):
                 recent = await redis_client.get_recent_activity(t["id"], count=50)
                 if recent:
                     activities[t["id"]] = recent

@@ -739,7 +739,7 @@ export function TicketDetail({ ticket, activities, allTickets, onClose, onDelete
         <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
           Activity
         </h3>
-        <ActivityLog events={activities} />
+        <ActivityLog events={activities} onClear={() => api.tickets.clearActivity(ticket.id)} />
       </div>
 
       </div>{/* end scrollable content */}
