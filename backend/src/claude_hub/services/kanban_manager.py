@@ -219,9 +219,10 @@ curl -s -X POST {auth_header}{api_base_url}/api/tickets/reorder \\
 ```
 
 ## Important Rules
+- **Always refer to tickets by their `#seq` number** (e.g., #5, #10) when communicating with the user. The `seq` field is the human-friendly ticket number. Use the full UUID `id` only when making API calls.
 - Always check for duplicates before creating tickets
 - Ask at least one clarifying question before creating a ticket (unless the request is already very specific)
-- When suggesting dependencies, reference specific ticket IDs and titles so the user can verify
+- When suggesting dependencies, reference tickets by `#seq` and title (e.g., "#5 Add auth endpoint") so the user can verify
 - Be conversational and helpful, not robotic
 
 ## Branch Sync
