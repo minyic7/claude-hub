@@ -316,9 +316,14 @@ async def answer_ticket(ticket_id: str, body: dict):
         raise HTTPException(409, str(e))
 
     # Send answer to tmux session
+    import asyncio
     from claude_hub.services import session_manager
     if session_manager.is_alive(ticket_id):
         session_manager.send_input(ticket_id, answer)
+    else:
+        # Session already finished while blocked — trigger verification directly
+        logger.info("Session dead for %s after unblock, triggering verification", ticket_id)
+        asyncio.create_task(_verify_and_review(ticket_id))
 
     await broadcast({
         "type": "ticket_updated",
@@ -614,6 +619,78 @@ async def _respawn_with_feedback(ticket_id: str, feedback: str) -> None:
     asyncio.create_task(_tail_and_broadcast(ticket_id, log_path))
 
 
+async def _verify_and_review(ticket_id: str) -> None:
+    """Run verification + review flow after a session ends."""
+    from claude_hub.services.ticket_service import transition
+
+    ticket = await redis_client.get_ticket(ticket_id)
+    if not ticket or ticket.get("status") in ("blocked", "todo", "queued", "failed"):
+        return  # Don't verify if blocked/rolled-back/already-failed
+
+    logger.info("Running verification for ticket %s", ticket_id)
+
+    try:
+        await transition(ticket_id, TicketStatus.VERIFYING)
+        await broadcast({
+            "type": "ticket_updated",
+            "ticket_id": ticket_id,
+            "data": await redis_client.get_ticket(ticket_id),
+        })
+    except Exception:
+        pass
+
+    # Load agent settings
+    from claude_hub.routers.settings_router import get_agent_settings
+    agent_cfg = await get_agent_settings()
+    agent_enabled = agent_cfg.get("enabled", True)
+
+    # Run safety net + verification
+    from claude_hub.services.github_verify import ensure_pushed, verify_agent_work
+    clone_path = ticket.get("clone_path", "")
+    if clone_path:
+        project = await _get_project_for_ticket(ticket)
+        gh_token = project.get("gh_token", "")
+        actions = ensure_pushed(clone_path, ticket["branch"], ticket["base_branch"], gh_token)
+        if actions:
+            logger.info("ensure_pushed for %s: %s", ticket_id, actions)
+
+        import subprocess
+        subprocess.run(["git", "fetch", "origin"], cwd=clone_path, capture_output=True)
+
+        result = verify_agent_work(clone_path, ticket["branch"], ticket["base_branch"], gh_token)
+        logger.info("Verification for %s: %s", ticket_id, result)
+
+        if result.passed:
+            await redis_client.update_ticket_fields(ticket_id, {
+                "pr_url": result.pr_url or "",
+                "pr_number": result.pr_number or 0,
+            })
+            from claude_hub.services.github_verify import mark_pr_ready
+            mark_pr_ready(clone_path, ticket["branch"], gh_token)
+
+            if agent_enabled and agent_cfg.get("api_key"):
+                await _run_agent_review(ticket_id, agent_cfg)
+            else:
+                updated = await transition(ticket_id, TicketStatus.REVIEW,
+                                           pr_url=result.pr_url,
+                                           pr_number=result.pr_number)
+                await broadcast({
+                    "type": "ticket_updated",
+                    "ticket_id": ticket_id,
+                    "data": updated,
+                })
+                await process_queue()
+        else:
+            updated = await transition(ticket_id, TicketStatus.FAILED,
+                                       failed_reason=result.reason)
+            await broadcast({
+                "type": "ticket_updated",
+                "ticket_id": ticket_id,
+                "data": updated,
+            })
+            await process_queue()
+
+
 async def _tail_and_broadcast(ticket_id: str, log_path: str) -> None:
     """Background task: tail log with optional TicketAgent supervision."""
     from claude_hub.services.ticket_service import transition
@@ -642,76 +719,8 @@ async def _tail_and_broadcast(ticket_id: str, log_path: str) -> None:
                     "data": event_dict,
                 })
 
-        # Session ended — keep tmux session alive for inspection
-        # Session is only cleaned up on MERGED or DELETE
-
-        # Verify agent work
-        logger.info("Session ended for ticket %s, running verification", ticket_id)
-        ticket = await redis_client.get_ticket(ticket_id)
-        if not ticket or ticket.get("status") in ("blocked", "todo", "queued", "failed"):
-            return  # Don't verify if blocked/rolled-back/already-failed
-
-        try:
-            await transition(ticket_id, TicketStatus.VERIFYING)
-            await broadcast({
-                "type": "ticket_updated",
-                "ticket_id": ticket_id,
-                "data": await redis_client.get_ticket(ticket_id),
-            })
-        except Exception:
-            pass
-
-        # Run safety net + verification
-        from claude_hub.services.github_verify import ensure_pushed, verify_agent_work
-        clone_path = ticket.get("clone_path", "")
-        if clone_path:
-            # Safety net: commit uncommitted changes, push, create PR if missing
-            project = await _get_project_for_ticket(ticket)
-            gh_token = project.get("gh_token", "")
-            actions = ensure_pushed(clone_path, ticket["branch"], ticket["base_branch"], gh_token)
-            if actions:
-                logger.info("ensure_pushed for %s: %s", ticket_id, actions)
-
-            # Fetch latest from remote before verifying
-            import subprocess
-            subprocess.run(["git", "fetch", "origin"], cwd=clone_path, capture_output=True)
-
-            result = verify_agent_work(clone_path, ticket["branch"], ticket["base_branch"], gh_token)
-            logger.info("Verification for %s: %s", ticket_id, result)
-
-            if result.passed:
-                # Store PR info and mark draft PR as ready
-                await redis_client.update_ticket_fields(ticket_id, {
-                    "pr_url": result.pr_url or "",
-                    "pr_number": result.pr_number or 0,
-                })
-                from claude_hub.services.github_verify import mark_pr_ready
-                mark_pr_ready(clone_path, ticket["branch"], gh_token)
-
-                # Agent code review (if enabled)
-                if agent_enabled and agent_cfg.get("api_key"):
-                    await _run_agent_review(ticket_id, agent_cfg)
-                else:
-                    updated = await transition(ticket_id, TicketStatus.REVIEW,
-                                               pr_url=result.pr_url,
-                                               pr_number=result.pr_number)
-                    await broadcast({
-                        "type": "ticket_updated",
-                        "ticket_id": ticket_id,
-                        "data": updated,
-                    })
-                    # Session freed a slot — process queue
-                    await process_queue()
-            else:
-                updated = await transition(ticket_id, TicketStatus.FAILED,
-                                           failed_reason=result.reason)
-                await broadcast({
-                    "type": "ticket_updated",
-                    "ticket_id": ticket_id,
-                    "data": updated,
-                })
-                # Session freed a slot — process queue
-                await process_queue()
+        # Session ended — run verification
+        await _verify_and_review(ticket_id)
 
     except Exception as e:
         logger.error("Error tailing log for ticket %s: %s", ticket_id, e)
