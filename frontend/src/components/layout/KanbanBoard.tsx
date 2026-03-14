@@ -20,7 +20,8 @@ import { TicketCard } from '../kanban/TicketCard'
 import { SortableTicketCard } from '../kanban/SortableTicketCard'
 import { Button } from '../common/Button'
 import { api } from '../../lib/api'
-import { useIsMobile } from '../../hooks/useIsMobile'
+import { useContainerWidth } from '../../hooks/useContainerWidth'
+import { useAdaptiveColumns } from '../../hooks/useAdaptiveColumns'
 
 // Prevent drag from starting on buttons or interactive elements
 class SmartMouseSensor extends MouseSensor {
@@ -53,8 +54,6 @@ const BRANCH_TYPES: BranchType[] = ['feature', 'bugfix', 'hotfix', 'chore', 'ref
 export function KanbanBoard({
   columns, activities, allTickets, activeProjectId, onTicketClick, onOptimistic, deployingBranches, mergeQueueLocked, onMergeInitiated, branchTypeFilter, onBranchTypeFilter,
 }: KanbanBoardProps) {
-  const isMobile = useIsMobile()
-  const [mobileTab, setMobileTab] = useState<string>('todo')
   const [activeId, setActiveId] = useState<string | null>(null)
   const [dragSource, setDragSource] = useState<'todo' | 'queue' | null>(null)
   const [todoOrder, setTodoOrder] = useState<string[] | null>(null)
@@ -224,6 +223,10 @@ export function KanbanBoard({
     }
   }, [selectedIds, orderedTodo, exitSelectMode])
 
+  // Adaptive column count
+  const [boardRef, containerWidth] = useContainerWidth<HTMLDivElement>()
+  const { visibleColumns, foldedColumns, activeTab, onTabClick } = useAdaptiveColumns(columns, containerWidth)
+
   // Compute branch type counts from all tickets for filter chips
   const branchTypeCounts = useMemo(() => {
     const counts = new Map<BranchType, number>()
@@ -274,34 +277,41 @@ export function KanbanBoard({
           </div>
         )}
 
-        {/* Mobile column tabs */}
-        {isMobile && (
-          <div className="flex shrink-0 border-b border-[var(--color-border)]">
-            {columns.map((col) => {
+        {/* Folded column tab bar */}
+        {foldedColumns.length > 0 && (
+          <div className="flex shrink-0 items-center gap-1 border-b border-[var(--color-border)] px-4 py-1.5">
+            {foldedColumns.map((col) => {
+              const isActive = activeTab === col.status
               const count = col.tickets.filter((t) => !t.archived).length
               return (
                 <button
                   key={col.status}
-                  onClick={() => setMobileTab(col.status)}
-                  className={`flex-1 px-2 py-2 text-xs font-medium transition-colors ${
-                    mobileTab === col.status
-                      ? 'border-b-2 border-[var(--color-accent-blue)] text-[var(--color-accent-blue)]'
-                      : 'text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]'
+                  onClick={() => onTabClick(col.status)}
+                  className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
+                    isActive
+                      ? 'bg-[var(--color-accent-blue)] text-white'
+                      : 'bg-[var(--color-bg-secondary)] text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]'
                   }`}
                 >
                   {col.label}
-                  {count > 0 && <span className="ml-1 opacity-60">{count}</span>}
+                  <span className={`ml-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] ${
+                    isActive
+                      ? 'bg-white/20 text-white'
+                      : 'bg-[var(--color-bg-tertiary)] text-[var(--color-text-muted)]'
+                  }`}>
+                    {count}
+                  </span>
                 </button>
               )
             })}
           </div>
         )}
 
-        <div className={`flex flex-1 gap-4 overflow-x-auto p-4 ${isMobile ? 'flex-col' : ''}`}>
-        {columns.filter((col) => !isMobile || col.status === mobileTab).map((col) => {
+        <div ref={boardRef} className="flex flex-1 gap-4 overflow-x-auto p-4">
+        {visibleColumns.map((col) => {
           if (col.status === 'todo') {
             return (
-              <div key="todo" className={`flex flex-1 flex-col ${isMobile ? 'min-w-0' : 'min-w-[280px]'}`}>
+              <div key="todo" className="flex flex-1 flex-col min-w-[280px]">
                 <div className="mb-3 flex items-center gap-2 px-1">
                   <h2 className="text-xs font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
                     {col.label}
@@ -483,7 +493,6 @@ export function KanbanBoard({
               deployingBranches={deployingBranches}
               mergeQueueLocked={mergeQueueLocked}
               onMergeInitiated={onMergeInitiated}
-              compact={isMobile}
             />
           )
         })}
