@@ -83,7 +83,8 @@ async def _merge_queue_loop() -> None:
                 title = ticket.get("title", tid[:8])
 
                 # If ticket has conflicts, trigger resolution instead of merging
-                if ticket.get("has_conflicts"):
+                from claude_hub.routers.tickets import _is_conflicted
+                if _is_conflicted(ticket):
                     # Check if there's already an active session resolving it
                     from claude_hub.services import session_manager
                     if not session_manager.has_active_session(tid):

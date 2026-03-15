@@ -17,6 +17,14 @@ from claude_hub.services.ticket_service import append_ticket_note
 
 router = APIRouter(prefix="/api/tickets", tags=["tickets"])
 
+
+def _is_conflicted(ticket: dict) -> bool:
+    """Check if a ticket has merge conflicts. Handles Redis string values."""
+    val = ticket.get("has_conflicts", False)
+    if isinstance(val, str):
+        return val.lower() == "true"
+    return bool(val)
+
 # Appended to every task prompt to ensure Claude Code pushes all changes
 _PUSH_VERIFICATION_INSTRUCTION = (
     "\n\n## IMPORTANT — Final Verification (do this LAST before exiting)\n"
@@ -681,6 +689,7 @@ async def _verify_and_review(ticket_id: str) -> None:
             await redis_client.update_ticket_fields(ticket_id, {
                 "pr_url": result.pr_url or "",
                 "pr_number": result.pr_number or 0,
+                "has_conflicts": "False",  # Clear conflict flag after successful session
             })
             from claude_hub.services.github_verify import mark_pr_ready
             mark_pr_ready(clone_path, ticket["branch"], gh_token)
@@ -750,11 +759,20 @@ async def _tail_and_broadcast(ticket_id: str, log_path: str) -> None:
                     "data": event_dict,
                 })
 
-        # Session ended — run verification
+        # Session ended — clean up tmux and run verification
+        from claude_hub.services import session_manager as _sm
+        _sm.cleanup_session(ticket_id)
+
         await _verify_and_review(ticket_id)
 
     except Exception as e:
         logger.error("Error tailing log for ticket %s: %s", ticket_id, e)
+        # Clean up tmux on error too
+        try:
+            from claude_hub.services import session_manager as _sm2
+            _sm2.cleanup_session(ticket_id)
+        except Exception:
+            pass
         # If session errored out and ticket is still in_progress, mark as failed
         try:
             ticket = await redis_client.get_ticket(ticket_id)
@@ -1149,11 +1167,12 @@ async def sync_review_status():
         else:
             # Check for merge conflicts (mergeable = "CONFLICTING")
             mergeable = pr_data.get("mergeable", "")
-            has_conflicts = mergeable == "CONFLICTING"
-            old_conflicts = ticket.get("has_conflicts", False)
-            if has_conflicts != old_conflicts:
+            now_conflicted = mergeable == "CONFLICTING"
+            was_conflicted = _is_conflicted(ticket)
+
+            if now_conflicted != was_conflicted:
                 await redis_client.update_ticket_fields(
-                    ticket["id"], {"has_conflicts": str(has_conflicts)}
+                    ticket["id"], {"has_conflicts": str(now_conflicted)}
                 )
                 updated = await redis_client.get_ticket(ticket["id"])
                 await broadcast({
@@ -1162,27 +1181,15 @@ async def sync_review_status():
                     "data": updated,
                 })
 
-                # Auto-trigger conflict resolution when conflicts are newly detected
-                if has_conflicts and not old_conflicts:
-                    from claude_hub.services import session_manager
-                    if not session_manager.has_active_session(ticket["id"]):
-                        try:
-                            await resolve_conflicts(ticket["id"])
-                            logger.info("Auto-triggered conflict resolution for ticket %s", ticket["id"])
-                        except Exception as e:
-                            logger.warning("Auto-resolve failed for %s: %s", ticket["id"], e)
-
-    # Retry conflict resolution for tickets still flagged but with no active session
-    from claude_hub.services import session_manager
-    for ticket in review_tickets:
-        if ticket.get("has_conflicts") and not session_manager.has_active_session(ticket["id"]):
-            # Only retry if status is still review (not already being worked on)
-            if ticket.get("status") == "review":
-                try:
-                    await resolve_conflicts(ticket["id"])
-                    logger.info("Retried conflict resolution for ticket %s", ticket["id"])
-                except Exception:
-                    pass  # Will retry next poll
+            # Trigger conflict resolution if conflicts exist and no session is working on it
+            if now_conflicted:
+                from claude_hub.services import session_manager
+                if not session_manager.has_active_session(ticket["id"]):
+                    try:
+                        await resolve_conflicts(ticket["id"])
+                        logger.info("Auto-triggered conflict resolution for ticket %s", ticket["id"])
+                    except Exception as e:
+                        logger.warning("Auto-resolve failed for %s: %s", ticket["id"], e)
 
     # When tickets were merged, update other review branches with latest base
     if synced:
