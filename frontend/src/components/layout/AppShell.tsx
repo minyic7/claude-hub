@@ -343,7 +343,7 @@ export function AppShell({
                     onClick={() => setPanelTab('po')}
                     className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] transition-colors"
                   >
-                    <Crown size={12} /> PO Chat
+                    <Crown size={12} /> PO Agent
                   </button>
                 </div>
               ) : undefined}
@@ -363,7 +363,7 @@ export function AppShell({
                     <button
                       className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-purple-400 border-b-2 border-purple-400"
                     >
-                      <Crown size={12} /> PO Chat
+                      <Crown size={12} /> PO Agent
                     </button>
                   </div>
                 )}

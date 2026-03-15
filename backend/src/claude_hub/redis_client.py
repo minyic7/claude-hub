@@ -237,6 +237,23 @@ async def clear_activity(ticket_id: str) -> bool:
     return bool(await r.delete(f"ticket:{ticket_id}:activity"))
 
 
+# ─── PO Activity Log ──────────────────────────────────────────────────────
+
+PO_ACTIVITY_CAP = 100
+
+
+async def append_po_activity(project_id: str, event: dict) -> None:
+    r = _r()
+    await r.rpush(f"project:{project_id}:po_activity", json.dumps(event))
+    await r.ltrim(f"project:{project_id}:po_activity", -PO_ACTIVITY_CAP, -1)
+
+
+async def get_po_activity(project_id: str, count: int = 100) -> list[dict]:
+    r = _r()
+    raw = await r.lrange(f"project:{project_id}:po_activity", -count, -1)
+    return [json.loads(item) for item in raw]
+
+
 # ─── Queue helpers ──────────────────────────────────────────────────────────
 
 QUEUE_KEY = "tickets:queue"

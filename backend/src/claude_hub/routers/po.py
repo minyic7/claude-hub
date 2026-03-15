@@ -58,6 +58,12 @@ async def update_project_agent_settings(project_id: str, body: AgentSettings):
         "agent_settings": json.dumps(body.model_dump()),
     })
 
+    # Restart PO agent if running so it picks up the new API key
+    if po_manager.is_running(project_id):
+        logger.info("Agent settings changed for %s, restarting PO agent", project_id[:8])
+        await po_manager.stop(project_id)
+        await po_manager.start(project_id)
+
     result = body.model_dump()
     result["api_key"] = _mask_key(result.get("api_key", ""))
     return result
@@ -111,11 +117,16 @@ async def update_po_settings(project_id: str, body: POSettings):
         "po_settings": json.dumps(body.model_dump()),
     })
 
-    # Start/stop PO agent based on enabled state
+    # Start/stop/restart PO agent based on settings change
     if body.enabled and not old.enabled:
         await po_manager.start(project_id)
     elif not body.enabled and old.enabled:
         await po_manager.stop(project_id)
+    elif body.enabled and po_manager.is_running(project_id):
+        # Restart to pick up changed settings (cycle_interval, etc.)
+        logger.info("PO settings changed for %s, restarting agent", project_id[:8])
+        await po_manager.stop(project_id)
+        await po_manager.start(project_id)
 
     return body.model_dump()
 
@@ -132,6 +143,15 @@ async def get_po_status(project_id: str):
         "status": agent.status if agent else (project or {}).get("po_status", "idle"),
         "cycle_n": agent.cycle_n if agent else 0,
     }
+
+
+# ─── Activity Log ────────────────────────────────────────────────────────────
+
+
+@router.get("/projects/{project_id}/po/activity")
+async def get_po_activity(project_id: str, limit: int = 100):
+    entries = await redis_client.get_po_activity(project_id, count=limit)
+    return {"entries": entries}
 
 
 # ─── Manual Trigger ──────────────────────────────────────────────────────────

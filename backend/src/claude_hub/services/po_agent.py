@@ -129,6 +129,7 @@ class POAgent:
         logger.info(
             "PO restored for %s: cycle=%d", self.project_id[:8], self.cycle_n
         )
+        await self._emit_activity("info", f"PO Agent started (resuming from cycle {self.cycle_n})")
 
     async def _cycle_loop(self) -> None:
         self._trigger_queue.put_nowait("startup")
@@ -150,6 +151,7 @@ class POAgent:
             except Exception as e:
                 logger.error("PO cycle failed for %s: %s", self.project_id[:8], e)
                 self.status = "idle"
+                await self._emit_activity("error", f"Cycle failed: {e}")
 
     async def _watchdog(self) -> None:
         while not self._stopped:
@@ -183,10 +185,12 @@ class POAgent:
             "PO cycle %d for %s (trigger: %s)",
             self.cycle_n, self.project_id[:8], trigger,
         )
+        await self._emit_activity("info", f"Cycle {self.cycle_n} started (trigger: {trigger})")
 
         # ── OBSERVE ──────────────────────────────────────────────────
         self.status = "analyzing"
         await self._broadcast_status()
+        await self._emit_activity("info", "Observing: reading board, VISION.md, git history…")
 
         board_state = await self._get_board_state()
         vision = await self._read_vision()
@@ -198,6 +202,7 @@ class POAgent:
             # No VISION.md — raise to user
             self.status = "blocked"
             await self._broadcast_status()
+            await self._emit_activity("warn", "VISION.md not found — blocked")
             msg = (
                 "No VISION.md found on the kanban-claude-hub branch. "
                 "Please create one with at least a Goal and Scope section "
@@ -219,6 +224,7 @@ class POAgent:
         # ── THINK ────────────────────────────────────────────────────
         self.status = "planning"
         await self._broadcast_status()
+        await self._emit_activity("info", "Thinking: deciding next actions…")
 
         think_result = await self._llm_think(
             observe_summary=observe_summary,
@@ -233,6 +239,8 @@ class POAgent:
             action_type = action.get("type")
             try:
                 if action_type == "create_ticket":
+                    title = action.get("title", "untitled")
+                    await self._emit_activity("info", f"Creating ticket: {title}")
                     await self._create_ticket(action, board_state)
                     actions_taken.append(action)
                 elif action_type == "raise_to_user":
@@ -241,10 +249,12 @@ class POAgent:
                     await self._broadcast_po_message(msg)
                     self.status = "blocked"
                     actions_taken.append(action)
+                    await self._emit_activity("warn", f"Raised to user: {msg[:80]}")
                 elif action_type == "wait":
                     self.consecutive_waits += 1
                     self.status = "waiting"
                     actions_taken.append(action)
+                    await self._emit_activity("info", f"Waiting (consecutive: {self.consecutive_waits})")
                     if self.consecutive_waits >= MAX_CONSECUTIVE_WAITS:
                         msg = (
                             f"I've been waiting for {self.consecutive_waits} consecutive cycles. "
@@ -253,8 +263,11 @@ class POAgent:
                         self.db.append_message("po", msg, self.cycle_n)
                         await self._broadcast_po_message(msg)
                         self.consecutive_waits = 0
+                elif action_type == "update_vision":
+                    await self._emit_activity("info", "Updating VISION.md PO Memory")
             except Exception as e:
                 logger.error("PO action %s failed: %s", action_type, e)
+                await self._emit_activity("error", f"Action '{action_type}' failed: {e}")
 
         if any(a.get("type") != "wait" for a in actions_taken):
             self.consecutive_waits = 0
@@ -287,6 +300,8 @@ class POAgent:
         if self.status not in ("blocked", "waiting"):
             self.status = "idle"
         await self._broadcast_status()
+        action_summary = ", ".join(a.get("type", "?") for a in actions_taken) or "none"
+        await self._emit_activity("info", f"Cycle {self.cycle_n} complete — actions: {action_summary}, status: {self.status}")
 
     # ─── Board State ─────────────────────────────────────────────────
 
@@ -646,11 +661,57 @@ class POAgent:
         report = "\n".join(report_lines)
         self.db.append_message("report", report, self.cycle_n)
 
+        report_at = datetime.now(timezone.utc)
+
         # Store in Redis for GET /po/report
         await redis_client.update_project_fields(self.project_id, {
             "po_last_report": report,
-            "po_last_report_at": datetime.now(timezone.utc).isoformat(),
+            "po_last_report_at": report_at.isoformat(),
         })
+
+        # Push report to kanban-claude-hub branch
+        await self._push_report_to_branch(report, report_at)
+        await self._emit_activity("info", f"Report generated (cycle {self.cycle_n})")
+
+    async def _push_report_to_branch(self, report: str, report_at: datetime) -> None:
+        """Push report as a markdown file to docs/reports/ on kanban-claude-hub branch."""
+        if not self._repo_owner or not self._repo_name or not self._gh_token:
+            return
+
+        filename = report_at.strftime("%Y-%m-%dT%H-%M") + ".md"
+        path = f"docs/reports/{filename}"
+        content = (
+            f"# PO Report — {report_at.strftime('%Y-%m-%d %H:%M UTC')}\n\n"
+            f"Cycle: {self.cycle_n}\n\n"
+            f"{report}\n"
+        )
+
+        url = (
+            f"https://api.github.com/repos/{self._repo_owner}/{self._repo_name}"
+            f"/contents/{path}"
+        )
+        headers = {
+            "Accept": "application/vnd.github.v3+json",
+            "Authorization": f"token {self._gh_token}",
+        }
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.put(
+                    url,
+                    headers=headers,
+                    json={
+                        "message": f"docs: PO report — cycle {self.cycle_n}",
+                        "content": base64.b64encode(content.encode()).decode(),
+                        "branch": "kanban-claude-hub",
+                    },
+                    timeout=15,
+                )
+                if resp.status_code in (200, 201):
+                    logger.info("Pushed report to %s on kanban-claude-hub", path)
+                else:
+                    logger.warning("Failed to push report: %s %s", resp.status_code, resp.text[:200])
+        except Exception as e:
+            logger.error("Failed to push report to branch: %s", e)
 
     # ─── LLM Calls ──────────────────────────────────────────────────
 
@@ -825,6 +886,25 @@ class POAgent:
         return response
 
     # ─── Broadcasting ────────────────────────────────────────────────
+
+    async def _emit_activity(self, level: str, message: str) -> None:
+        """Emit an activity log entry: broadcast via WS + persist in Redis."""
+        entry = {
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "level": level,  # info, warn, error
+            "cycle": self.cycle_n,
+            "message": message,
+        }
+        try:
+            await redis_client.append_po_activity(self.project_id, entry)
+            from claude_hub.routers.ws import broadcast
+            await broadcast({
+                "type": "po_activity",
+                "project_id": self.project_id,
+                "entry": entry,
+            })
+        except Exception:
+            pass
 
     async def _broadcast_status(self) -> None:
         try:

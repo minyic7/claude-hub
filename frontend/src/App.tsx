@@ -6,7 +6,6 @@ import { useDeployStatus } from './hooks/useDeployStatus'
 import { useVersionPolling } from './hooks/useVersionPolling'
 import { AppShell } from './components/layout/AppShell'
 import { KanbanBoard } from './components/layout/KanbanBoard'
-import { POBar } from './components/common/POBar'
 import { TicketDetail } from './components/kanban/TicketDetail'
 import { NotificationToast } from './components/common/NotificationToast'
 import { MobileChatView } from './components/common/MobileChatView'
@@ -182,7 +181,6 @@ function AuthedApp() {
       deployRuns={deployRuns}
       detailOpen={!!currentTicket}
     >
-      {activeProjectId && <POBar projectId={activeProjectId} tickets={tickets} />}
       <KanbanBoard
         columns={columns}
         activities={activities}

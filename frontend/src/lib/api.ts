@@ -214,6 +214,8 @@ export const api = {
       request<Ticket>(`/tickets/${ticketId}/po/approve`, { method: 'POST' }),
     reject: (ticketId: string) =>
       request<{ status: string }>(`/tickets/${ticketId}/po/reject`, { method: 'POST' }),
+    activity: (projectId: string, limit = 100) =>
+      request<{ entries: POActivityEntry[] }>(`/projects/${projectId}/po/activity?limit=${limit}`),
   },
   kanban: {
     start: (projectId: string) =>
@@ -292,6 +294,13 @@ export interface POMessage {
   role: 'user' | 'assistant' | 'system'
   content: string
   timestamp: string
+}
+
+export interface POActivityEntry {
+  ts: string
+  level: 'info' | 'warn' | 'error'
+  cycle: number
+  message: string
 }
 
 export type AgentProvider = 'anthropic' | 'openai' | 'openai_compatible'

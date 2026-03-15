@@ -247,6 +247,15 @@ export function useWebSocket(url: string): UseWebSocketReturn {
           emitNotification('', 'PO Agent', 'warning', `PO Alert: ${msg.message}`)
         }
         break
+
+      case 'po_activity':
+        // Dispatch custom event for POChatPanel to pick up
+        window.dispatchEvent(new CustomEvent('ws:po_activity', { detail: msg }))
+        // Emit notification for errors so they're visible even without PO panel open
+        if (initDone.current && msg.entry.level === 'error') {
+          emitNotification('', 'PO Agent', 'error', `PO: ${msg.entry.message}`)
+        }
+        break
     }
   }, [emitNotification])
 
