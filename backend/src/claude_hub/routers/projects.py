@@ -39,6 +39,11 @@ async def create_project(body: ProjectCreate):
         base_branch=body.base_branch,
         created_at=datetime.now(timezone.utc),
     )
+
+    # Create kanban-claude-hub branch with initial VISION.md
+    if body.gh_token and body.repo_url:
+        await _init_kanban_branch(project_id, body.name, body.repo_url, body.gh_token, body.base_branch)
+
     await redis_client.save_project(project.model_dump(mode="json"))
 
     # Auto-register GitHub webhook
@@ -55,6 +60,79 @@ async def create_project(body: ProjectCreate):
 
     await broadcast({"type": "project_created", "data": response})
     return response
+
+
+async def _init_kanban_branch(
+    project_id: str, project_name: str, repo_url: str, gh_token: str, base_branch: str,
+) -> None:
+    """Clone repo, create kanban-claude-hub branch with VISION.md, and push.
+
+    Raises HTTPException if the token lacks push permissions.
+    """
+    import os
+    import subprocess
+    import tempfile
+
+    from claude_hub.services.clone_manager import _inject_token
+
+    kanban_branch = "kanban-claude-hub"
+    authed_url = _inject_token(repo_url, gh_token)
+
+    # Check if branch already exists on remote
+    ls = subprocess.run(
+        ["git", "ls-remote", "--heads", authed_url, kanban_branch],
+        capture_output=True, text=True,
+    )
+    if kanban_branch in (ls.stdout or ""):
+        logger.info("Branch '%s' already exists for %s, skipping init", kanban_branch, repo_url)
+        return
+
+    # Shallow clone into temp dir
+    tmp = tempfile.mkdtemp(prefix=f"kanban-init-{project_id}-")
+    try:
+        clone_result = subprocess.run(
+            ["git", "clone", "--depth", "1", "--branch", base_branch, authed_url, tmp],
+            capture_output=True, text=True,
+        )
+        if clone_result.returncode != 0:
+            raise HTTPException(400, f"Failed to clone repo: {clone_result.stderr.strip()}")
+
+        # Create branch
+        subprocess.run(["git", "checkout", "-b", kanban_branch], cwd=tmp, capture_output=True, check=True)
+
+        # Create VISION.md
+        vision_path = os.path.join(tmp, "VISION.md")
+        if not os.path.exists(vision_path):
+            with open(vision_path, "w") as f:
+                f.write(
+                    f"# {project_name} — Vision\n\n"
+                    "<!-- USER_SECTION_START -->\n"
+                    "## Goals\n"
+                    "- (Add your project goals here)\n\n"
+                    "## Scope\n"
+                    "- (Define what is in scope and out of scope)\n"
+                    "<!-- USER_SECTION_END -->\n"
+                )
+            subprocess.run(["git", "add", "VISION.md"], cwd=tmp, capture_output=True)
+            subprocess.run(
+                ["git", "commit", "-m", "Initialize VISION.md for Claude Hub kanban"],
+                cwd=tmp, capture_output=True,
+            )
+
+        # Push — this validates token has write access
+        push = subprocess.run(
+            ["git", "push", "-u", "origin", kanban_branch],
+            cwd=tmp, capture_output=True, text=True,
+        )
+        if push.returncode != 0:
+            raise HTTPException(
+                403,
+                f"Cannot push to repo — check that your GitHub token has write access. Error: {push.stderr.strip()}"
+            )
+        logger.info("Created branch '%s' with VISION.md for project %s", kanban_branch, project_id)
+    finally:
+        import shutil
+        shutil.rmtree(tmp, ignore_errors=True)
 
 
 @router.get("/{project_id}")

@@ -326,6 +326,7 @@ def start_kanban(project: dict, gh_token: str = "") -> str:
         )
     else:
         # Create new branch from latest base and push it
+        logger.info("Creating kanban branch '%s' for project %s", kanban_branch, project_id)
         subprocess.run(
             ["git", "checkout", base_branch],
             cwd=kanban_dir, capture_output=True,
@@ -338,10 +339,37 @@ def start_kanban(project: dict, gh_token: str = "") -> str:
             ["git", "checkout", "-b", kanban_branch],
             cwd=kanban_dir, capture_output=True,
         )
-        subprocess.run(
+
+        # Create initial VISION.md if it doesn't exist
+        vision_path = os.path.join(kanban_dir, "VISION.md")
+        if not os.path.exists(vision_path):
+            project_name = project.get("name", "Project")
+            with open(vision_path, "w") as f:
+                f.write(f"# {project_name} — Vision\n\n"
+                        "<!-- USER_SECTION_START -->\n"
+                        "## Goals\n"
+                        "- (Add your project goals here)\n\n"
+                        "## Scope\n"
+                        "- (Define what is in scope and out of scope)\n"
+                        "<!-- USER_SECTION_END -->\n")
+            subprocess.run(
+                ["git", "add", "VISION.md"],
+                cwd=kanban_dir, capture_output=True,
+            )
+            subprocess.run(
+                ["git", "commit", "-m", "Initialize VISION.md for Claude Hub kanban"],
+                cwd=kanban_dir, capture_output=True,
+            )
+            logger.info("Created initial VISION.md for project %s", project_id)
+
+        push_result = subprocess.run(
             ["git", "push", "-u", "origin", kanban_branch],
-            cwd=kanban_dir, capture_output=True,
+            cwd=kanban_dir, capture_output=True, text=True,
         )
+        if push_result.returncode != 0:
+            logger.error("Failed to push kanban branch: %s", push_result.stderr)
+        else:
+            logger.info("Pushed kanban branch '%s' for project %s", kanban_branch, project_id)
 
     # Write CLAUDE.md for the kanban session
     api_base_url = f"http://localhost:{settings.port}"
