@@ -280,8 +280,9 @@ class POAgent:
                     if ans_tid and ans_text:
                         t = await redis_client.get_ticket(ans_tid)
                         t_title = t.get("title", ans_tid[:8]) if t else ans_tid[:8]
-                        if not t or t.get("status") != "blocked":
-                            await self._emit_activity("info", f"Skipped answer_ticket: '{t_title}' is {t.get('status', 'missing')}, not blocked")
+                        t_status = t.get("status", "missing") if t else "not found"
+                        if not t or t_status != "blocked":
+                            await self._emit_activity("info", f"Skipped answer_ticket: '{t_title}' is {t_status}, not blocked")
                         else:
                             try:
                                 from claude_hub.routers.tickets import answer_ticket
@@ -290,6 +291,22 @@ class POAgent:
                                 actions_taken.append(action)
                             except Exception as e:
                                 await self._emit_activity("warn", f"Failed to answer ticket {ans_tid[:8]}: {e}")
+                elif action_type == "merge_ticket":
+                    merge_tid = action.get("ticket_id", "")
+                    if merge_tid:
+                        t = await redis_client.get_ticket(merge_tid)
+                        t_title = t.get("title", merge_tid[:8]) if t else merge_tid[:8]
+                        t_status = t.get("status") if t else None
+                        if t_status != "review":
+                            await self._emit_activity("info", f"Skipped merge: '{t_title}' is {t_status or 'not found'}, not in review")
+                        else:
+                            try:
+                                from claude_hub.routers.tickets import merge_ticket
+                                await merge_ticket(merge_tid)
+                                await self._emit_activity("info", f"Merged ticket: {t_title}")
+                                actions_taken.append(action)
+                            except Exception as e:
+                                await self._emit_activity("warn", f"Failed to merge '{t_title}': {e}")
                 elif action_type == "stop_ticket":
                     stop_tid = action.get("ticket_id", "")
                     if stop_tid:
@@ -339,6 +356,10 @@ class POAgent:
         # ── STUCK SESSION DETECTION (full_auto only) ─────────────────
         if self.settings.mode == "full_auto":
             await self._detect_stuck_sessions(board_state)
+
+        # ── AUTO-MERGE review tickets (full_auto only) ───────────────
+        if self.settings.mode == "full_auto":
+            await self._auto_merge_review_tickets(board_state)
 
         # ── AUTO-START (full_auto only) ──────────────────────────────
         if self.settings.mode == "full_auto":
@@ -684,6 +705,19 @@ class POAgent:
             seq, title, status.value,
         )
 
+    async def _auto_merge_review_tickets(self, board_state: list[dict]) -> None:
+        """In full_auto mode, merge tickets that are in review status."""
+        review_tickets = [t for t in board_state if t.get("status") == "review"]
+        for ticket in review_tickets:
+            tid = ticket["id"]
+            title = ticket.get("title", tid[:8])
+            try:
+                from claude_hub.routers.tickets import merge_ticket
+                await merge_ticket(tid)
+                await self._emit_activity("info", f"Auto-merged: {title}")
+            except Exception as e:
+                await self._emit_activity("warn", f"Failed to auto-merge '{title}': {e}")
+
     async def _detect_stuck_sessions(self, board_state: list[dict]) -> None:
         """Detect in_progress/blocked tickets with no log activity and stop+retry them."""
         import os
@@ -999,14 +1033,14 @@ class POAgent:
             '  "reasoning": "brief explanation of your decision",\n'
             '  "actions": [\n'
             "    {\n"
-            '      "type": "create_ticket" | "start_ticket" | "stop_ticket" | "retry_ticket" | "answer_ticket" | "wait" | "raise_to_user" | "update_vision",\n'
+            '      "type": "create_ticket" | "start_ticket" | "merge_ticket" | "stop_ticket" | "retry_ticket" | "answer_ticket" | "wait" | "raise_to_user" | "update_vision",\n'
             '      "title": "...",           // for create_ticket\n'
             '      "description": "...",     // for create_ticket\n'
             '      "branch_type": "...",     // for create_ticket\n'
             '      "rationale": "...",       // for create_ticket — MUST reference VISION.md\n'
             '      "priority": 0,            // for create_ticket\n'
             '      "depends_on": [],         // for create_ticket — use ticket UUIDs from the board (the "id" field)\n'
-            '      "ticket_id": "...",       // for start_ticket / stop_ticket / retry_ticket / answer_ticket\n'
+            '      "ticket_id": "...",       // for start_ticket / merge_ticket / stop_ticket / retry_ticket / answer_ticket\n'
             '      "answer": "...",          // for answer_ticket — answer to blocked question\n'
             '      "message": "...",         // for raise_to_user\n'
             '      "content": "..."          // for update_vision — PO section content\n'
@@ -1018,6 +1052,7 @@ class POAgent:
             "- Before choosing 'wait', check: are there features in Goal/Scope not yet addressed?\n"
             f"- Max {self.settings.max_new_per_cycle} new tickets per cycle\n"
             "- Respect capacity constraints provided in OBSERVE summary\n"
+            "- Use merge_ticket for tickets in 'review' status — merge their PR to complete the work\n"
             "- Use stop_ticket for sessions that appear stuck (in_progress too long with no progress)\n"
             "- Use retry_ticket for failed tickets that should be retried\n"
             "- Use answer_ticket to unblock blocked tickets by answering their question\n"
