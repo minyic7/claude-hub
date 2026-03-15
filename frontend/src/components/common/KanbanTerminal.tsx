@@ -89,15 +89,10 @@ export function KanbanTerminal({ projectId, projectName, visible, onClose, tabBa
     }
 
     ws.onmessage = (event) => {
-      const viewportY = terminal.buffer.active.viewportY
       if (event.data instanceof ArrayBuffer) {
         terminal.write(new Uint8Array(event.data))
       } else {
         terminal.write(event.data)
-      }
-      // In scroll mode, restore viewport position so new output doesn't yank away
-      if (scrollModeRef.current) {
-        terminal.scrollToLine(viewportY)
       }
     }
 
@@ -207,8 +202,9 @@ export function KanbanTerminal({ projectId, projectName, visible, onClose, tabBa
     }
   }, [projectId, sendResize, connectWs])
 
-  // Scroll mode: intercept wheel events to scroll xterm.js locally
-  // instead of letting them be forwarded to tmux as escape sequences
+  // Scroll mode: intercept wheel events and convert to Up/Down arrow keys
+  // sent to tmux copy-mode (since tmux alternate screen buffer means
+  // xterm.js scrollback is empty and scrollLines() has no effect)
   useEffect(() => {
     const el = termRef.current
     if (!el) return
@@ -218,10 +214,13 @@ export function KanbanTerminal({ projectId, projectName, visible, onClose, tabBa
       e.preventDefault()
       e.stopPropagation()
       e.stopImmediatePropagation()
-      const terminal = terminalRef.current
-      if (terminal) {
-        const lines = Math.round(e.deltaY / 25) || (e.deltaY > 0 ? 1 : -1)
-        terminal.scrollLines(lines)
+      const ws = wsRef.current
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        const lines = Math.abs(Math.round(e.deltaY / 25)) || 1
+        // Arrow Up = \x1b[A, Arrow Down = \x1b[B (works in tmux copy-mode)
+        const arrow = e.deltaY > 0 ? '\x1b[B' : '\x1b[A'
+        const keys = arrow.repeat(lines)
+        ws.send(new TextEncoder().encode(keys))
       }
     }
 
@@ -289,9 +288,15 @@ export function KanbanTerminal({ projectId, projectName, visible, onClose, tabBa
     const next = !scrollModeRef.current
     scrollModeRef.current = next
     setScrollMode(next)
-    if (!next) {
-      // Exiting scroll mode — jump to bottom
-      terminalRef.current?.scrollToBottom()
+    const ws = wsRef.current
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      if (next) {
+        // Enter tmux copy-mode: Ctrl+B then [
+        ws.send(new TextEncoder().encode('\x02['))
+      } else {
+        // Exit tmux copy-mode: q
+        ws.send(new TextEncoder().encode('q'))
+      }
     }
   }, [])
 
