@@ -217,6 +217,7 @@ export function KanbanTerminal({ projectId, projectName, visible, onClose, tabBa
       if (!scrollModeRef.current) return
       e.preventDefault()
       e.stopPropagation()
+      e.stopImmediatePropagation()
       const terminal = terminalRef.current
       if (terminal) {
         const lines = Math.round(e.deltaY / 25) || (e.deltaY > 0 ? 1 : -1)
@@ -224,8 +225,9 @@ export function KanbanTerminal({ projectId, projectName, visible, onClose, tabBa
       }
     }
 
-    el.addEventListener('wheel', handleWheel, { passive: false })
-    return () => el.removeEventListener('wheel', handleWheel)
+    // Use capture phase to intercept before xterm.js's internal handlers
+    el.addEventListener('wheel', handleWheel, { passive: false, capture: true })
+    return () => el.removeEventListener('wheel', handleWheel, { capture: true })
   }, [])
 
   // Re-fit when becoming visible
