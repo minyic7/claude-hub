@@ -193,6 +193,10 @@ class POAgent:
         await self._emit_activity("info", "Observing: reading board, VISION.md, git history…")
 
         board_state = await self._get_board_state()
+
+        # Fix broken dependency references (e.g. "TICKET-001" → UUID)
+        await self._fix_broken_deps(board_state)
+
         vision = await self._read_vision()
         conversation = self.db.load_conversation(limit=50)
         constraints = self._check_constraints(board_state)
@@ -266,15 +270,18 @@ class POAgent:
                     ans_tid = action.get("ticket_id", "")
                     ans_text = action.get("answer", "")
                     if ans_tid and ans_text:
-                        try:
-                            from claude_hub.routers.tickets import answer_ticket
-                            await answer_ticket(ans_tid, {"answer": ans_text})
-                            t = await redis_client.get_ticket(ans_tid)
-                            t_title = t.get("title", ans_tid[:8]) if t else ans_tid[:8]
-                            await self._emit_activity("info", f"Answered blocked ticket: {t_title}")
-                            actions_taken.append(action)
-                        except Exception as e:
-                            await self._emit_activity("warn", f"Failed to answer ticket {ans_tid[:8]}: {e}")
+                        t = await redis_client.get_ticket(ans_tid)
+                        t_title = t.get("title", ans_tid[:8]) if t else ans_tid[:8]
+                        if not t or t.get("status") != "blocked":
+                            await self._emit_activity("info", f"Skipped answer_ticket: '{t_title}' is {t.get('status', 'missing')}, not blocked")
+                        else:
+                            try:
+                                from claude_hub.routers.tickets import answer_ticket
+                                await answer_ticket(ans_tid, {"answer": ans_text})
+                                await self._emit_activity("info", f"Answered blocked ticket: {t_title}")
+                                actions_taken.append(action)
+                            except Exception as e:
+                                await self._emit_activity("warn", f"Failed to answer ticket {ans_tid[:8]}: {e}")
                 elif action_type == "wait":
                     self.consecutive_waits += 1
                     self.status = "waiting"
@@ -508,6 +515,72 @@ class POAgent:
 
     # ─── Ticket Creation ─────────────────────────────────────────────
 
+    async def _fix_broken_deps(self, board_state: list[dict]) -> None:
+        """Fix tickets with non-UUID dependency references (e.g. 'TICKET-001', seq ints)."""
+        id_set = {t["id"] for t in board_state if t.get("id")}
+
+        for ticket in board_state:
+            deps = ticket.get("depends_on", [])
+            if not deps:
+                continue
+            # Check if any dep is not a valid UUID in the board
+            has_broken = any(d not in id_set for d in deps)
+            if not has_broken:
+                continue
+            resolved = self._resolve_depends_on(deps, board_state)
+            if resolved != deps:
+                await redis_client.update_ticket_fields(
+                    ticket["id"], {"depends_on": json.dumps(resolved)}
+                )
+                title = ticket.get("title", ticket["id"][:8])
+                logger.info("Fixed broken deps for '%s': %s → %s", title, deps, resolved)
+                # Update in-memory board_state too
+                ticket["depends_on"] = resolved
+
+    def _resolve_depends_on(self, raw_deps: list, board_state: list[dict]) -> list[str]:
+        """Resolve dependency references to UUIDs.
+
+        LLM may return UUIDs, seq numbers (int), or labels like "TICKET-001".
+        Convert everything to valid UUIDs by matching against the board.
+        """
+        if not raw_deps:
+            return []
+
+        # Build lookup maps from board
+        seq_to_id: dict[int, str] = {}
+        id_set: set[str] = set()
+        for t in board_state:
+            tid = t.get("id", "")
+            seq = t.get("seq", 0)
+            if tid:
+                id_set.add(tid)
+                if seq:
+                    seq_to_id[seq] = tid
+
+        resolved = []
+        for dep in raw_deps:
+            if isinstance(dep, str) and dep in id_set:
+                # Already a valid UUID
+                resolved.append(dep)
+            elif isinstance(dep, int) and dep in seq_to_id:
+                # Seq number → UUID
+                resolved.append(seq_to_id[dep])
+            elif isinstance(dep, str):
+                # Try to extract a number from labels like "TICKET-001", "TICKET-1", "#1"
+                import re
+                match = re.search(r'\d+', dep)
+                if match:
+                    seq_num = int(match.group())
+                    if seq_num in seq_to_id:
+                        resolved.append(seq_to_id[seq_num])
+                    else:
+                        logger.warning("PO: unresolved dependency '%s' (seq %d not found)", dep, seq_num)
+                else:
+                    logger.warning("PO: unresolved dependency '%s'", dep)
+            else:
+                logger.warning("PO: unresolved dependency '%s' (type %s)", dep, type(dep).__name__)
+        return resolved
+
     async def _create_ticket(self, action: dict, board_state: list[dict]) -> None:
         # Semantic dedup
         is_dup = await self._semantic_dedup(action, board_state)
@@ -555,7 +628,7 @@ class POAgent:
             "has_conflicts": False,
             "agent_cost_usd": 0.0,
             "notes": json.dumps([]),
-            "depends_on": json.dumps(action.get("depends_on", [])),
+            "depends_on": json.dumps(self._resolve_depends_on(action.get("depends_on", []), board_state)),
             "metadata": json.dumps({}),
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
@@ -838,7 +911,7 @@ class POAgent:
             '      "branch_type": "...",     // for create_ticket\n'
             '      "rationale": "...",       // for create_ticket — MUST reference VISION.md\n'
             '      "priority": 0,            // for create_ticket\n'
-            '      "depends_on": [],         // for create_ticket — ticket IDs\n'
+            '      "depends_on": [],         // for create_ticket — use ticket UUIDs from the board (the "id" field)\n'
             '      "ticket_id": "...",       // for start_ticket / answer_ticket — UUID of ticket\n'
             '      "answer": "...",          // for answer_ticket — answer to blocked question\n'
             '      "message": "...",         // for raise_to_user\n'
