@@ -250,6 +250,18 @@ class POAgent:
                     self.status = "blocked"
                     actions_taken.append(action)
                     await self._emit_activity("warn", f"Raised to user: {msg[:80]}")
+                elif action_type == "start_ticket":
+                    start_tid = action.get("ticket_id", "")
+                    if start_tid:
+                        try:
+                            from claude_hub.routers.tickets import start_ticket
+                            await start_ticket(start_tid)
+                            t = await redis_client.get_ticket(start_tid)
+                            t_title = t.get("title", start_tid[:8]) if t else start_tid[:8]
+                            await self._emit_activity("info", f"Started ticket: {t_title}")
+                            actions_taken.append(action)
+                        except Exception as e:
+                            await self._emit_activity("warn", f"Failed to start ticket {start_tid[:8]}: {e}")
                 elif action_type == "wait":
                     self.consecutive_waits += 1
                     self.status = "waiting"
@@ -271,6 +283,10 @@ class POAgent:
 
         if any(a.get("type") != "wait" for a in actions_taken):
             self.consecutive_waits = 0
+
+        # ── AUTO-START (full_auto only) ──────────────────────────────
+        if self.settings.mode == "full_auto":
+            await self._auto_start_todo_tickets()
 
         # ── RECORD ───────────────────────────────────────────────────
         self.db.record_cycle(
@@ -546,6 +562,56 @@ class POAgent:
             seq, title, status.value,
         )
 
+    async def _auto_start_todo_tickets(self) -> None:
+        """In full_auto mode, start todo tickets that have no unmerged dependencies."""
+        from claude_hub.services import session_manager
+        from claude_hub.config import settings as app_settings
+
+        board = await self._get_board_state()
+        todo_tickets = sorted(
+            [t for t in board if t.get("status") == "todo"],
+            key=lambda t: t.get("priority", 0),
+            reverse=True,
+        )
+
+        if not todo_tickets:
+            return
+
+        for ticket in todo_tickets:
+            tid = ticket["id"]
+
+            # Check capacity
+            if session_manager.active_session_count() >= app_settings.max_sessions:
+                await self._emit_activity(
+                    "info",
+                    f"Max sessions ({app_settings.max_sessions}) reached, skipping remaining todo tickets",
+                )
+                break
+
+            if session_manager.has_active_session(tid):
+                continue
+
+            # Check dependencies
+            deps = ticket.get("depends_on", [])
+            deps_met = True
+            for dep_id in deps:
+                dep = await redis_client.get_ticket(dep_id)
+                if not dep or dep.get("status") != "merged":
+                    deps_met = False
+                    break
+            if not deps_met:
+                continue
+
+            # Start via the tickets router
+            try:
+                from claude_hub.routers.tickets import start_ticket
+                await start_ticket(tid)
+                title = ticket.get("title", tid[:8])
+                await self._emit_activity("info", f"Auto-started ticket: {title}")
+            except Exception as e:
+                title = ticket.get("title", tid[:8])
+                await self._emit_activity("warn", f"Failed to auto-start '{title}': {e}")
+
     async def _semantic_dedup(self, proposed: dict, existing: list[dict]) -> bool:
         if not existing:
             return False
@@ -752,13 +818,14 @@ class POAgent:
             '  "reasoning": "brief explanation of your decision",\n'
             '  "actions": [\n'
             "    {\n"
-            '      "type": "create_ticket" | "wait" | "raise_to_user" | "update_vision",\n'
+            '      "type": "create_ticket" | "start_ticket" | "wait" | "raise_to_user" | "update_vision",\n'
             '      "title": "...",           // for create_ticket\n'
             '      "description": "...",     // for create_ticket\n'
             '      "branch_type": "...",     // for create_ticket\n'
             '      "rationale": "...",       // for create_ticket — MUST reference VISION.md\n'
             '      "priority": 0,            // for create_ticket\n'
             '      "depends_on": [],         // for create_ticket — ticket IDs\n'
+            '      "ticket_id": "...",       // for start_ticket — UUID of existing todo ticket\n'
             '      "message": "...",         // for raise_to_user\n'
             '      "content": "..."          // for update_vision — PO section content\n'
             "    }\n"
