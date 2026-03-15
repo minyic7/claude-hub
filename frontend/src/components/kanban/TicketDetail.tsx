@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
-import { AlertCircle, ArrowLeft, Check, CircleDot, Copy, ExternalLink, GitBranch, GitMerge, Loader2, MessageSquareWarning, Pencil, RefreshCw, RotateCcw, Send, Square, StickyNote, Trash2, Undo2, X } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { AlertCircle, ArrowDown, ArrowLeft, ArrowUp, Check, CircleDot, Copy, ExternalLink, GitBranch, GitMerge, Loader2, MessageSquareWarning, Pencil, RefreshCw, RotateCcw, Send, Square, StickyNote, Trash2, Undo2, X } from 'lucide-react'
 import { useIsMobile } from '../../hooks/useIsMobile'
 import { useVisualViewport } from '../../hooks/useVisualViewport'
 import type { Ticket, TicketNote, TicketStatus } from '../../types/ticket'
@@ -73,6 +73,38 @@ export function TicketDetail({ ticket, activities, allTickets, onClose, onDelete
   const unresolvedCount = ticket.unresolved_thread_count ?? null
   const [noteText, setNoteText] = useState('')
   const [addingNote, setAddingNote] = useState(false)
+
+  // Scroll buttons for the scrollable content area
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const [isScrollable, setIsScrollable] = useState(false)
+  const [showScrollTop, setShowScrollTop] = useState(false)
+  const [showScrollBottom, setShowScrollBottom] = useState(false)
+
+  const updateScrollState = useCallback(() => {
+    const el = scrollRef.current
+    if (!el) return
+    const scrollable = el.scrollHeight > el.clientHeight
+    setIsScrollable(scrollable)
+    if (scrollable) {
+      setShowScrollTop(el.scrollTop > 100)
+      setShowScrollBottom(el.scrollHeight - el.scrollTop - el.clientHeight > 100)
+    } else {
+      setShowScrollTop(false)
+      setShowScrollBottom(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    const observer = new ResizeObserver(updateScrollState)
+    observer.observe(el)
+    // Also observe the scroll content for size changes
+    for (const child of el.children) {
+      observer.observe(child)
+    }
+    return () => observer.disconnect()
+  }, [updateScrollState])
 
   // Poll CI status when ticket is merging or in review
   useEffect(() => {
@@ -374,7 +406,8 @@ export function TicketDetail({ ticket, activities, allTickets, onClose, onDelete
       </div>
 
       {/* Scrollable content area */}
-      <div className="flex-1 overflow-y-auto min-h-0">
+      <div className="relative flex-1 min-h-0">
+      <div ref={scrollRef} onScroll={updateScrollState} className="h-full overflow-y-auto">
 
       {/* Deploy queue banner */}
       {mergeQueueLocked && ticket.status === 'review' && (
@@ -745,6 +778,31 @@ export function TicketDetail({ ticket, activities, allTickets, onClose, onDelete
         <ActivityLog events={activities} onClear={() => api.tickets.clearActivity(ticket.id)} />
       </div>
 
+      </div>{/* end scrollable inner */}
+
+      {/* Floating scroll buttons */}
+      {isScrollable && (showScrollTop || showScrollBottom) && (
+        <div className="pointer-events-none absolute bottom-3 right-3 flex flex-col gap-1">
+          {showScrollTop && (
+            <button
+              onClick={() => scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })}
+              className="pointer-events-auto flex h-6 w-6 items-center justify-center rounded-full bg-[var(--color-bg-tertiary)] text-[var(--color-text-muted)] opacity-60 shadow transition-opacity hover:opacity-100"
+              title="Scroll to top"
+            >
+              <ArrowUp size={12} />
+            </button>
+          )}
+          {showScrollBottom && (
+            <button
+              onClick={() => scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })}
+              className="pointer-events-auto flex h-6 w-6 items-center justify-center rounded-full bg-[var(--color-bg-tertiary)] text-[var(--color-text-muted)] opacity-60 shadow transition-opacity hover:opacity-100"
+              title="Scroll to bottom"
+            >
+              <ArrowDown size={12} />
+            </button>
+          )}
+        </div>
+      )}
       </div>{/* end scrollable content */}
 
       {/* Message input for active sessions */}
