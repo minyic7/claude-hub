@@ -1,7 +1,7 @@
 import { useEffect, useRef, useCallback, useState } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
-import { TerminalSquare, RefreshCw, PanelRightClose } from 'lucide-react'
+import { TerminalSquare, RefreshCw, PanelRightClose, ScrollText } from 'lucide-react'
 import { api, getToken } from '../../lib/api'
 import '@xterm/xterm/css/xterm.css'
 
@@ -41,6 +41,8 @@ export function KanbanTerminal({ projectId, projectName, visible, onClose, tabBa
   const [connecting, setConnecting] = useState(true)
   const [flexBasis, setFlexBasis] = useState(loadPersistedWidth)
   const draggingRef = useRef(false)
+  const [scrollMode, setScrollMode] = useState(false)
+  const scrollModeRef = useRef(false)
 
   const sendResize = useCallback((cols: number, rows: number) => {
     const ws = wsRef.current
@@ -87,10 +89,15 @@ export function KanbanTerminal({ projectId, projectName, visible, onClose, tabBa
     }
 
     ws.onmessage = (event) => {
+      const viewportY = terminal.buffer.active.viewportY
       if (event.data instanceof ArrayBuffer) {
         terminal.write(new Uint8Array(event.data))
       } else {
         terminal.write(event.data)
+      }
+      // In scroll mode, restore viewport position so new output doesn't yank away
+      if (scrollModeRef.current) {
+        terminal.scrollToLine(viewportY)
       }
     }
 
@@ -255,6 +262,16 @@ export function KanbanTerminal({ projectId, projectName, visible, onClose, tabBa
     document.addEventListener('mouseup', onUp)
   }, [flexBasis, fitTerminal])
 
+  const toggleScrollMode = useCallback(() => {
+    const next = !scrollModeRef.current
+    scrollModeRef.current = next
+    setScrollMode(next)
+    if (!next) {
+      // Exiting scroll mode — jump to bottom
+      terminalRef.current?.scrollToBottom()
+    }
+  }, [])
+
   const handleRestart = async () => {
     setRestarting(true)
     try {
@@ -300,6 +317,18 @@ export function KanbanTerminal({ projectId, projectName, visible, onClose, tabBa
             </span>
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
+            <button
+              onClick={toggleScrollMode}
+              className={`flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] transition-colors ${
+                scrollMode
+                  ? 'bg-[var(--color-accent-yellow)]/15 text-[var(--color-accent-yellow)]'
+                  : 'text-[var(--color-text-muted)] hover:bg-[var(--color-bg-secondary)] hover:text-[var(--color-text-primary)]'
+              }`}
+              title={scrollMode ? 'Exit scroll mode — resume auto-scroll' : 'Enter scroll mode — freeze viewport'}
+            >
+              <ScrollText size={10} />
+              {scrollMode ? 'Scrolling' : 'Scroll'}
+            </button>
             <button
               onClick={handleRestart}
               disabled={restarting}
