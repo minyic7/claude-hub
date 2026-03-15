@@ -262,6 +262,19 @@ class POAgent:
                             actions_taken.append(action)
                         except Exception as e:
                             await self._emit_activity("warn", f"Failed to start ticket {start_tid[:8]}: {e}")
+                elif action_type == "answer_ticket":
+                    ans_tid = action.get("ticket_id", "")
+                    ans_text = action.get("answer", "")
+                    if ans_tid and ans_text:
+                        try:
+                            from claude_hub.routers.tickets import answer_ticket
+                            await answer_ticket(ans_tid, {"answer": ans_text})
+                            t = await redis_client.get_ticket(ans_tid)
+                            t_title = t.get("title", ans_tid[:8]) if t else ans_tid[:8]
+                            await self._emit_activity("info", f"Answered blocked ticket: {t_title}")
+                            actions_taken.append(action)
+                        except Exception as e:
+                            await self._emit_activity("warn", f"Failed to answer ticket {ans_tid[:8]}: {e}")
                 elif action_type == "wait":
                     self.consecutive_waits += 1
                     self.status = "waiting"
@@ -783,8 +796,9 @@ class POAgent:
 
     async def _llm_observe(self, **inputs) -> str:
         board_summary = json.dumps([
-            {"seq": t.get("seq", 0), "title": t["title"],
-             "status": t.get("status"), "po_proposed": t.get("po_proposed", False)}
+            {"id": t["id"], "seq": t.get("seq", 0), "title": t["title"],
+             "status": t.get("status"), "po_proposed": t.get("po_proposed", False),
+             **({"blocked_question": t["blocked_question"]} if t.get("blocked_question") else {})}
             for t in inputs["board"]
         ], indent=2)
 
@@ -818,14 +832,15 @@ class POAgent:
             '  "reasoning": "brief explanation of your decision",\n'
             '  "actions": [\n'
             "    {\n"
-            '      "type": "create_ticket" | "start_ticket" | "wait" | "raise_to_user" | "update_vision",\n'
+            '      "type": "create_ticket" | "start_ticket" | "answer_ticket" | "wait" | "raise_to_user" | "update_vision",\n'
             '      "title": "...",           // for create_ticket\n'
             '      "description": "...",     // for create_ticket\n'
             '      "branch_type": "...",     // for create_ticket\n'
             '      "rationale": "...",       // for create_ticket — MUST reference VISION.md\n'
             '      "priority": 0,            // for create_ticket\n'
             '      "depends_on": [],         // for create_ticket — ticket IDs\n'
-            '      "ticket_id": "...",       // for start_ticket — UUID of existing todo ticket\n'
+            '      "ticket_id": "...",       // for start_ticket / answer_ticket — UUID of ticket\n'
+            '      "answer": "...",          // for answer_ticket — answer to blocked question\n'
             '      "message": "...",         // for raise_to_user\n'
             '      "content": "..."          // for update_vision — PO section content\n'
             "    }\n"
