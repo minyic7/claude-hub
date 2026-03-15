@@ -29,6 +29,7 @@ COMPACTION_MERGED_THRESHOLD = 5
 FREEZE_THRESHOLD_SECONDS = 3600  # Watchdog: 1 hour without a cycle
 WATCHDOG_CHECK_INTERVAL = 300  # 5 minutes
 MAX_CONSECUTIVE_WAITS = 3
+STUCK_SESSION_MINUTES = 15  # Stop+retry sessions with no log output for this long
 RETRYABLE_STATUS = {429, 500, 529}
 
 USER_SECTION_START = "<!-- USER_SECTION_START"
@@ -249,11 +250,18 @@ class POAgent:
                     actions_taken.append(action)
                 elif action_type == "raise_to_user":
                     msg = action.get("message", "")
-                    self.db.append_message("po", msg, self.cycle_n)
-                    await self._broadcast_po_message(msg)
-                    self.status = "blocked"
-                    actions_taken.append(action)
-                    await self._emit_activity("warn", f"Raised to user: {msg[:80]}")
+                    if self.settings.mode == "full_auto":
+                        # In full_auto, convert raise_to_user to a log entry — never block
+                        self.db.append_message("po", f"[auto-resolved] {msg}", self.cycle_n)
+                        await self._broadcast_po_message(msg)
+                        await self._emit_activity("info", f"Auto-resolved (full_auto): {msg[:80]}")
+                        actions_taken.append(action)
+                    else:
+                        self.db.append_message("po", msg, self.cycle_n)
+                        await self._broadcast_po_message(msg)
+                        self.status = "blocked"
+                        actions_taken.append(action)
+                        await self._emit_activity("warn", f"Raised to user: {msg[:80]}")
                 elif action_type == "start_ticket":
                     start_tid = action.get("ticket_id", "")
                     if start_tid:
@@ -282,6 +290,30 @@ class POAgent:
                                 actions_taken.append(action)
                             except Exception as e:
                                 await self._emit_activity("warn", f"Failed to answer ticket {ans_tid[:8]}: {e}")
+                elif action_type == "stop_ticket":
+                    stop_tid = action.get("ticket_id", "")
+                    if stop_tid:
+                        try:
+                            from claude_hub.routers.tickets import stop_ticket
+                            await stop_ticket(stop_tid)
+                            t = await redis_client.get_ticket(stop_tid)
+                            t_title = t.get("title", stop_tid[:8]) if t else stop_tid[:8]
+                            await self._emit_activity("info", f"Stopped ticket: {t_title}")
+                            actions_taken.append(action)
+                        except Exception as e:
+                            await self._emit_activity("warn", f"Failed to stop ticket {stop_tid[:8]}: {e}")
+                elif action_type == "retry_ticket":
+                    retry_tid = action.get("ticket_id", "")
+                    if retry_tid:
+                        try:
+                            from claude_hub.routers.tickets import retry_ticket
+                            await retry_ticket(retry_tid)
+                            t = await redis_client.get_ticket(retry_tid)
+                            t_title = t.get("title", retry_tid[:8]) if t else retry_tid[:8]
+                            await self._emit_activity("info", f"Retried ticket: {t_title}")
+                            actions_taken.append(action)
+                        except Exception as e:
+                            await self._emit_activity("warn", f"Failed to retry ticket {retry_tid[:8]}: {e}")
                 elif action_type == "wait":
                     self.consecutive_waits += 1
                     self.status = "waiting"
@@ -303,6 +335,10 @@ class POAgent:
 
         if any(a.get("type") != "wait" for a in actions_taken):
             self.consecutive_waits = 0
+
+        # ── STUCK SESSION DETECTION (full_auto only) ─────────────────
+        if self.settings.mode == "full_auto":
+            await self._detect_stuck_sessions(board_state)
 
         # ── AUTO-START (full_auto only) ──────────────────────────────
         if self.settings.mode == "full_auto":
@@ -648,6 +684,63 @@ class POAgent:
             seq, title, status.value,
         )
 
+    async def _detect_stuck_sessions(self, board_state: list[dict]) -> None:
+        """Detect in_progress/blocked tickets with no log activity and stop+retry them."""
+        import os
+        from claude_hub.services import session_manager
+
+        active_tickets = [
+            t for t in board_state
+            if t.get("status") in ("in_progress", "blocked")
+        ]
+
+        for ticket in active_tickets:
+            tid = ticket["id"]
+            if not session_manager.has_active_session(tid):
+                continue
+
+            info = session_manager._active_sessions.get(tid)
+            if not info:
+                continue
+
+            log_path = info.get("log_path", "")
+            if not log_path or not os.path.exists(log_path):
+                continue
+
+            # Check log file modification time
+            try:
+                mtime = os.path.getmtime(log_path)
+                idle_minutes = (time.time() - mtime) / 60
+            except OSError:
+                continue
+
+            if idle_minutes < STUCK_SESSION_MINUTES:
+                continue
+
+            title = ticket.get("title", tid[:8])
+            await self._emit_activity(
+                "warn",
+                f"Stuck session detected: '{title}' — no output for {idle_minutes:.0f}min, stopping",
+            )
+
+            try:
+                from claude_hub.routers.tickets import stop_ticket
+                await stop_ticket(tid)
+                await self._emit_activity("info", f"Stopped stuck ticket: {title}")
+            except Exception as e:
+                await self._emit_activity("warn", f"Failed to stop stuck '{title}': {e}")
+                continue
+
+            # Auto-retry after stop
+            try:
+                # Small delay to let stop settle
+                await asyncio.sleep(2)
+                from claude_hub.routers.tickets import retry_ticket
+                await retry_ticket(tid)
+                await self._emit_activity("info", f"Auto-retried stuck ticket: {title}")
+            except Exception as e:
+                await self._emit_activity("warn", f"Failed to retry '{title}' after stop: {e}")
+
     async def _auto_start_todo_tickets(self) -> None:
         """In full_auto mode, start todo tickets that have no unmerged dependencies."""
         from claude_hub.services import session_manager
@@ -871,7 +964,8 @@ class POAgent:
         board_summary = json.dumps([
             {"id": t["id"], "seq": t.get("seq", 0), "title": t["title"],
              "status": t.get("status"), "po_proposed": t.get("po_proposed", False),
-             **({"blocked_question": t["blocked_question"]} if t.get("blocked_question") else {})}
+             **({"blocked_question": t["blocked_question"]} if t.get("blocked_question") else {}),
+             **({"started_at": t["started_at"]} if t.get("started_at") else {})}
             for t in inputs["board"]
         ], indent=2)
 
@@ -905,14 +999,14 @@ class POAgent:
             '  "reasoning": "brief explanation of your decision",\n'
             '  "actions": [\n'
             "    {\n"
-            '      "type": "create_ticket" | "start_ticket" | "answer_ticket" | "wait" | "raise_to_user" | "update_vision",\n'
+            '      "type": "create_ticket" | "start_ticket" | "stop_ticket" | "retry_ticket" | "answer_ticket" | "wait" | "raise_to_user" | "update_vision",\n'
             '      "title": "...",           // for create_ticket\n'
             '      "description": "...",     // for create_ticket\n'
             '      "branch_type": "...",     // for create_ticket\n'
             '      "rationale": "...",       // for create_ticket — MUST reference VISION.md\n'
             '      "priority": 0,            // for create_ticket\n'
             '      "depends_on": [],         // for create_ticket — use ticket UUIDs from the board (the "id" field)\n'
-            '      "ticket_id": "...",       // for start_ticket / answer_ticket — UUID of ticket\n'
+            '      "ticket_id": "...",       // for start_ticket / stop_ticket / retry_ticket / answer_ticket\n'
             '      "answer": "...",          // for answer_ticket — answer to blocked question\n'
             '      "message": "...",         // for raise_to_user\n'
             '      "content": "..."          // for update_vision — PO section content\n'
@@ -924,6 +1018,11 @@ class POAgent:
             "- Before choosing 'wait', check: are there features in Goal/Scope not yet addressed?\n"
             f"- Max {self.settings.max_new_per_cycle} new tickets per cycle\n"
             "- Respect capacity constraints provided in OBSERVE summary\n"
+            "- Use stop_ticket for sessions that appear stuck (in_progress too long with no progress)\n"
+            "- Use retry_ticket for failed tickets that should be retried\n"
+            "- Use answer_ticket to unblock blocked tickets by answering their question\n"
+            "- If a ticket is blocked, look at its blocked_question and answer it decisively\n"
+            "- In full_auto mode, NEVER use raise_to_user — make autonomous decisions\n"
         )
 
         prompt = (
