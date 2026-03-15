@@ -54,7 +54,16 @@ class POManager:
             po_cfg = {}
 
         po_settings = POSettings(**po_cfg)
-        agent = POAgent(project_id=project_id, po_settings=po_settings)
+
+        # Get per-project API key for PO Agent
+        agent_raw = project.get("agent_settings", "")
+        try:
+            agent_cfg = json.loads(agent_raw) if isinstance(agent_raw, str) and agent_raw else {}
+        except (json.JSONDecodeError, TypeError):
+            agent_cfg = {}
+        api_key = agent_cfg.get("api_key", "")
+
+        agent = POAgent(project_id=project_id, po_settings=po_settings, api_key=api_key)
         self._agents[project_id] = agent
 
         task = asyncio.create_task(

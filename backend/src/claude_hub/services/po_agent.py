@@ -73,7 +73,7 @@ def _validate_po_edit(original: str, proposed: str) -> bool:
 
 
 class POAgent:
-    def __init__(self, project_id: str, po_settings: POSettings):
+    def __init__(self, project_id: str, po_settings: POSettings, api_key: str = ""):
         self.project_id = project_id
         self.settings = po_settings
         self._trigger_queue: asyncio.Queue[str] = asyncio.Queue()
@@ -83,7 +83,8 @@ class POAgent:
         self.consecutive_waits: int = 0
         self.status: str = "idle"
         self.db = PODatabase(project_id)
-        self._client = anthropic.Anthropic()
+        # Use per-project API key if provided, otherwise fall back to env var
+        self._client = anthropic.Anthropic(api_key=api_key) if api_key else anthropic.Anthropic()
         self._project: dict | None = None
         self._gh_token: str = ""
         self._repo_owner: str = ""
