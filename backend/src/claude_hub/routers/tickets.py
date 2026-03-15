@@ -1164,11 +1164,25 @@ async def sync_review_status():
 
                 # Auto-trigger conflict resolution when conflicts are newly detected
                 if has_conflicts and not old_conflicts:
-                    try:
-                        await resolve_conflicts(ticket["id"])
-                        logger.info("Auto-triggered conflict resolution for ticket %s", ticket["id"])
-                    except Exception as e:
-                        logger.warning("Auto-resolve failed for %s: %s", ticket["id"], e)
+                    from claude_hub.services import session_manager
+                    if not session_manager.has_active_session(ticket["id"]):
+                        try:
+                            await resolve_conflicts(ticket["id"])
+                            logger.info("Auto-triggered conflict resolution for ticket %s", ticket["id"])
+                        except Exception as e:
+                            logger.warning("Auto-resolve failed for %s: %s", ticket["id"], e)
+
+    # Retry conflict resolution for tickets still flagged but with no active session
+    from claude_hub.services import session_manager
+    for ticket in review_tickets:
+        if ticket.get("has_conflicts") and not session_manager.has_active_session(ticket["id"]):
+            # Only retry if status is still review (not already being worked on)
+            if ticket.get("status") == "review":
+                try:
+                    await resolve_conflicts(ticket["id"])
+                    logger.info("Retried conflict resolution for ticket %s", ticket["id"])
+                except Exception:
+                    pass  # Will retry next poll
 
     # When tickets were merged, update other review branches with latest base
     if synced:

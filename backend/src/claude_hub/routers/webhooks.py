@@ -245,7 +245,14 @@ async def _update_review_branches(merged_pr_number: int, base_branch: str) -> No
                     await redis_client.update_ticket_fields(ticket["id"], {"has_conflicts": "True"})
                     updated = await redis_client.get_ticket(ticket["id"])
                     await broadcast({"type": "ticket_updated", "ticket_id": ticket["id"], "data": updated})
-                    logger.info("Merge conflict for ticket %s (PR #%d) — flagged for resolution", ticket["id"], pr_number)
+                    logger.info("Merge conflict for ticket %s (PR #%d) — triggering resolution", ticket["id"], pr_number)
+
+                    # Auto-trigger conflict resolution
+                    try:
+                        from claude_hub.routers.tickets import resolve_conflicts
+                        await resolve_conflicts(ticket["id"])
+                    except Exception as resolve_err:
+                        logger.warning("Auto-resolve failed for %s: %s", ticket["id"], resolve_err)
 
             except Exception as e:
                 logger.warning("Failed to update branch for ticket %s: %s", ticket["id"], e)

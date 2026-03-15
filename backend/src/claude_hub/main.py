@@ -81,6 +81,22 @@ async def _merge_queue_loop() -> None:
                 ticket = review_tickets[0]
                 tid = ticket["id"]
                 title = ticket.get("title", tid[:8])
+
+                # If ticket has conflicts, trigger resolution instead of merging
+                if ticket.get("has_conflicts"):
+                    # Check if there's already an active session resolving it
+                    from claude_hub.services import session_manager
+                    if not session_manager.has_active_session(tid):
+                        try:
+                            from claude_hub.routers.tickets import resolve_conflicts
+                            await resolve_conflicts(tid)
+                            logger.info("Merge queue: triggered conflict resolution for '%s'", title)
+                            await agent._emit_activity("info", f"Merge queue: resolving conflicts for '{title}'")
+                        except Exception as e:
+                            logger.warning("Merge queue: conflict resolve failed for '%s': %s", title, e)
+                            await agent._emit_activity("warn", f"Merge queue: conflict resolve failed '{title}': {e}")
+                    continue
+
                 try:
                     from claude_hub.routers.tickets import merge_ticket
                     await merge_ticket(tid)
