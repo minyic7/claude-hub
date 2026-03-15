@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import os
@@ -538,6 +539,10 @@ class TicketAgent:
                     "data": updated,
                 })
                 await self._record_activity("warning", f"Escalated: {question[:100]}")
+                # In full_auto mode, let PO Agent answer instead of waiting for human
+                asyncio.create_task(
+                    _po_auto_answer(self.ticket_id, question)
+                )
                 return f"Escalated to human: {question}"
             except Exception as e:
                 return f"Error escalating: {e}"
@@ -602,3 +607,55 @@ class TicketAgent:
             "ticket_id": self.ticket_id,
             "data": event_dict,
         })
+
+
+async def _po_auto_answer(ticket_id: str, question: str) -> None:
+    """If PO Agent is running in full_auto for this ticket's project, answer the escalation."""
+    try:
+        # Small delay to let the escalation state settle
+        await asyncio.sleep(2)
+
+        ticket = await redis_client.get_ticket(ticket_id)
+        if not ticket or ticket.get("status") != "blocked":
+            return
+
+        project_id = ticket.get("project_id")
+        if not project_id:
+            return
+
+        from claude_hub.services.po_manager import po_manager
+        agent = po_manager.get(project_id)
+        if not agent or agent.settings.mode != "full_auto":
+            return
+
+        # Use PO Agent's LLM to formulate an answer
+        ticket_title = ticket.get("title", ticket_id[:8])
+        ticket_desc = ticket.get("description", "")
+
+        answer = await agent._call_llm(
+            model=agent.settings.observe_model,
+            messages=[{"role": "user", "content": (
+                f"A Claude Code agent working on ticket '{ticket_title}' has a question:\n\n"
+                f"{question}\n\n"
+                f"Ticket description: {ticket_desc}\n\n"
+                "As the Product Owner, give a clear, actionable answer. "
+                "Be decisive — pick the best approach and tell the agent to proceed. "
+                "Keep your answer concise (2-3 sentences max)."
+            )}],
+            max_tokens=500,
+        )
+
+        if not answer:
+            return
+
+        # Send the answer via the ticket answer endpoint
+        from claude_hub.routers.tickets import answer_ticket
+        await answer_ticket(ticket_id, {"answer": answer})
+
+        await agent._emit_activity(
+            "info",
+            f"Auto-answered escalation for '{ticket_title}': {answer[:80]}",
+        )
+
+    except Exception as e:
+        logger.warning("PO auto-answer failed for %s: %s", ticket_id, e)
