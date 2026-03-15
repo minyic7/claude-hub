@@ -57,6 +57,11 @@ async def transition(ticket_id: str, target: TicketStatus, **extra_fields: objec
     if target == TicketStatus.REVIEW and updated and updated.get("pr_number"):
         asyncio.create_task(_auto_sync_reviews(ticket_id))
 
+    # Trigger PO agent to rank review queue when a ticket enters review
+    if target == TicketStatus.REVIEW and project_id:
+        from claude_hub.services.po_manager import po_manager
+        po_manager.trigger(project_id, "review_entered")
+
     # Trigger PO agent when a ticket merges
     if target == TicketStatus.MERGED and project_id:
         from claude_hub.services.po_manager import po_manager

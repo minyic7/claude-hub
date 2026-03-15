@@ -148,7 +148,10 @@ class POAgent:
                 break
 
             try:
-                await self.run_cycle(trigger)
+                if trigger == "review_entered":
+                    await self._rank_review_queue()
+                else:
+                    await self.run_cycle(trigger)
             except Exception as e:
                 logger.error("PO cycle failed for %s: %s", self.project_id[:8], e)
                 self.status = "idle"
@@ -291,22 +294,6 @@ class POAgent:
                                 actions_taken.append(action)
                             except Exception as e:
                                 await self._emit_activity("warn", f"Failed to answer ticket {ans_tid[:8]}: {e}")
-                elif action_type == "merge_ticket":
-                    merge_tid = action.get("ticket_id", "")
-                    if merge_tid:
-                        t = await redis_client.get_ticket(merge_tid)
-                        t_title = t.get("title", merge_tid[:8]) if t else merge_tid[:8]
-                        t_status = t.get("status") if t else None
-                        if t_status != "review":
-                            await self._emit_activity("info", f"Skipped merge: '{t_title}' is {t_status or 'not found'}, not in review")
-                        else:
-                            try:
-                                from claude_hub.routers.tickets import merge_ticket
-                                await merge_ticket(merge_tid)
-                                await self._emit_activity("info", f"Merged ticket: {t_title}")
-                                actions_taken.append(action)
-                            except Exception as e:
-                                await self._emit_activity("warn", f"Failed to merge '{t_title}': {e}")
                 elif action_type == "stop_ticket":
                     stop_tid = action.get("ticket_id", "")
                     if stop_tid:
@@ -977,6 +964,69 @@ class POAgent:
 
     # ─── LLM Calls ──────────────────────────────────────────────────
 
+    async def _rank_review_queue(self) -> None:
+        """Lightweight call: rank review tickets by merge priority."""
+        board = await self._get_board_state()
+        review_tickets = [t for t in board if t.get("status") == "review"]
+
+        if len(review_tickets) <= 1:
+            # 0 or 1 ticket — no ranking needed
+            if review_tickets:
+                await self._emit_activity("info", f"Review queue: 1 ticket, no ranking needed")
+            return
+
+        ticket_info = json.dumps([
+            {"id": t["id"], "seq": t.get("seq", 0), "title": t["title"],
+             "depends_on": t.get("depends_on", [])}
+            for t in review_tickets
+        ], indent=2)
+
+        all_tickets_info = json.dumps([
+            {"id": t["id"], "seq": t.get("seq", 0), "title": t["title"],
+             "status": t.get("status"), "depends_on": t.get("depends_on", [])}
+            for t in board if t.get("status") != "merged"
+        ], indent=2)
+
+        result = await self._call_llm(
+            model=self.settings.observe_model,
+            messages=[{"role": "user", "content": (
+                "Rank these tickets in review by merge priority (merge first → last).\n"
+                "Consider: dependency order (base before dependent), risk (small/safe first), "
+                "and unblocking effect (merging X unblocks more downstream tickets).\n\n"
+                f"Tickets in review:\n{ticket_info}\n\n"
+                f"All active tickets (for dependency context):\n{all_tickets_info}\n\n"
+                "Respond with ONLY a JSON array of ticket IDs in merge order, e.g.:\n"
+                '["uuid-1", "uuid-2", "uuid-3"]'
+            )}],
+            max_tokens=500,
+        )
+
+        try:
+            text = result.strip()
+            if text.startswith("```"):
+                text = text.split("\n", 1)[1] if "\n" in text else text
+                if text.endswith("```"):
+                    text = text[:-3]
+                text = text.strip()
+            ordered_ids = json.loads(text)
+            if not isinstance(ordered_ids, list):
+                raise ValueError("Expected list")
+        except (json.JSONDecodeError, ValueError) as e:
+            logger.warning("PO rank parse failed: %s — %s", e, result[:200])
+            await self._emit_activity("warn", f"Failed to parse merge ranking: {e}")
+            return
+
+        # Update priorities: lower number = higher priority = merge first
+        for priority, tid in enumerate(ordered_ids):
+            await redis_client.update_ticket_fields(tid, {"priority": priority})
+
+        titles = [t.get("title", t["id"][:8]) for t in review_tickets
+                  if t["id"] in ordered_ids]
+        await self._emit_activity(
+            "info",
+            f"Ranked {len(ordered_ids)} review tickets for merge: {', '.join(f'#{i+1} {t}' for i, t in enumerate(titles))}",
+        )
+
     async def _llm_observe(self, **inputs) -> str:
         board_summary = json.dumps([
             {"id": t["id"], "seq": t.get("seq", 0), "title": t["title"],
@@ -1016,14 +1066,14 @@ class POAgent:
             '  "reasoning": "brief explanation of your decision",\n'
             '  "actions": [\n'
             "    {\n"
-            '      "type": "create_ticket" | "start_ticket" | "merge_ticket" | "stop_ticket" | "retry_ticket" | "answer_ticket" | "wait" | "raise_to_user" | "update_vision",\n'
+            '      "type": "create_ticket" | "start_ticket" | "stop_ticket" | "retry_ticket" | "answer_ticket" | "wait" | "raise_to_user" | "update_vision",\n'
             '      "title": "...",           // for create_ticket\n'
             '      "description": "...",     // for create_ticket\n'
             '      "branch_type": "...",     // for create_ticket\n'
             '      "rationale": "...",       // for create_ticket — MUST reference VISION.md\n'
             '      "priority": 0,            // for create_ticket\n'
             '      "depends_on": [],         // for create_ticket — use ticket UUIDs from the board (the "id" field)\n'
-            '      "ticket_id": "...",       // for start_ticket / merge_ticket / stop_ticket / retry_ticket / answer_ticket\n'
+            '      "ticket_id": "...",       // for start_ticket / stop_ticket / retry_ticket / answer_ticket\n'
             '      "answer": "...",          // for answer_ticket — answer to blocked question\n'
             '      "message": "...",         // for raise_to_user\n'
             '      "content": "..."          // for update_vision — PO section content\n'
@@ -1035,7 +1085,7 @@ class POAgent:
             "- Before choosing 'wait', check: are there features in Goal/Scope not yet addressed?\n"
             f"- Max {self.settings.max_new_per_cycle} new tickets per cycle\n"
             "- Respect capacity constraints provided in OBSERVE summary\n"
-            "- Use merge_ticket for tickets in 'review' status — consider dependency order: merge base tickets before dependents\n"
+            "- Tickets in 'review' are auto-merged by the merge queue — you do NOT need to merge them\n"
             "- Use stop_ticket for sessions that appear stuck (in_progress too long with no progress)\n"
             "- Use retry_ticket for failed tickets that should be retried\n"
             "- Use answer_ticket to unblock blocked tickets by answering their question\n"

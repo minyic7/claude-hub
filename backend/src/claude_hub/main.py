@@ -52,6 +52,50 @@ async def _kanban_sync_loop() -> None:
             logger.error("Kanban sync error: %s", e)
 
 
+async def _merge_queue_loop() -> None:
+    """Background loop: auto-merge review tickets by priority for full_auto projects."""
+    while True:
+        try:
+            await asyncio.sleep(15)
+            all_projects = await redis_client.list_projects()
+            for project in all_projects:
+                pid = project["id"]
+                # Only for projects with full_auto PO
+                if not po_manager.is_running(pid):
+                    continue
+                agent = po_manager.get(pid)
+                if not agent or agent.settings.mode != "full_auto":
+                    continue
+
+                # Get review tickets sorted by priority
+                all_tickets = await redis_client.list_tickets_by_project(pid)
+                review_tickets = sorted(
+                    [t for t in all_tickets if t.get("status") == "review"],
+                    key=lambda t: t.get("priority", 0),
+                )
+
+                if not review_tickets:
+                    continue
+
+                # Merge one at a time (to handle rebases between merges)
+                ticket = review_tickets[0]
+                tid = ticket["id"]
+                title = ticket.get("title", tid[:8])
+                try:
+                    from claude_hub.routers.tickets import merge_ticket
+                    await merge_ticket(tid)
+                    logger.info("Merge queue: merged '%s' (priority %d)", title, ticket.get("priority", 0))
+                    await agent._emit_activity("info", f"Merge queue: merged '{title}'")
+                except Exception as e:
+                    logger.warning("Merge queue: failed to merge '%s': %s", title, e)
+                    await agent._emit_activity("warn", f"Merge queue: failed '{title}': {e}")
+                    # Don't try the next one — wait for next loop iteration
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.error("Merge queue error: %s", e)
+
+
 async def _recover_orphaned_tickets() -> None:
     """On startup, find IN_PROGRESS/BLOCKED tickets with dead tmux sessions → auto-restart."""
     from claude_hub.services import session_manager, clone_manager
@@ -108,10 +152,12 @@ async def lifespan(app: FastAPI):
     await po_manager.start_all_enabled()
     poll_task = asyncio.create_task(_pr_poll_loop())
     kanban_sync_task = asyncio.create_task(_kanban_sync_loop())
+    merge_queue_task = asyncio.create_task(_merge_queue_loop())
     yield
     await po_manager.stop_all()
     poll_task.cancel()
     kanban_sync_task.cancel()
+    merge_queue_task.cancel()
     try:
         await poll_task
     except asyncio.CancelledError:
