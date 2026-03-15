@@ -74,7 +74,7 @@ class POSettings(BaseModel):
     # LLM model configuration
     observe_model: str = "claude-sonnet-4-6"
     think_model: str = "claude-opus-4-6"
-    think_budget_tokens: int = 8000
+    think_budget_tokens: int = 10000
     compaction_model: str = "claude-sonnet-4-6"
 
 

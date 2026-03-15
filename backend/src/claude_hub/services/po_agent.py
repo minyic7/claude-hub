@@ -787,7 +787,7 @@ class POAgent:
                 {"role": "user", "content": prompt},
             ],
             system=system_prompt,
-            max_tokens=4000,
+            max_tokens=16000,
             thinking=True,
         )
 
@@ -824,10 +824,14 @@ class POAgent:
                 if system:
                     kwargs["system"] = system
                 if thinking:
+                    budget = self.settings.think_budget_tokens
                     kwargs["thinking"] = {
                         "type": "enabled",
-                        "budget_tokens": self.settings.think_budget_tokens,
+                        "budget_tokens": budget,
                     }
+                    # max_tokens must be > budget_tokens
+                    if kwargs["max_tokens"] <= budget:
+                        kwargs["max_tokens"] = budget + 4000
                     # Extended thinking requires temperature=1
                     kwargs["temperature"] = 1
 
