@@ -27,10 +27,10 @@ def calculate_cost(usage: dict, model: str) -> float:
     return round(cost, 6)
 
 
-async def _get_budgets() -> dict:
-    """Get budget limits from Redis settings (hot-reloadable)."""
-    from claude_hub.routers.settings_router import get_agent_settings
-    cfg = await get_agent_settings()
+async def _get_budgets(project_id: str = "") -> dict:
+    """Get budget limits from per-project agent settings."""
+    from claude_hub.routers.po import get_agent_settings_for_project
+    cfg = await get_agent_settings_for_project(project_id)
     return {
         "per_ticket": cfg.get("budget_per_ticket_usd", 2.00),
         "daily": cfg.get("budget_daily_usd", 50.00),
@@ -42,7 +42,9 @@ async def can_spend(ticket_id: str, estimated: float) -> tuple[bool, str]:
     r = redis_client.get_pool()
     today = datetime.now().strftime("%Y-%m-%d")
     month = datetime.now().strftime("%Y-%m")
-    budgets = await _get_budgets()
+    ticket = await redis_client.get_ticket(ticket_id)
+    project_id = ticket.get("project_id", "") if ticket else ""
+    budgets = await _get_budgets(project_id)
 
     ticket_cost = await r.get(f"agent:cost:ticket:{ticket_id}")
     ticket_cost = float(ticket_cost) if ticket_cost else 0.0

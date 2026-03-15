@@ -30,6 +30,23 @@ class ProjectUpdate(BaseModel):
     base_branch: str | None = None
 
 
+# ─── Agent Settings (per-project) ────────────────────────────────────────────
+
+class AgentSettings(BaseModel):
+    enabled: bool = True
+    provider: Literal["anthropic", "openai", "openai_compatible"] = "anthropic"
+    api_key: str = ""
+    endpoint_url: str = ""
+    model: str = "claude-haiku-4-5-20251001"
+    batch_size: int = 8
+    max_context_messages: int = 25
+    web_search: bool = False
+    auto_resolve_conversations: bool = False
+    budget_per_ticket_usd: float = 2.00
+    budget_daily_usd: float = 50.00
+    budget_monthly_usd: float = 500.00
+
+
 # ─── PO Settings ─────────────────────────────────────────────────────────────
 
 class POSettings(BaseModel):

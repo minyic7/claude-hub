@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { Bell, BookOpen, Check, ChevronDown, Crown, FolderPlus, PanelRightOpen, Plus, Settings, Wifi, WifiOff } from 'lucide-react'
+import { Bell, BookOpen, Check, ChevronDown, Crown, FolderPlus, PanelRightOpen, Plus, Settings, Trash2, Wifi, WifiOff } from 'lucide-react'
 import { useIsMobile } from '../../hooks/useIsMobile'
 import { DeployStatusWidget } from '../common/DeployStatusWidget'
 import { ThemeToggle } from '../common/ThemeToggle'
@@ -14,6 +14,7 @@ import type { DeployState } from '../../hooks/useDeployStatus'
 import type { WorkflowRun } from '../../lib/api'
 import type { Notification } from '../../hooks/useNotifications'
 import type { ReactNode } from 'react'
+import { api } from '../../lib/api'
 import type { Project, Ticket } from '../../types/ticket'
 
 interface AppShellProps {
@@ -49,6 +50,7 @@ export function AppShell({
   const [showKanbanTerminal, setShowKanbanTerminal] = useState(true)
   const [panelTab, setPanelTab] = useState<'terminal' | 'po'>('terminal')
   const [showDocs, setShowDocs] = useState(false)
+  const [deleteConfirm, setDeleteConfirm] = useState<Project | null>(null)
 
   const activeProject = activeProjectId ? projects.get(activeProjectId) : null
 
@@ -120,21 +122,32 @@ export function AppShell({
                 <div className="fixed inset-0 z-40" onClick={() => setShowProjectMenu(false)} />
                 <div className="absolute left-0 top-full z-50 mt-1 w-64 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-panel)] py-1 shadow-lg">
                   {[...projects.values()].map((p) => (
-                    <button
+                    <div
                       key={p.id}
-                      onClick={() => { onProjectChange(p.id); setShowProjectMenu(false) }}
-                      className={`flex w-full flex-col px-3 py-2 text-left hover:bg-[var(--color-bg-secondary)] ${p.id === activeProjectId ? 'bg-[var(--color-accent-blue)]/5' : ''}`}
+                      className={`flex w-full items-center hover:bg-[var(--color-bg-secondary)] ${p.id === activeProjectId ? 'bg-[var(--color-accent-blue)]/5' : ''}`}
                     >
-                      <span className="text-xs font-medium text-[var(--color-text-primary)]">{p.name}</span>
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-xs text-[var(--color-text-muted)] truncate">
-                          {p.repo_url.replace('https://github.com/', '')}
-                        </span>
-                        <span className="font-mono text-[9px] text-[var(--color-text-muted)]/40">
-                          {p.id.slice(0, 8)}
-                        </span>
-                      </div>
-                    </button>
+                      <button
+                        onClick={() => { onProjectChange(p.id); setShowProjectMenu(false) }}
+                        className="flex flex-1 flex-col px-3 py-2 text-left min-w-0"
+                      >
+                        <span className="text-xs font-medium text-[var(--color-text-primary)]">{p.name}</span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-xs text-[var(--color-text-muted)] truncate">
+                            {p.repo_url.replace('https://github.com/', '')}
+                          </span>
+                          <span className="font-mono text-[9px] text-[var(--color-text-muted)]/40">
+                            {p.id.slice(0, 8)}
+                          </span>
+                        </div>
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setDeleteConfirm(p); setShowProjectMenu(false) }}
+                        className="shrink-0 p-2 text-[var(--color-text-muted)] hover:text-[var(--color-accent-red)] transition-colors"
+                        title="Delete project"
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    </div>
                   ))}
                   {projects.size > 0 && <div className="my-1 border-t border-[var(--color-border)]" />}
                   <button
@@ -382,6 +395,41 @@ export function AppShell({
       )}
 
       <DocsOverlay open={showDocs} onClose={() => setShowDocs(false)} />
+
+      {/* Delete project confirmation */}
+      {deleteConfirm && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50">
+          <div className="w-80 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-panel)] p-5 shadow-xl">
+            <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">Delete Project</h3>
+            <p className="mt-2 text-xs text-[var(--color-text-muted)]">
+              Are you sure you want to delete <strong className="text-[var(--color-text-primary)]">{deleteConfirm.name}</strong>? This will remove the project and all its tickets. This action cannot be undone.
+            </p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                onClick={() => setDeleteConfirm(null)}
+                className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-xs text-[var(--color-text-primary)] hover:bg-[var(--color-bg-secondary)]"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={async () => {
+                  const id = deleteConfirm.id
+                  setDeleteConfirm(null)
+                  try {
+                    await api.projects.delete(id)
+                    if (activeProjectId === id) onProjectChange(null)
+                  } catch (e) {
+                    console.error('Failed to delete project:', e)
+                  }
+                }}
+                className="rounded-md bg-[var(--color-accent-red)] px-3 py-1.5 text-xs font-medium text-white hover:opacity-90"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

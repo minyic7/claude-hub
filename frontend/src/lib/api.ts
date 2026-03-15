@@ -171,11 +171,23 @@ export const api = {
       request<Ticket>(`/tickets/${id}/duplicate`, { method: 'POST' }),
   },
   settings: {
-    getAgent: () => request<AgentSettings>('/settings/agent'),
-    updateAgent: (data: Partial<AgentSettings>) =>
-      request<AgentSettings>('/settings/agent', { method: 'PUT', body: JSON.stringify(data) }),
-    testConnection: () =>
-      request<{ ok: boolean; model: string; message: string }>('/settings/agent/test', { method: 'POST' }),
+    getGlobal: () => request<GlobalSettings>('/settings/agent'),
+    updateGlobal: (data: Partial<GlobalSettings>) =>
+      request<GlobalSettings>('/settings/agent', { method: 'PUT', body: JSON.stringify(data) }),
+    getProjectAgent: (projectId: string) =>
+      request<ProjectAgentSettings>(`/projects/${projectId}/agent/settings`),
+    updateProjectAgent: (projectId: string, data: ProjectAgentSettings) =>
+      request<ProjectAgentSettings>(`/projects/${projectId}/agent/settings`, {
+        method: 'PUT', body: JSON.stringify(data),
+      }),
+    testConnection: (data: { api_key: string; provider: string; model?: string; endpoint_url?: string }) =>
+      request<{ ok: boolean; model: string; message: string }>('/settings/agent/test', {
+        method: 'POST', body: JSON.stringify(data),
+      }),
+    // Legacy aliases
+    getAgent: () => request<GlobalSettings>('/settings/agent'),
+    updateAgent: (data: Partial<GlobalSettings>) =>
+      request<GlobalSettings>('/settings/agent', { method: 'PUT', body: JSON.stringify(data) }),
   },
   po: {
     getSettings: (projectId: string) =>
@@ -284,12 +296,15 @@ export interface POMessage {
 
 export type AgentProvider = 'anthropic' | 'openai' | 'openai_compatible'
 
-export interface AgentSettings {
-  // System
+// Global settings (shared across all projects)
+export interface GlobalSettings {
   max_sessions: number
-  gh_token: string
+  max_total_sessions: number
   webhook_url: string
-  // Agent
+}
+
+// Per-project agent settings
+export interface ProjectAgentSettings {
   enabled: boolean
   provider: AgentProvider
   api_key: string
@@ -303,3 +318,6 @@ export interface AgentSettings {
   budget_daily_usd: number
   budget_monthly_usd: number
 }
+
+// Legacy alias for compatibility
+export type AgentSettings = GlobalSettings

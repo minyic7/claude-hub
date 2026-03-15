@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { LogOut, Server, Bot, User, Crown } from 'lucide-react'
 import { Modal } from '../common/Modal'
-import { api, clearToken, type AgentSettings, type AgentProvider, type POSettings } from '../../lib/api'
+import { api, clearToken, type GlobalSettings, type ProjectAgentSettings, type AgentProvider, type POSettings } from '../../lib/api'
 
 const PROVIDERS: { id: AgentProvider; label: string; description: string }[] = [
   { id: 'anthropic', label: 'Anthropic', description: 'Claude models via Anthropic API' },
@@ -30,6 +30,21 @@ const TABS: { id: Tab; label: string; icon: typeof Server }[] = [
   { id: 'account', label: 'Account', icon: User },
 ]
 
+const DEFAULT_AGENT: ProjectAgentSettings = {
+  enabled: true,
+  provider: 'anthropic',
+  api_key: '',
+  endpoint_url: '',
+  model: 'claude-haiku-4-5-20251001',
+  batch_size: 8,
+  max_context_messages: 25,
+  web_search: false,
+  auto_resolve_conversations: false,
+  budget_per_ticket_usd: 2.00,
+  budget_daily_usd: 50.00,
+  budget_monthly_usd: 500.00,
+}
+
 const DEFAULT_PO: POSettings = {
   enabled: false,
   mode: 'semi_auto',
@@ -55,13 +70,17 @@ interface Props {
 }
 
 export function AgentSettingsModal({ open, onClose, initialTab, activeProjectId }: Props) {
-  const [settings, setSettings] = useState<AgentSettings | null>(null)
+  const [globalSettings, setGlobalSettings] = useState<GlobalSettings | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [saved, setSaved] = useState(false)
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null)
   const [activeTab, setActiveTab] = useState<Tab>(initialTab || 'system')
+
+  // Per-project agent settings
+  const [agentSettings, setAgentSettings] = useState<ProjectAgentSettings>(DEFAULT_AGENT)
+  const [agentLoaded, setAgentLoaded] = useState(false)
 
   // PO settings (per-project)
   const [poSettings, setPoSettings] = useState<POSettings>(DEFAULT_PO)
@@ -76,10 +95,15 @@ export function AgentSettingsModal({ open, onClose, initialTab, activeProjectId 
     if (open) {
       setError('')
       setSaved(false)
-      api.settings.getAgent().then(setSettings).catch(() => setError('Failed to load settings'))
-      // Load PO settings for active project
+      setTestResult(null)
+      api.settings.getGlobal().then(setGlobalSettings).catch(() => setError('Failed to load settings'))
+      // Load per-project settings
       if (activeProjectId) {
+        setAgentLoaded(false)
         setPoLoaded(false)
+        api.settings.getProjectAgent(activeProjectId)
+          .then((s) => { setAgentSettings(s); setAgentLoaded(true) })
+          .catch(() => { setAgentSettings(DEFAULT_AGENT); setAgentLoaded(true) })
         api.po.getSettings(activeProjectId)
           .then((s) => { setPoSettings(s); setPoLoaded(true) })
           .catch(() => { setPoSettings(DEFAULT_PO); setPoLoaded(true) })
@@ -92,12 +116,15 @@ export function AgentSettingsModal({ open, onClose, initialTab, activeProjectId 
     setError('')
     setSaved(false)
     try {
-      if (activeTab === 'po' && activeProjectId) {
+      if (activeTab === 'system' && globalSettings) {
+        const updated = await api.settings.updateGlobal(globalSettings)
+        setGlobalSettings(updated)
+      } else if (activeTab === 'agent' && activeProjectId) {
+        const updated = await api.settings.updateProjectAgent(activeProjectId, agentSettings)
+        setAgentSettings(updated)
+      } else if (activeTab === 'po' && activeProjectId) {
         const updated = await api.po.updateSettings(activeProjectId, poSettings)
         setPoSettings(updated)
-      } else if (settings) {
-        const updated = await api.settings.updateAgent(settings)
-        setSettings(updated)
       }
       setSaved(true)
       setTimeout(() => setSaved(false), 2000)
@@ -112,7 +139,12 @@ export function AgentSettingsModal({ open, onClose, initialTab, activeProjectId 
     setTesting(true)
     setTestResult(null)
     try {
-      const result = await api.settings.testConnection()
+      const result = await api.settings.testConnection({
+        api_key: agentSettings.api_key,
+        provider: agentSettings.provider,
+        model: agentSettings.model,
+        endpoint_url: agentSettings.endpoint_url,
+      })
       setTestResult({ ok: true, message: `${result.model}` })
     } catch (e) {
       setTestResult({ ok: false, message: e instanceof Error ? e.message : 'Connection failed' })
@@ -121,7 +153,7 @@ export function AgentSettingsModal({ open, onClose, initialTab, activeProjectId 
     }
   }
 
-  if (!settings) {
+  if (!globalSettings) {
     return (
       <Modal open={open} onClose={onClose} title="Settings">
         <p className="text-sm text-[var(--color-text-muted)]">Loading...</p>
@@ -129,9 +161,13 @@ export function AgentSettingsModal({ open, onClose, initialTab, activeProjectId 
     )
   }
 
-  const models = settings.provider === 'anthropic' ? ANTHROPIC_MODELS
-    : settings.provider === 'openai' ? OPENAI_MODELS
+  const models = agentSettings.provider === 'anthropic' ? ANTHROPIC_MODELS
+    : agentSettings.provider === 'openai' ? OPENAI_MODELS
     : []
+
+  const needsProject = (activeTab === 'agent' || activeTab === 'po') && !activeProjectId
+  const agentNotLoaded = activeTab === 'agent' && activeProjectId && !agentLoaded
+  const poNotLoaded = activeTab === 'po' && activeProjectId && !poLoaded
 
   return (
     <Modal open={open} onClose={onClose} title="Settings" wide>
@@ -157,44 +193,41 @@ export function AgentSettingsModal({ open, onClose, initialTab, activeProjectId 
         {/* Right content */}
         <div className="flex flex-1 flex-col pl-4 min-w-0">
           <div className="flex-1 overflow-y-auto space-y-4">
+
+            {/* Needs project message */}
+            {needsProject && (
+              <p className="text-sm text-[var(--color-text-muted)]">Select a project to configure {activeTab === 'agent' ? 'TicketAgent' : 'PO Agent'} settings.</p>
+            )}
+
+            {/* Loading */}
+            {(agentNotLoaded || poNotLoaded) && (
+              <p className="text-sm text-[var(--color-text-muted)]">Loading...</p>
+            )}
+
             {/* ── System Tab ── */}
             {activeTab === 'system' && (
               <>
                 <div>
                   <label className="mb-1 flex items-center justify-between text-sm text-[var(--color-text-primary)]">
                     <span>Max Concurrent Sessions</span>
-                    <span className="font-mono text-xs text-[var(--color-text-muted)]">{settings.max_sessions}</span>
+                    <span className="font-mono text-xs text-[var(--color-text-muted)]">{globalSettings.max_sessions}</span>
                   </label>
                   <input
                     type="range"
                     min={1}
                     max={20}
-                    value={settings.max_sessions}
-                    onChange={(e) => setSettings({ ...settings, max_sessions: Number(e.target.value) })}
+                    value={globalSettings.max_sessions}
+                    onChange={(e) => setGlobalSettings({ ...globalSettings, max_sessions: Number(e.target.value) })}
                     className="w-full accent-[var(--color-accent-blue)]"
                   />
-                </div>
-
-                <div>
-                  <label className="mb-1 block text-sm text-[var(--color-text-primary)]">GitHub Token</label>
-                  <input
-                    type="password"
-                    value={settings.gh_token}
-                    onChange={(e) => setSettings({ ...settings, gh_token: e.target.value })}
-                    placeholder="ghp_..."
-                    className="w-full rounded border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2 py-1.5 text-xs text-[var(--color-text-primary)] font-mono"
-                  />
-                  <p className="mt-0.5 text-[10px] text-[var(--color-text-muted)]">
-                    Fallback token for projects without their own.
-                  </p>
                 </div>
 
                 <div>
                   <label className="mb-1 block text-sm text-[var(--color-text-primary)]">Webhook URL</label>
                   <input
                     type="url"
-                    value={settings.webhook_url}
-                    onChange={(e) => setSettings({ ...settings, webhook_url: e.target.value })}
+                    value={globalSettings.webhook_url}
+                    onChange={(e) => setGlobalSettings({ ...globalSettings, webhook_url: e.target.value })}
                     placeholder="https://your-server.com/api/webhooks/github"
                     className="w-full rounded border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2 py-1.5 text-xs text-[var(--color-text-primary)] font-mono"
                   />
@@ -205,20 +238,20 @@ export function AgentSettingsModal({ open, onClose, initialTab, activeProjectId 
               </>
             )}
 
-            {/* ── TicketAgent Tab ── */}
-            {activeTab === 'agent' && (
+            {/* ── TicketAgent Tab (per-project) ── */}
+            {activeTab === 'agent' && activeProjectId && agentLoaded && (
               <>
                 {/* Enabled */}
                 <label className="flex items-center justify-between">
                   <span className="text-sm text-[var(--color-text-primary)]">Agent Enabled</span>
                   <button
-                    onClick={() => setSettings({ ...settings, enabled: !settings.enabled })}
+                    onClick={() => setAgentSettings({ ...agentSettings, enabled: !agentSettings.enabled })}
                     className={`relative h-6 w-11 rounded-full transition-colors ${
-                      settings.enabled ? 'bg-[var(--color-accent-blue)]' : 'bg-[var(--color-border)]'
+                      agentSettings.enabled ? 'bg-[var(--color-accent-blue)]' : 'bg-[var(--color-border)]'
                     }`}
                   >
                     <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
-                      settings.enabled ? 'left-[22px]' : 'left-0.5'
+                      agentSettings.enabled ? 'left-[22px]' : 'left-0.5'
                     }`} />
                   </button>
                 </label>
@@ -230,9 +263,9 @@ export function AgentSettingsModal({ open, onClose, initialTab, activeProjectId 
                     {PROVIDERS.map((p) => (
                       <button
                         key={p.id}
-                        onClick={() => setSettings({ ...settings, provider: p.id })}
+                        onClick={() => setAgentSettings({ ...agentSettings, provider: p.id })}
                         className={`rounded-md border px-3 py-2 text-xs transition-colors ${
-                          settings.provider === p.id
+                          agentSettings.provider === p.id
                             ? 'border-[var(--color-accent-blue)] bg-[var(--color-accent-blue)]/10 text-[var(--color-accent-blue)]'
                             : 'border-[var(--color-border)] text-[var(--color-text-muted)] hover:border-[var(--color-text-muted)]'
                         }`}
@@ -249,8 +282,8 @@ export function AgentSettingsModal({ open, onClose, initialTab, activeProjectId 
                   <label className="mb-1 block text-sm text-[var(--color-text-primary)]">API Key</label>
                   <input
                     type="password"
-                    value={settings.api_key}
-                    onChange={(e) => setSettings({ ...settings, api_key: e.target.value })}
+                    value={agentSettings.api_key}
+                    onChange={(e) => setAgentSettings({ ...agentSettings, api_key: e.target.value })}
                     placeholder="sk-..."
                     className="w-full rounded border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2 py-1.5 text-xs text-[var(--color-text-primary)] font-mono"
                   />
@@ -274,13 +307,13 @@ export function AgentSettingsModal({ open, onClose, initialTab, activeProjectId 
                 </div>
 
                 {/* Endpoint URL */}
-                {settings.provider === 'openai_compatible' && (
+                {agentSettings.provider === 'openai_compatible' && (
                   <div>
                     <label className="mb-1 block text-sm text-[var(--color-text-primary)]">Endpoint URL</label>
                     <input
                       type="url"
-                      value={settings.endpoint_url}
-                      onChange={(e) => setSettings({ ...settings, endpoint_url: e.target.value })}
+                      value={agentSettings.endpoint_url}
+                      onChange={(e) => setAgentSettings({ ...agentSettings, endpoint_url: e.target.value })}
                       placeholder="https://your-endpoint.com/v1"
                       className="w-full rounded border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2 py-1.5 text-xs text-[var(--color-text-primary)] font-mono"
                     />
@@ -295,9 +328,9 @@ export function AgentSettingsModal({ open, onClose, initialTab, activeProjectId 
                       {models.map((m) => (
                         <button
                           key={m.id}
-                          onClick={() => setSettings({ ...settings, model: m.id })}
+                          onClick={() => setAgentSettings({ ...agentSettings, model: m.id })}
                           className={`rounded-md border px-3 py-2 text-xs transition-colors ${
-                            settings.model === m.id
+                            agentSettings.model === m.id
                               ? 'border-[var(--color-accent-blue)] bg-[var(--color-accent-blue)]/10 text-[var(--color-accent-blue)]'
                               : 'border-[var(--color-border)] text-[var(--color-text-muted)] hover:border-[var(--color-text-muted)]'
                           }`}
@@ -310,8 +343,8 @@ export function AgentSettingsModal({ open, onClose, initialTab, activeProjectId 
                   ) : (
                     <input
                       type="text"
-                      value={settings.model}
-                      onChange={(e) => setSettings({ ...settings, model: e.target.value })}
+                      value={agentSettings.model}
+                      onChange={(e) => setAgentSettings({ ...agentSettings, model: e.target.value })}
                       placeholder="model-name"
                       className="w-full rounded border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2 py-1.5 text-xs text-[var(--color-text-primary)] font-mono"
                     />
@@ -322,14 +355,14 @@ export function AgentSettingsModal({ open, onClose, initialTab, activeProjectId 
                 <div>
                   <label className="mb-1 flex items-center justify-between text-sm text-[var(--color-text-primary)]">
                     <span>Batch Size</span>
-                    <span className="font-mono text-xs text-[var(--color-text-muted)]">{settings.batch_size}</span>
+                    <span className="font-mono text-xs text-[var(--color-text-muted)]">{agentSettings.batch_size}</span>
                   </label>
                   <input
                     type="range"
                     min={1}
                     max={30}
-                    value={settings.batch_size}
-                    onChange={(e) => setSettings({ ...settings, batch_size: Number(e.target.value) })}
+                    value={agentSettings.batch_size}
+                    onChange={(e) => setAgentSettings({ ...agentSettings, batch_size: Number(e.target.value) })}
                     className="w-full accent-[var(--color-accent-blue)]"
                   />
                   <div className="flex justify-between text-[10px] text-[var(--color-text-muted)]">
@@ -342,15 +375,15 @@ export function AgentSettingsModal({ open, onClose, initialTab, activeProjectId 
                 <div>
                   <label className="mb-1 flex items-center justify-between text-sm text-[var(--color-text-primary)]">
                     <span>Context Messages</span>
-                    <span className="font-mono text-xs text-[var(--color-text-muted)]">{settings.max_context_messages}</span>
+                    <span className="font-mono text-xs text-[var(--color-text-muted)]">{agentSettings.max_context_messages}</span>
                   </label>
                   <input
                     type="range"
                     min={5}
                     max={100}
                     step={5}
-                    value={settings.max_context_messages}
-                    onChange={(e) => setSettings({ ...settings, max_context_messages: Number(e.target.value) })}
+                    value={agentSettings.max_context_messages}
+                    onChange={(e) => setAgentSettings({ ...agentSettings, max_context_messages: Number(e.target.value) })}
                     className="w-full accent-[var(--color-accent-blue)]"
                   />
                   <div className="flex justify-between text-[10px] text-[var(--color-text-muted)]">
@@ -363,13 +396,13 @@ export function AgentSettingsModal({ open, onClose, initialTab, activeProjectId 
                 <label className="flex items-center justify-between">
                   <span className="text-sm text-[var(--color-text-primary)]">Web Search</span>
                   <button
-                    onClick={() => setSettings({ ...settings, web_search: !settings.web_search })}
+                    onClick={() => setAgentSettings({ ...agentSettings, web_search: !agentSettings.web_search })}
                     className={`relative h-6 w-11 rounded-full transition-colors ${
-                      settings.web_search ? 'bg-[var(--color-accent-blue)]' : 'bg-[var(--color-border)]'
+                      agentSettings.web_search ? 'bg-[var(--color-accent-blue)]' : 'bg-[var(--color-border)]'
                     }`}
                   >
                     <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
-                      settings.web_search ? 'left-[22px]' : 'left-0.5'
+                      agentSettings.web_search ? 'left-[22px]' : 'left-0.5'
                     }`} />
                   </button>
                 </label>
@@ -381,13 +414,13 @@ export function AgentSettingsModal({ open, onClose, initialTab, activeProjectId 
                     <p className="text-[10px] text-[var(--color-text-muted)]">Allow agent to resolve GitHub review threads after fixing</p>
                   </div>
                   <button
-                    onClick={() => setSettings({ ...settings, auto_resolve_conversations: !settings.auto_resolve_conversations })}
+                    onClick={() => setAgentSettings({ ...agentSettings, auto_resolve_conversations: !agentSettings.auto_resolve_conversations })}
                     className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${
-                      settings.auto_resolve_conversations ? 'bg-[var(--color-accent-blue)]' : 'bg-[var(--color-border)]'
+                      agentSettings.auto_resolve_conversations ? 'bg-[var(--color-accent-blue)]' : 'bg-[var(--color-border)]'
                     }`}
                   >
                     <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
-                      settings.auto_resolve_conversations ? 'left-[22px]' : 'left-0.5'
+                      agentSettings.auto_resolve_conversations ? 'left-[22px]' : 'left-0.5'
                     }`} />
                   </button>
                 </label>
@@ -402,8 +435,8 @@ export function AgentSettingsModal({ open, onClose, initialTab, activeProjectId 
                         type="number"
                         min={0.1}
                         step={0.5}
-                        value={settings.budget_per_ticket_usd}
-                        onChange={(e) => setSettings({ ...settings, budget_per_ticket_usd: Number(e.target.value) })}
+                        value={agentSettings.budget_per_ticket_usd}
+                        onChange={(e) => setAgentSettings({ ...agentSettings, budget_per_ticket_usd: Number(e.target.value) })}
                         className="w-full rounded border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2 py-1 text-xs text-[var(--color-text-primary)]"
                       />
                     </div>
@@ -413,8 +446,8 @@ export function AgentSettingsModal({ open, onClose, initialTab, activeProjectId 
                         type="number"
                         min={1}
                         step={5}
-                        value={settings.budget_daily_usd}
-                        onChange={(e) => setSettings({ ...settings, budget_daily_usd: Number(e.target.value) })}
+                        value={agentSettings.budget_daily_usd}
+                        onChange={(e) => setAgentSettings({ ...agentSettings, budget_daily_usd: Number(e.target.value) })}
                         className="w-full rounded border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2 py-1 text-xs text-[var(--color-text-primary)]"
                       />
                     </div>
@@ -424,8 +457,8 @@ export function AgentSettingsModal({ open, onClose, initialTab, activeProjectId 
                         type="number"
                         min={1}
                         step={50}
-                        value={settings.budget_monthly_usd}
-                        onChange={(e) => setSettings({ ...settings, budget_monthly_usd: Number(e.target.value) })}
+                        value={agentSettings.budget_monthly_usd}
+                        onChange={(e) => setAgentSettings({ ...agentSettings, budget_monthly_usd: Number(e.target.value) })}
                         className="w-full rounded border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2 py-1 text-xs text-[var(--color-text-primary)]"
                       />
                     </div>
@@ -435,226 +468,220 @@ export function AgentSettingsModal({ open, onClose, initialTab, activeProjectId 
             )}
 
             {/* ── PO Agent Tab ── */}
-            {activeTab === 'po' && (
-              !activeProjectId ? (
-                <p className="text-sm text-[var(--color-text-muted)]">Select a project to configure PO Agent settings.</p>
-              ) : !poLoaded ? (
-                <p className="text-sm text-[var(--color-text-muted)]">Loading...</p>
-              ) : (
-                <>
-                  {/* Enabled */}
-                  <label className="flex items-center justify-between">
-                    <span className="text-sm text-[var(--color-text-primary)]">PO Agent Enabled</span>
-                    <button
-                      onClick={() => setPoSettings({ ...poSettings, enabled: !poSettings.enabled })}
-                      className={`relative h-6 w-11 rounded-full transition-colors ${
-                        poSettings.enabled ? 'bg-[var(--color-accent-blue)]' : 'bg-[var(--color-border)]'
-                      }`}
-                    >
-                      <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
-                        poSettings.enabled ? 'left-[22px]' : 'left-0.5'
-                      }`} />
-                    </button>
+            {activeTab === 'po' && activeProjectId && poLoaded && (
+              <>
+                {/* Enabled */}
+                <label className="flex items-center justify-between">
+                  <span className="text-sm text-[var(--color-text-primary)]">PO Agent Enabled</span>
+                  <button
+                    onClick={() => setPoSettings({ ...poSettings, enabled: !poSettings.enabled })}
+                    className={`relative h-6 w-11 rounded-full transition-colors ${
+                      poSettings.enabled ? 'bg-[var(--color-accent-blue)]' : 'bg-[var(--color-border)]'
+                    }`}
+                  >
+                    <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
+                      poSettings.enabled ? 'left-[22px]' : 'left-0.5'
+                    }`} />
+                  </button>
+                </label>
+
+                {/* Mode */}
+                <div>
+                  <label className="mb-1 block text-sm text-[var(--color-text-primary)]">Approval Mode</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {(['semi_auto', 'full_auto'] as const).map((m) => (
+                      <button
+                        key={m}
+                        onClick={() => setPoSettings({ ...poSettings, mode: m })}
+                        className={`rounded-md border px-3 py-2 text-xs transition-colors ${
+                          poSettings.mode === m
+                            ? 'border-[var(--color-accent-blue)] bg-[var(--color-accent-blue)]/10 text-[var(--color-accent-blue)]'
+                            : 'border-[var(--color-border)] text-[var(--color-text-muted)] hover:border-[var(--color-text-muted)]'
+                        }`}
+                      >
+                        <div className="font-medium">{m === 'semi_auto' ? 'Semi-Auto' : 'Full Auto'}</div>
+                        <div className="mt-0.5 text-[10px] leading-tight">
+                          {m === 'semi_auto' ? 'Tickets require approval' : 'Tickets created directly'}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Report interval */}
+                <div>
+                  <label className="mb-1 flex items-center justify-between text-sm text-[var(--color-text-primary)]">
+                    <span>Report Interval</span>
+                    <span className="font-mono text-xs text-[var(--color-text-muted)]">{poSettings.report_interval_hours} hr</span>
                   </label>
+                  <input
+                    type="range"
+                    min={1}
+                    max={24}
+                    value={poSettings.report_interval_hours}
+                    onChange={(e) => setPoSettings({ ...poSettings, report_interval_hours: Number(e.target.value) })}
+                    className="w-full accent-[var(--color-accent-blue)]"
+                  />
+                  <div className="flex justify-between text-[10px] text-[var(--color-text-muted)]">
+                    <span>Frequent (1 hr)</span>
+                    <span>Relaxed (24 hr)</span>
+                  </div>
+                </div>
 
-                  {/* Mode */}
-                  <div>
-                    <label className="mb-1 block text-sm text-[var(--color-text-primary)]">Approval Mode</label>
-                    <div className="grid grid-cols-2 gap-2">
-                      {(['semi_auto', 'full_auto'] as const).map((m) => (
-                        <button
-                          key={m}
-                          onClick={() => setPoSettings({ ...poSettings, mode: m })}
-                          className={`rounded-md border px-3 py-2 text-xs transition-colors ${
-                            poSettings.mode === m
-                              ? 'border-[var(--color-accent-blue)] bg-[var(--color-accent-blue)]/10 text-[var(--color-accent-blue)]'
-                              : 'border-[var(--color-border)] text-[var(--color-text-muted)] hover:border-[var(--color-text-muted)]'
-                          }`}
-                        >
-                          <div className="font-medium">{m === 'semi_auto' ? 'Semi-Auto' : 'Full Auto'}</div>
-                          <div className="mt-0.5 text-[10px] leading-tight">
-                            {m === 'semi_auto' ? 'Tickets require approval' : 'Tickets created directly'}
-                          </div>
-                        </button>
-                      ))}
+                {/* Capacity */}
+                <div>
+                  <label className="mb-1 block text-sm text-[var(--color-text-primary)]">Capacity Limits</label>
+                  <div className="grid grid-cols-3 gap-2">
+                    <div>
+                      <span className="text-[10px] text-[var(--color-text-muted)]">Max Active</span>
+                      <input
+                        type="number"
+                        min={1}
+                        max={20}
+                        value={poSettings.max_active_tickets}
+                        onChange={(e) => setPoSettings({ ...poSettings, max_active_tickets: Number(e.target.value) })}
+                        className="w-full rounded border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2 py-1 text-xs text-[var(--color-text-primary)]"
+                      />
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-[var(--color-text-muted)]">Max New/Cycle</span>
+                      <input
+                        type="number"
+                        min={1}
+                        max={10}
+                        value={poSettings.max_new_per_cycle}
+                        onChange={(e) => setPoSettings({ ...poSettings, max_new_per_cycle: Number(e.target.value) })}
+                        className="w-full rounded border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2 py-1 text-xs text-[var(--color-text-primary)]"
+                      />
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-[var(--color-text-muted)]">Max Pending</span>
+                      <input
+                        type="number"
+                        min={1}
+                        max={20}
+                        value={poSettings.max_pending_approval}
+                        onChange={(e) => setPoSettings({ ...poSettings, max_pending_approval: Number(e.target.value) })}
+                        className="w-full rounded border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2 py-1 text-xs text-[var(--color-text-primary)]"
+                      />
+                      <span className="text-[9px] text-[var(--color-text-muted)]">semi-auto only</span>
                     </div>
                   </div>
+                </div>
 
-                  {/* Report interval */}
-                  <div>
-                    <label className="mb-1 flex items-center justify-between text-sm text-[var(--color-text-primary)]">
-                      <span>Report Interval</span>
-                      <span className="font-mono text-xs text-[var(--color-text-muted)]">{poSettings.report_interval_hours} hr</span>
-                    </label>
-                    <input
-                      type="range"
-                      min={1}
-                      max={24}
-                      value={poSettings.report_interval_hours}
-                      onChange={(e) => setPoSettings({ ...poSettings, report_interval_hours: Number(e.target.value) })}
-                      className="w-full accent-[var(--color-accent-blue)]"
-                    />
-                    <div className="flex justify-between text-[10px] text-[var(--color-text-muted)]">
-                      <span>Frequent (1 hr)</span>
-                      <span>Relaxed (24 hr)</span>
+                {/* Scope */}
+                <div>
+                  <label className="mb-1 block text-sm text-[var(--color-text-primary)]">Deployment Scope</label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {(['auto', 'github_pages', 'docker', 'docs_only', 'none'] as const).map((dt) => (
+                      <button
+                        key={dt}
+                        onClick={() => setPoSettings({ ...poSettings, deployment_type: dt })}
+                        className={`rounded-md border px-2 py-1.5 text-[11px] transition-colors ${
+                          poSettings.deployment_type === dt
+                            ? 'border-purple-400 bg-purple-500/10 text-purple-400'
+                            : 'border-[var(--color-border)] text-[var(--color-text-muted)] hover:border-[var(--color-text-muted)]'
+                        }`}
+                      >
+                        {dt === 'auto' ? 'Auto' : dt === 'github_pages' ? 'GH Pages' : dt === 'docker' ? 'Docker' : dt === 'docs_only' ? 'Docs' : 'None'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Git history */}
+                <div>
+                  <label className="mb-1 block text-sm text-[var(--color-text-primary)]">Git History Context</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <span className="text-[10px] text-[var(--color-text-muted)]">Max Commits</span>
+                      <input
+                        type="number"
+                        min={0}
+                        max={50}
+                        value={poSettings.git_history_threshold}
+                        onChange={(e) => setPoSettings({ ...poSettings, git_history_threshold: Number(e.target.value) })}
+                        className="w-full rounded border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2 py-1 text-xs text-[var(--color-text-primary)]"
+                      />
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-[var(--color-text-muted)]">Days Window</span>
+                      <input
+                        type="number"
+                        min={1}
+                        max={30}
+                        value={poSettings.git_history_days}
+                        onChange={(e) => setPoSettings({ ...poSettings, git_history_days: Number(e.target.value) })}
+                        className="w-full rounded border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2 py-1 text-xs text-[var(--color-text-primary)]"
+                      />
                     </div>
                   </div>
+                </div>
 
-                  {/* Capacity */}
-                  <div>
-                    <label className="mb-1 block text-sm text-[var(--color-text-primary)]">Capacity Limits</label>
-                    <div className="grid grid-cols-3 gap-2">
-                      <div>
-                        <span className="text-[10px] text-[var(--color-text-muted)]">Max Active</span>
-                        <input
-                          type="number"
-                          min={1}
-                          max={20}
-                          value={poSettings.max_active_tickets}
-                          onChange={(e) => setPoSettings({ ...poSettings, max_active_tickets: Number(e.target.value) })}
-                          className="w-full rounded border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2 py-1 text-xs text-[var(--color-text-primary)]"
-                        />
-                      </div>
-                      <div>
-                        <span className="text-[10px] text-[var(--color-text-muted)]">Max New/Cycle</span>
-                        <input
-                          type="number"
-                          min={1}
-                          max={10}
-                          value={poSettings.max_new_per_cycle}
-                          onChange={(e) => setPoSettings({ ...poSettings, max_new_per_cycle: Number(e.target.value) })}
-                          className="w-full rounded border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2 py-1 text-xs text-[var(--color-text-primary)]"
-                        />
-                      </div>
-                      <div>
-                        <span className="text-[10px] text-[var(--color-text-muted)]">Max Pending</span>
-                        <input
-                          type="number"
-                          min={1}
-                          max={20}
-                          value={poSettings.max_pending_approval}
-                          onChange={(e) => setPoSettings({ ...poSettings, max_pending_approval: Number(e.target.value) })}
-                          className="w-full rounded border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2 py-1 text-xs text-[var(--color-text-primary)]"
-                        />
-                        <span className="text-[9px] text-[var(--color-text-muted)]">semi-auto only</span>
+                {/* LLM Models */}
+                <div>
+                  <label className="mb-1 block text-sm text-[var(--color-text-primary)]">LLM Models</label>
+                  <div className="space-y-2">
+                    <div>
+                      <span className="text-[10px] text-[var(--color-text-muted)]">Observe (fast, cheap)</span>
+                      <div className="grid grid-cols-3 gap-1">
+                        {ANTHROPIC_MODELS.map((m) => (
+                          <button
+                            key={m.id}
+                            onClick={() => setPoSettings({ ...poSettings, observe_model: m.id })}
+                            className={`rounded border px-2 py-1 text-[11px] transition-colors ${
+                              poSettings.observe_model === m.id
+                                ? 'border-purple-400 bg-purple-500/10 text-purple-400'
+                                : 'border-[var(--color-border)] text-[var(--color-text-muted)] hover:border-[var(--color-text-muted)]'
+                            }`}
+                          >
+                            {m.label}
+                          </button>
+                        ))}
                       </div>
                     </div>
-                  </div>
-
-                  {/* Scope */}
-                  <div>
-                    <label className="mb-1 block text-sm text-[var(--color-text-primary)]">Deployment Scope</label>
-                    <div className="grid grid-cols-3 gap-2">
-                      {(['auto', 'github_pages', 'docker', 'docs_only', 'none'] as const).map((dt) => (
-                        <button
-                          key={dt}
-                          onClick={() => setPoSettings({ ...poSettings, deployment_type: dt })}
-                          className={`rounded-md border px-2 py-1.5 text-[11px] transition-colors ${
-                            poSettings.deployment_type === dt
-                              ? 'border-purple-400 bg-purple-500/10 text-purple-400'
-                              : 'border-[var(--color-border)] text-[var(--color-text-muted)] hover:border-[var(--color-text-muted)]'
-                          }`}
-                        >
-                          {dt === 'auto' ? 'Auto' : dt === 'github_pages' ? 'GH Pages' : dt === 'docker' ? 'Docker' : dt === 'docs_only' ? 'Docs' : 'None'}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Git history */}
-                  <div>
-                    <label className="mb-1 block text-sm text-[var(--color-text-primary)]">Git History Context</label>
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <span className="text-[10px] text-[var(--color-text-muted)]">Max Commits</span>
-                        <input
-                          type="number"
-                          min={0}
-                          max={50}
-                          value={poSettings.git_history_threshold}
-                          onChange={(e) => setPoSettings({ ...poSettings, git_history_threshold: Number(e.target.value) })}
-                          className="w-full rounded border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2 py-1 text-xs text-[var(--color-text-primary)]"
-                        />
-                      </div>
-                      <div>
-                        <span className="text-[10px] text-[var(--color-text-muted)]">Days Window</span>
-                        <input
-                          type="number"
-                          min={1}
-                          max={30}
-                          value={poSettings.git_history_days}
-                          onChange={(e) => setPoSettings({ ...poSettings, git_history_days: Number(e.target.value) })}
-                          className="w-full rounded border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2 py-1 text-xs text-[var(--color-text-primary)]"
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* LLM Models */}
-                  <div>
-                    <label className="mb-1 block text-sm text-[var(--color-text-primary)]">LLM Models</label>
-                    <div className="space-y-2">
-                      <div>
-                        <span className="text-[10px] text-[var(--color-text-muted)]">Observe (fast, cheap)</span>
-                        <div className="grid grid-cols-3 gap-1">
-                          {ANTHROPIC_MODELS.map((m) => (
-                            <button
-                              key={m.id}
-                              onClick={() => setPoSettings({ ...poSettings, observe_model: m.id })}
-                              className={`rounded border px-2 py-1 text-[11px] transition-colors ${
-                                poSettings.observe_model === m.id
-                                  ? 'border-purple-400 bg-purple-500/10 text-purple-400'
-                                  : 'border-[var(--color-border)] text-[var(--color-text-muted)] hover:border-[var(--color-text-muted)]'
-                              }`}
-                            >
-                              {m.label}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                      <div>
-                        <span className="text-[10px] text-[var(--color-text-muted)]">Think (reasoning)</span>
-                        <div className="grid grid-cols-3 gap-1">
-                          {ANTHROPIC_MODELS.map((m) => (
-                            <button
-                              key={m.id}
-                              onClick={() => setPoSettings({ ...poSettings, think_model: m.id })}
-                              className={`rounded border px-2 py-1 text-[11px] transition-colors ${
-                                poSettings.think_model === m.id
-                                  ? 'border-purple-400 bg-purple-500/10 text-purple-400'
-                                  : 'border-[var(--color-border)] text-[var(--color-text-muted)] hover:border-[var(--color-text-muted)]'
-                              }`}
-                            >
-                              {m.label}
-                            </button>
-                          ))}
-                        </div>
+                    <div>
+                      <span className="text-[10px] text-[var(--color-text-muted)]">Think (reasoning)</span>
+                      <div className="grid grid-cols-3 gap-1">
+                        {ANTHROPIC_MODELS.map((m) => (
+                          <button
+                            key={m.id}
+                            onClick={() => setPoSettings({ ...poSettings, think_model: m.id })}
+                            className={`rounded border px-2 py-1 text-[11px] transition-colors ${
+                              poSettings.think_model === m.id
+                                ? 'border-purple-400 bg-purple-500/10 text-purple-400'
+                                : 'border-[var(--color-border)] text-[var(--color-text-muted)] hover:border-[var(--color-text-muted)]'
+                            }`}
+                          >
+                            {m.label}
+                          </button>
+                        ))}
                       </div>
                     </div>
                   </div>
+                </div>
 
-                  {/* Think budget */}
-                  <div>
-                    <label className="mb-1 flex items-center justify-between text-sm text-[var(--color-text-primary)]">
-                      <span>Think Budget</span>
-                      <span className="font-mono text-xs text-[var(--color-text-muted)]">~{poSettings.think_budget_tokens} tokens</span>
-                    </label>
-                    <input
-                      type="range"
-                      min={2000}
-                      max={16000}
-                      step={1000}
-                      value={poSettings.think_budget_tokens}
-                      onChange={(e) => setPoSettings({ ...poSettings, think_budget_tokens: Number(e.target.value) })}
-                      className="w-full accent-[var(--color-accent-blue)]"
-                    />
-                    <div className="flex justify-between text-[10px] text-[var(--color-text-muted)]">
-                      <span>Quick (cheap)</span>
-                      <span>Deep (costly)</span>
-                    </div>
+                {/* Think budget */}
+                <div>
+                  <label className="mb-1 flex items-center justify-between text-sm text-[var(--color-text-primary)]">
+                    <span>Think Budget</span>
+                    <span className="font-mono text-xs text-[var(--color-text-muted)]">~{poSettings.think_budget_tokens} tokens</span>
+                  </label>
+                  <input
+                    type="range"
+                    min={2000}
+                    max={16000}
+                    step={1000}
+                    value={poSettings.think_budget_tokens}
+                    onChange={(e) => setPoSettings({ ...poSettings, think_budget_tokens: Number(e.target.value) })}
+                    className="w-full accent-[var(--color-accent-blue)]"
+                  />
+                  <div className="flex justify-between text-[10px] text-[var(--color-text-muted)]">
+                    <span>Quick (cheap)</span>
+                    <span>Deep (costly)</span>
                   </div>
-                </>
-              )
+                </div>
+              </>
             )}
 
             {/* ── Account Tab ── */}
@@ -675,7 +702,7 @@ export function AgentSettingsModal({ open, onClose, initialTab, activeProjectId 
           </div>
 
           {/* Footer — save/cancel (only for system, agent & po tabs) */}
-          {activeTab !== 'account' && (
+          {activeTab !== 'account' && !needsProject && (
             <div className="flex items-center justify-end gap-2 border-t border-[var(--color-border)] pt-3 mt-3">
               {error && <span className="text-xs text-[var(--color-accent-red)] mr-auto">{error}</span>}
               {saved && <span className="text-xs text-[var(--color-accent-green)]">Saved!</span>}

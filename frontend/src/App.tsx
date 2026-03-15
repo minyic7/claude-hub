@@ -62,17 +62,7 @@ function AuthedApp() {
     setApiErrorHandler((msg) => addNotification('error', msg))
   }, [addNotification])
 
-  // Check TicketAgent API key on load
-  useEffect(() => {
-    api.settings.getAgent().then((cfg) => {
-      if (!cfg.api_key) {
-        addNotification('warning', 'TicketAgent API key not configured — ticket supervision disabled', {
-          label: 'Configure',
-          callback: () => { setOpenSettingsTab('agent'); setOpenSettingsRequested(true) },
-        })
-      }
-    }).catch(() => {})
-  }, [addNotification])
+  // Note: TicketAgent API key is now per-project — checked when starting tickets
 
   // Show notification on escalation events
   useEffect(() => {

@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from claude_hub import redis_client
-from claude_hub.models.ticket import POSettings, TicketStatus
+from claude_hub.models.ticket import AgentSettings, POSettings, TicketStatus
 from claude_hub.services.po_manager import po_manager
 
 logger = logging.getLogger(__name__)
@@ -15,7 +15,68 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["po"])
 
 
-# ─── Settings ────────────────────────────────────────────────────────────────
+# ─── Agent Settings (per-project) ────────────────────────────────────────────
+
+
+def _mask_key(key: str) -> str:
+    if not key or len(key) < 16:
+        return "***" if key else ""
+    return key[:8] + "..." + key[-4:]
+
+
+@router.get("/projects/{project_id}/agent/settings")
+async def get_project_agent_settings(project_id: str):
+    project = await redis_client.get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    raw = project.get("agent_settings", "")
+    try:
+        cfg = json.loads(raw) if isinstance(raw, str) and raw else {}
+    except (json.JSONDecodeError, TypeError):
+        cfg = {}
+    result = AgentSettings(**cfg).model_dump()
+    result["api_key"] = _mask_key(result.get("api_key", ""))
+    return result
+
+
+@router.put("/projects/{project_id}/agent/settings")
+async def update_project_agent_settings(project_id: str, body: AgentSettings):
+    project = await redis_client.get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+
+    # Don't overwrite api_key with masked value
+    if body.api_key and "..." in body.api_key:
+        raw = project.get("agent_settings", "")
+        try:
+            old = json.loads(raw) if isinstance(raw, str) and raw else {}
+        except (json.JSONDecodeError, TypeError):
+            old = {}
+        body.api_key = old.get("api_key", "")
+
+    await redis_client.update_project_fields(project_id, {
+        "agent_settings": json.dumps(body.model_dump()),
+    })
+
+    result = body.model_dump()
+    result["api_key"] = _mask_key(result.get("api_key", ""))
+    return result
+
+
+async def get_agent_settings_for_project(project_id: str) -> dict:
+    """Load per-project agent settings, returning defaults if not configured."""
+    project = await redis_client.get_project(project_id)
+    if not project:
+        return AgentSettings().model_dump()
+    raw = project.get("agent_settings", "")
+    try:
+        cfg = json.loads(raw) if isinstance(raw, str) and raw else {}
+    except (json.JSONDecodeError, TypeError):
+        cfg = {}
+    return AgentSettings(**cfg).model_dump()
+
+
+# ─── PO Settings ────────────────────────────────────────────────────────────
 
 
 @router.get("/projects/{project_id}/po/settings")

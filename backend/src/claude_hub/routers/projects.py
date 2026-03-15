@@ -43,8 +43,8 @@ async def create_project(body: ProjectCreate):
 
     # Auto-register GitHub webhook
     if body.gh_token and body.repo_url:
-        from claude_hub.routers.settings_router import get_agent_settings
-        cfg = await get_agent_settings()
+        from claude_hub.routers.settings_router import get_global_settings
+        cfg = await get_global_settings()
         wh = register_webhook(body.repo_url, body.gh_token, webhook_url_override=cfg.get("webhook_url", ""))
         logger.info("Webhook registration for %s: %s", body.repo_url, wh)
         if wh.get("webhook_id"):
@@ -87,8 +87,8 @@ async def update_project(project_id: str, body: ProjectUpdate):
 
         full = await redis_client.get_project(project_id)
         if full and full.get("gh_token") and full.get("repo_url"):
-            from claude_hub.routers.settings_router import get_agent_settings
-            cfg = await get_agent_settings()
+            from claude_hub.routers.settings_router import get_global_settings
+            cfg = await get_global_settings()
             wh = register_webhook(full["repo_url"], full["gh_token"], webhook_url_override=cfg.get("webhook_url", ""))
             logger.info("Webhook re-registration for %s: %s", full["repo_url"], wh)
             if wh.get("webhook_id"):

@@ -95,9 +95,6 @@ async def kanban_terminal(websocket: WebSocket, project_id: str, token: str = Qu
     if not kanban_manager.is_alive(project_id):
         try:
             gh_token = project.get("gh_token", "")
-            if not gh_token:
-                from claude_hub.routers.settings_router import get_gh_token
-                gh_token = await get_gh_token()
             kanban_manager.start_kanban(project, gh_token)
             await asyncio.sleep(1)
         except Exception as e:
