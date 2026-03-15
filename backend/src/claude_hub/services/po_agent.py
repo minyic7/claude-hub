@@ -357,10 +357,6 @@ class POAgent:
         if self.settings.mode == "full_auto":
             await self._detect_stuck_sessions(board_state)
 
-        # ── AUTO-MERGE review tickets (full_auto only) ───────────────
-        if self.settings.mode == "full_auto":
-            await self._auto_merge_review_tickets(board_state)
-
         # ── AUTO-START (full_auto only) ──────────────────────────────
         if self.settings.mode == "full_auto":
             await self._auto_start_todo_tickets()
@@ -705,19 +701,6 @@ class POAgent:
             seq, title, status.value,
         )
 
-    async def _auto_merge_review_tickets(self, board_state: list[dict]) -> None:
-        """In full_auto mode, merge tickets that are in review status."""
-        review_tickets = [t for t in board_state if t.get("status") == "review"]
-        for ticket in review_tickets:
-            tid = ticket["id"]
-            title = ticket.get("title", tid[:8])
-            try:
-                from claude_hub.routers.tickets import merge_ticket
-                await merge_ticket(tid)
-                await self._emit_activity("info", f"Auto-merged: {title}")
-            except Exception as e:
-                await self._emit_activity("warn", f"Failed to auto-merge '{title}': {e}")
-
     async def _detect_stuck_sessions(self, board_state: list[dict]) -> None:
         """Detect in_progress/blocked tickets with no log activity and stop+retry them."""
         import os
@@ -1052,7 +1035,7 @@ class POAgent:
             "- Before choosing 'wait', check: are there features in Goal/Scope not yet addressed?\n"
             f"- Max {self.settings.max_new_per_cycle} new tickets per cycle\n"
             "- Respect capacity constraints provided in OBSERVE summary\n"
-            "- Use merge_ticket for tickets in 'review' status — merge their PR to complete the work\n"
+            "- Use merge_ticket for tickets in 'review' status — consider dependency order: merge base tickets before dependents\n"
             "- Use stop_ticket for sessions that appear stuck (in_progress too long with no progress)\n"
             "- Use retry_ticket for failed tickets that should be retried\n"
             "- Use answer_ticket to unblock blocked tickets by answering their question\n"
