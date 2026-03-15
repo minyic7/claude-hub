@@ -207,6 +207,27 @@ export function KanbanTerminal({ projectId, projectName, visible, onClose, tabBa
     }
   }, [projectId, sendResize, connectWs])
 
+  // Scroll mode: intercept wheel events to scroll xterm.js locally
+  // instead of letting them be forwarded to tmux as escape sequences
+  useEffect(() => {
+    const el = termRef.current
+    if (!el) return
+
+    const handleWheel = (e: WheelEvent) => {
+      if (!scrollModeRef.current) return
+      e.preventDefault()
+      e.stopPropagation()
+      const terminal = terminalRef.current
+      if (terminal) {
+        const lines = Math.round(e.deltaY / 25) || (e.deltaY > 0 ? 1 : -1)
+        terminal.scrollLines(lines)
+      }
+    }
+
+    el.addEventListener('wheel', handleWheel, { passive: false })
+    return () => el.removeEventListener('wheel', handleWheel)
+  }, [])
+
   // Re-fit when becoming visible
   useEffect(() => {
     if (visible) {
