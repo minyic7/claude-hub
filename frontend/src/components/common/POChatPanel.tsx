@@ -134,7 +134,7 @@ export function POChatPanel({ projectId, onClose, tabBar }: POChatPanelProps) {
 
   return (
     <div
-      className="flex shrink-0 transition-[flex-basis] duration-200 overflow-hidden"
+      className="flex shrink-0 overflow-hidden"
       style={{ flexBasis }}
     >
       {/* Drag handle */}
