@@ -136,7 +136,7 @@ export function AppShell({
                             {p.repo_url.replace('https://github.com/', '')}
                           </span>
                           <span className="font-mono text-[9px] text-[var(--color-text-muted)]/40">
-                            {p.id.slice(0, 8)}
+                            {String(p.id).slice(0, 8)}
                           </span>
                         </div>
                       </button>

@@ -737,7 +737,7 @@ export function TicketDetail({ ticket, activities, allTickets, onClose, onDelete
               >
                 {depStatusIcon(rdep.status as TicketStatus)}
                 <span className="font-semibold text-[var(--color-text-primary)]">
-                  #{rdep.seq || rdep.id.slice(0, 6)}
+                  #{rdep.seq || String(rdep.id).slice(0, 6)}
                 </span>
                 <span className="flex-1 truncate text-[var(--color-text-secondary)]">
                   {rdep.title}

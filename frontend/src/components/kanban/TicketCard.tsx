@@ -336,7 +336,7 @@ export function TicketCard({ ticket, latestActivity, activityEvents, onClick, on
                 className={`truncate font-medium ${d.status === 'merged' ? 'text-[var(--color-text-muted)] line-through opacity-60' : 'text-[var(--color-text-secondary)]'}`}
                 title={d.title}
               >
-                {d.seq ? `#${d.seq}` : d.title || `#${d.id.slice(0, 6)}`}
+                {d.seq ? `#${d.seq}` : d.title || `#${String(d.id).slice(0, 6)}`}
               </span>
             </button>
           ))}
@@ -389,7 +389,7 @@ export function TicketCard({ ticket, latestActivity, activityEvents, onClick, on
           {depsBlocked && depLabels && (
             <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 hidden group-hover/start:block z-10">
               <div className="whitespace-nowrap rounded bg-[var(--color-bg-secondary)] border border-[var(--color-border)] px-2 py-1 text-[11px] text-[var(--color-text-muted)] shadow-lg">
-                Waiting for {depLabels.filter((d) => d.status !== 'merged').map((d) => d.seq ? `#${d.seq}` : d.title || `#${d.id.slice(0, 6)}`).join(', ')} to be merged
+                Waiting for {depLabels.filter((d) => d.status !== 'merged').map((d) => d.seq ? `#${d.seq}` : d.title || `#${String(d.id).slice(0, 6)}`).join(', ')} to be merged
               </div>
             </div>
           )}
