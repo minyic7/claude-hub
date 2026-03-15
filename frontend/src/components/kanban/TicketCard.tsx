@@ -292,8 +292,8 @@ export function TicketCard({ ticket, latestActivity, activityEvents, onClick, on
               <span className="inline-flex items-center rounded bg-purple-500/10 px-1.5 py-0.5 text-[10px] font-medium text-purple-400" title="Created by PO Agent">PO</span>
             )}
             {ticket.status === 'queued' && <Badge color="yellow">QUEUED</Badge>}
-            {ticket.status === 'queued' && ticket.priority >= 0 && (
-              <span className="inline-flex items-center rounded bg-[var(--color-bg-secondary)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--color-text-muted)]" title={`Priority ${ticket.priority}`}>
+            {(ticket.status === 'queued' || ticket.status === 'review') && ticket.priority >= 0 && (
+              <span className="inline-flex items-center rounded bg-[var(--color-bg-secondary)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--color-text-muted)]" title={`Merge priority ${ticket.priority} (lower = first)`}>
                 P{ticket.priority}
               </span>
             )}
