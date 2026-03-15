@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { Bell, Check, ChevronDown, Crown, FolderPlus, PanelRightOpen, Plus, Settings, Wifi, WifiOff } from 'lucide-react'
+import { Bell, BookOpen, Check, ChevronDown, Crown, FolderPlus, PanelRightOpen, Plus, Settings, Wifi, WifiOff } from 'lucide-react'
 import { useIsMobile } from '../../hooks/useIsMobile'
 import { DeployStatusWidget } from '../common/DeployStatusWidget'
 import { ThemeToggle } from '../common/ThemeToggle'
@@ -9,6 +9,7 @@ import { CreateProjectModal } from '../projects/CreateProjectModal'
 import { AgentSettingsModal } from '../settings/AgentSettingsModal'
 import { KanbanTerminal } from '../common/KanbanTerminal'
 import { POChatPanel } from '../common/POChatPanel'
+import { DocsOverlay } from '../common/DocsOverlay'
 import type { DeployState } from '../../hooks/useDeployStatus'
 import type { WorkflowRun } from '../../lib/api'
 import type { Notification } from '../../hooks/useNotifications'
@@ -47,6 +48,7 @@ export function AppShell({
   const isMobile = useIsMobile()
   const [showKanbanTerminal, setShowKanbanTerminal] = useState(true)
   const [panelTab, setPanelTab] = useState<'terminal' | 'po'>('terminal')
+  const [showDocs, setShowDocs] = useState(false)
 
   const activeProject = activeProjectId ? projects.get(activeProjectId) : null
 
@@ -266,6 +268,13 @@ export function AppShell({
             </Button>
           )}
           <button
+            onClick={() => setShowDocs(true)}
+            className="rounded-md p-1.5 text-[var(--color-text-muted)] hover:bg-[var(--color-bg-secondary)] hover:text-[var(--color-text-primary)]"
+            title="Documentation"
+          >
+            <BookOpen size={16} />
+          </button>
+          <button
             onClick={() => setShowSettings(true)}
             className="rounded-md p-1.5 text-[var(--color-text-muted)] hover:bg-[var(--color-bg-secondary)] hover:text-[var(--color-text-primary)]"
             title="Settings"
@@ -371,6 +380,8 @@ export function AppShell({
           <Plus size={24} />
         </button>
       )}
+
+      <DocsOverlay open={showDocs} onClose={() => setShowDocs(false)} />
     </div>
   )
 }
