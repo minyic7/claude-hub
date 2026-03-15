@@ -78,26 +78,55 @@ async def _init_kanban_branch(
     kanban_branch = "kanban-claude-hub"
     authed_url = _inject_token(repo_url, gh_token)
 
-    # Check if branch already exists on remote
+    # Check remote branches
     ls = subprocess.run(
-        ["git", "ls-remote", "--heads", authed_url, kanban_branch],
+        ["git", "ls-remote", "--heads", authed_url],
         capture_output=True, text=True,
     )
-    if kanban_branch in (ls.stdout or ""):
+    remote_output = ls.stdout or ""
+
+    if kanban_branch in remote_output:
         logger.info("Branch '%s' already exists for %s, skipping init", kanban_branch, repo_url)
         return
 
-    # Shallow clone into temp dir
+    # Shallow clone into temp dir (or init empty repo if base_branch doesn't exist)
     tmp = tempfile.mkdtemp(prefix=f"kanban-init-{project_id}-")
+    empty_repo = f"refs/heads/{base_branch}" not in remote_output
     try:
-        clone_result = subprocess.run(
-            ["git", "clone", "--depth", "1", "--branch", base_branch, authed_url, tmp],
-            capture_output=True, text=True,
-        )
-        if clone_result.returncode != 0:
-            raise HTTPException(400, f"Failed to clone repo: {clone_result.stderr.strip()}")
+        if empty_repo:
+            # Empty repo — init locally, add remote, create base branch first
+            logger.info("Empty repo detected, creating base branch '%s' for %s", base_branch, repo_url)
+            subprocess.run(["git", "init", "-b", base_branch, tmp], capture_output=True, check=True)
+            subprocess.run(["git", "remote", "add", "origin", authed_url], cwd=tmp, capture_output=True)
+            # Initial commit so base branch exists
+            readme_path = os.path.join(tmp, "README.md")
+            with open(readme_path, "w") as f:
+                f.write(f"# {project_name}\n")
+            subprocess.run(["git", "add", "README.md"], cwd=tmp, capture_output=True)
+            subprocess.run(
+                ["git", "commit", "-m", f"Initial commit for {project_name}"],
+                cwd=tmp, capture_output=True,
+            )
+            # Push base branch first so it becomes the default
+            push_base = subprocess.run(
+                ["git", "push", "-u", "origin", base_branch],
+                cwd=tmp, capture_output=True, text=True,
+            )
+            if push_base.returncode != 0:
+                raise HTTPException(
+                    403,
+                    f"Cannot push to repo — check that your GitHub token has write access. Error: {push_base.stderr.strip()}"
+                )
+            logger.info("Created base branch '%s' for %s", base_branch, repo_url)
+        else:
+            clone_result = subprocess.run(
+                ["git", "clone", "--depth", "1", "--branch", base_branch, authed_url, tmp],
+                capture_output=True, text=True,
+            )
+            if clone_result.returncode != 0:
+                raise HTTPException(400, f"Failed to clone repo: {clone_result.stderr.strip()}")
 
-        # Create branch
+        # Create kanban branch
         subprocess.run(["git", "checkout", "-b", kanban_branch], cwd=tmp, capture_output=True, check=True)
 
         # Create VISION.md
