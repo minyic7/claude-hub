@@ -70,6 +70,8 @@ def _deserialize_project(data: dict) -> dict:
             result[field] = default
     if "pilot_mode" not in result:
         result["pilot_mode"] = False
+    if "vision_mode" not in result:
+        result["vision_mode"] = "readonly"
     return result
 
 

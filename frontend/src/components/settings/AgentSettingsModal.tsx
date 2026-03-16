@@ -49,7 +49,7 @@ interface Props {
   onClose: () => void
   initialTab?: Tab
   activeProjectId?: string | null
-  activeProject?: { max_board_tickets: number; max_tickets_per_cycle: number } | null
+  activeProject?: { max_board_tickets: number; max_tickets_per_cycle: number; vision_mode: 'readonly' | 'writable' } | null
 }
 
 export function AgentSettingsModal({ open, onClose, initialTab, activeProjectId, activeProject }: Props) {
@@ -68,6 +68,7 @@ export function AgentSettingsModal({ open, onClose, initialTab, activeProjectId,
   // Pilot config (from project)
   const [maxBoardTickets, setMaxBoardTickets] = useState(10)
   const [maxTicketsPerCycle, setMaxTicketsPerCycle] = useState(2)
+  const [visionMode, setVisionMode] = useState<'readonly' | 'writable'>('readonly')
 
   // Sync initialTab when modal opens
   useEffect(() => {
@@ -91,6 +92,7 @@ export function AgentSettingsModal({ open, onClose, initialTab, activeProjectId,
       if (activeProject) {
         setMaxBoardTickets(activeProject.max_board_tickets)
         setMaxTicketsPerCycle(activeProject.max_tickets_per_cycle)
+        setVisionMode(activeProject.vision_mode || 'readonly')
       }
     }
   }, [open, activeProjectId, activeProject])
@@ -110,6 +112,7 @@ export function AgentSettingsModal({ open, onClose, initialTab, activeProjectId,
         await api.projects.update(activeProjectId, {
           max_board_tickets: maxBoardTickets,
           max_tickets_per_cycle: maxTicketsPerCycle,
+          vision_mode: visionMode,
         })
       }
       setSaved(true)
@@ -485,6 +488,38 @@ export function AgentSettingsModal({ open, onClose, initialTab, activeProjectId,
                         className="w-full accent-purple-500"
                       />
                     </div>
+                  </div>
+                </div>
+
+                {/* Vision Mode */}
+                <div>
+                  <label className="mb-1 block text-sm text-[var(--color-text-primary)]">Vision Mode</label>
+                  <p className="mb-2 text-[10px] text-[var(--color-text-muted)]">
+                    Controls whether Kanban CC can modify VISION.md during Pilot Mode cycles.
+                  </p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      onClick={() => setVisionMode('readonly')}
+                      className={`rounded-md border px-3 py-2 text-xs transition-colors ${
+                        visionMode === 'readonly'
+                          ? 'border-purple-500 bg-purple-500/10 text-purple-400'
+                          : 'border-[var(--color-border)] text-[var(--color-text-muted)] hover:border-[var(--color-text-muted)]'
+                      }`}
+                    >
+                      <div className="font-medium">Read Only</div>
+                      <div className="mt-0.5 text-[10px] leading-tight">CC proposes changes in report</div>
+                    </button>
+                    <button
+                      onClick={() => setVisionMode('writable')}
+                      className={`rounded-md border px-3 py-2 text-xs transition-colors ${
+                        visionMode === 'writable'
+                          ? 'border-purple-500 bg-purple-500/10 text-purple-400'
+                          : 'border-[var(--color-border)] text-[var(--color-text-muted)] hover:border-[var(--color-text-muted)]'
+                      }`}
+                    >
+                      <div className="font-medium">Writable</div>
+                      <div className="mt-0.5 text-[10px] leading-tight">CC can extend Goal & Scope</div>
+                    </button>
                   </div>
                 </div>
               </>

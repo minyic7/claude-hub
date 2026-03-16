@@ -28,6 +28,7 @@ export interface Project {
   pilot_mode: boolean
   max_board_tickets: number
   max_tickets_per_cycle: number
+  vision_mode: 'readonly' | 'writable'
   created_at: string
 }
 
@@ -39,6 +40,7 @@ export interface ProjectCreate {
   pilot_mode?: boolean
   max_board_tickets?: number
   max_tickets_per_cycle?: number
+  vision_mode?: 'readonly' | 'writable'
 }
 
 export interface Ticket {

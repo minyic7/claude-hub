@@ -16,6 +16,7 @@ class Project(BaseModel):
     pilot_mode: bool = False
     max_board_tickets: int = 10
     max_tickets_per_cycle: int = 2
+    vision_mode: Literal["readonly", "writable"] = "readonly"
     created_at: datetime
 
 
@@ -34,6 +35,7 @@ class ProjectUpdate(BaseModel):
     pilot_mode: bool | None = None
     max_board_tickets: int | None = None
     max_tickets_per_cycle: int | None = None
+    vision_mode: Literal["readonly", "writable"] | None = None
 
 
 # ─── Agent Settings (per-project) ────────────────────────────────────────────

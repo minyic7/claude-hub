@@ -122,6 +122,7 @@ def _build_kanban_claude_md(project: dict, api_base_url: str, auth_token: str = 
     pilot_mode = project.get("pilot_mode", False)
     max_board_tickets = project.get("max_board_tickets", 10)
     max_tickets_per_cycle = project.get("max_tickets_per_cycle", 2)
+    vision_mode = project.get("vision_mode", "readonly")
     auth = f'-H "Authorization: Bearer {auth_token}"' if auth_token else ""
 
     md = f"""# Kanban Claude Code — {project_name}
@@ -434,6 +435,11 @@ Review every non-archived ticket. For each one, decide its fate:
 ### STEP 6: Read VISION.md
 Read VISION.md from this branch.
 Focus on Goal and Scope — these define what matters.
+
+Vision mode is: **{vision_mode}**
+
+{"If vision_mode is readonly:" if vision_mode == "readonly" else "If vision_mode is writable:"}
+{"You may NOT modify VISION.md. If you believe the vision should be extended or updated, include a Vision Amendment Proposals section at the end of your Step 10 report. The user will review and update VISION.md manually." if vision_mode == "readonly" else "You MAY extend the Goal or Scope sections when: (1) the current Goal/Scope has been fully implemented, (2) you have a clear next direction based on what exists, (3) the extension is additive — never remove or contradict existing content. Always edit VISION.md before creating new tickets so new tickets are grounded in the updated vision. Only modify Goal and Scope — never touch other sections."}
 
 ### STEP 7: Identify gaps
 Cross-reference:
