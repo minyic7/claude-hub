@@ -97,7 +97,7 @@ async def _sync_kanban_branch_for_project(project_id: str) -> None:
     if is_alive(project_id):
         project = await redis_client.get_project(project_id)
         if project:
-            sync_kanban_branch(project_id, project.get("gh_token", ""))
+            sync_kanban_branch(project_id, project.get("gh_token", ""), project.get("base_branch", "main"))
 
 
 async def _handle_pr_review(payload: dict) -> dict:

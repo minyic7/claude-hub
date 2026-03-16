@@ -94,7 +94,7 @@ async def _kanban_sync_loop() -> None:
             projects = await rc.list_projects()
             for project in projects:
                 if is_alive(project["id"]):
-                    result = sync_kanban_branch(project["id"], project.get("gh_token", ""))
+                    result = sync_kanban_branch(project["id"], project.get("gh_token", ""), project.get("base_branch", "main"))
                     if result["status"] == "updated":
                         logger.info("Kanban sync for %s: %s", project["id"], result["message"])
         except asyncio.CancelledError:

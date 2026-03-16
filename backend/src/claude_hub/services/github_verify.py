@@ -189,6 +189,12 @@ def verify_agent_work(
         ["git", "log", f"origin/{base_branch}..origin/{branch}", "--oneline"],
         cwd=clone_path, capture_output=True, text=True,
     )
+    if result.returncode != 0:
+        logger.warning("git log failed (base_branch=%s may not exist): %s", base_branch, result.stderr.strip())
+        return VerifyResult(
+            passed=False,
+            reason=f"Cannot compare against origin/{base_branch} — branch may not exist",
+        )
     commits = [line for line in result.stdout.strip().split("\n") if line]
     if not commits:
         return VerifyResult(

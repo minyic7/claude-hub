@@ -104,10 +104,16 @@ def clone_for_ticket(
         )
     else:
         logger.info("Creating new branch: %s from origin/%s", branch, base_branch)
-        subprocess.run(
-            ["git", "checkout", "-B", branch, f"origin/{base_branch}"],
-            cwd=clone_dir, check=True, capture_output=True,
-        )
+        try:
+            subprocess.run(
+                ["git", "checkout", "-B", branch, f"origin/{base_branch}"],
+                cwd=clone_dir, check=True, capture_output=True,
+            )
+        except subprocess.CalledProcessError:
+            raise RuntimeError(
+                f"Base branch 'origin/{base_branch}' not found in remote. "
+                f"Ensure the branch exists before starting tickets."
+            )
 
     # Ensure token in push URL
     subprocess.run(

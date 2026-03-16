@@ -705,7 +705,7 @@ def restart_kanban(project: dict, gh_token: str = "") -> str:
     return start_kanban(project, gh_token)
 
 
-def sync_kanban_branch(project_id: str, gh_token: str = "") -> dict:
+def sync_kanban_branch(project_id: str, gh_token: str = "", base_branch: str = "main") -> dict:
     """Merge latest base branch into the kanban working branch.
 
     Returns {"status": "updated"|"up_to_date"|"conflict"|"error", "message": str}
@@ -723,7 +723,7 @@ def sync_kanban_branch(project_id: str, gh_token: str = "") -> dict:
 
     # Check if behind
     result = subprocess.run(
-        ["git", "rev-list", "--count", "HEAD..origin/main"],
+        ["git", "rev-list", "--count", f"HEAD..origin/{base_branch}"],
         cwd=kanban_dir, capture_output=True, text=True, env=env,
     )
     behind = int(result.stdout.strip()) if result.returncode == 0 and result.stdout.strip().isdigit() else 0
@@ -732,21 +732,21 @@ def sync_kanban_branch(project_id: str, gh_token: str = "") -> dict:
 
     # Try merge
     result = subprocess.run(
-        ["git", "merge", "origin/main", "--no-edit"],
+        ["git", "merge", f"origin/{base_branch}", "--no-edit"],
         cwd=kanban_dir, capture_output=True, text=True, env=env,
     )
     if result.returncode != 0:
         subprocess.run(["git", "merge", "--abort"], cwd=kanban_dir, capture_output=True)
         logger.warning("Kanban branch merge conflict for project %s: %s", project_id, result.stderr.strip())
-        # Reset to main to unblock — kanban branch is ephemeral
-        subprocess.run(["git", "reset", "--hard", "origin/main"], cwd=kanban_dir, capture_output=True, env=env)
-        logger.info("Reset kanban branch to origin/main for project %s", project_id)
-        return {"status": "conflict", "message": "Conflict resolved by resetting to main"}
+        # Reset to base branch to unblock — kanban branch is ephemeral
+        subprocess.run(["git", "reset", "--hard", f"origin/{base_branch}"], cwd=kanban_dir, capture_output=True, env=env)
+        logger.info("Reset kanban branch to origin/%s for project %s", base_branch, project_id)
+        return {"status": "conflict", "message": f"Conflict resolved by resetting to {base_branch}"}
 
     # Push updated branch
     subprocess.run(["git", "push"], cwd=kanban_dir, capture_output=True, env=env)
-    logger.info("Synced kanban branch for project %s (%d commits from main)", project_id, behind)
-    return {"status": "updated", "message": f"Merged {behind} new commit(s) from main"}
+    logger.info("Synced kanban branch for project %s (%d commits from %s)", project_id, behind, base_branch)
+    return {"status": "updated", "message": f"Merged {behind} new commit(s) from {base_branch}"}
 
 
 def send_kanban_update(project_id: str) -> None:
