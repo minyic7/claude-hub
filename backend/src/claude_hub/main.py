@@ -103,7 +103,7 @@ async def _kanban_sync_loop() -> None:
             logger.error("Kanban sync error: %s", e)
 
 
-PILOT_TICK_SECONDS = int(os.environ.get("CLAUDE_HUB_PILOT_TICK_SECONDS", "30"))
+PILOT_TICK_SECONDS = int(os.environ.get("CLAUDE_HUB_PILOT_TICK_SECONDS", "15"))
 
 
 async def _pilot_agent_loop() -> None:

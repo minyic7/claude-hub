@@ -83,6 +83,8 @@ export const api = {
     delete: (id: string) => request<void>(`/projects/${id}`, { method: 'DELETE' }),
     getSupervisorEvents: (id: string, limit = 50) =>
       request<SupervisorEvent[]>(`/projects/${id}/supervisor/events?limit=${limit}`),
+    nudgeSupervisor: (id: string) =>
+      request<{ status: string }>(`/projects/${id}/supervisor/nudge`, { method: 'POST' }),
   },
   tickets: {
     list: (projectId?: string, status?: string) => {

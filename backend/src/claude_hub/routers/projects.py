@@ -294,3 +294,16 @@ async def get_supervisor_events(project_id: str, limit: int = 50):
         raise HTTPException(404, "Project not found")
     from claude_hub.services.pilot_agent import get_supervisor_events as _get_events
     return await _get_events(project_id, limit=limit)
+
+
+@router.post("/{project_id}/supervisor/nudge")
+async def nudge_supervisor(project_id: str):
+    """Frontend calls this when it detects CC has gone idle. Triggers an immediate PilotAgent tick."""
+    project = await redis_client.get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    if not project.get("pilot_mode"):
+        return {"status": "ignored", "reason": "pilot mode not active"}
+    from claude_hub.services.pilot_agent import nudge
+    event = await nudge(project_id)
+    return {"status": "nudged", "event": event}

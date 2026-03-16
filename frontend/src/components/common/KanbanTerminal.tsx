@@ -46,6 +46,8 @@ export function KanbanTerminal({ projectId, projectName, visible, onClose, tabBa
   const [scrollMode, setScrollMode] = useState(false)
   const scrollModeRef = useRef(false)
   const pilotModeRef = useRef(!!pilotMode)
+  const idleTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined)
+  const nudgingRef = useRef(false)
 
   // Keep pilotMode ref in sync for closures
   useEffect(() => { pilotModeRef.current = !!pilotMode }, [pilotMode])
@@ -99,6 +101,18 @@ export function KanbanTerminal({ projectId, projectName, visible, onClose, tabBa
         terminal.write(new Uint8Array(event.data))
       } else {
         terminal.write(event.data)
+      }
+
+      // Idle detection: when pilot mode is on, nudge supervisor after 10s of silence
+      if (pilotModeRef.current) {
+        clearTimeout(idleTimerRef.current)
+        idleTimerRef.current = setTimeout(() => {
+          if (!pilotModeRef.current || nudgingRef.current) return
+          nudgingRef.current = true
+          api.projects.nudgeSupervisor(projectId).catch(() => {}).finally(() => {
+            nudgingRef.current = false
+          })
+        }, 10_000)
       }
     }
 

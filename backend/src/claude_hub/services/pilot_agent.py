@@ -29,12 +29,12 @@ logger = logging.getLogger(__name__)
 
 MAX_PANE_LINES = 200       # Max lines to capture from tmux pane
 MAX_EVENTS_STORED = 200    # Max supervisor events kept in Redis
-IDLE_TICKS_BEFORE_TRIGGER = 2  # How many consecutive idle ticks before sending trigger
+IDLE_TICKS_BEFORE_TRIGGER = 1  # Trigger on first idle detection
 
 PILOT_SYSTEM_PROMPT = """You are the Pilot Agent monitoring a Claude Code session that manages a project's kanban board.
-Your job: decide if the session needs input to keep working, or if it's fine on its own.
+Your job: keep CC productive and keep the user informed about what's happening.
 
-You are NOT doing the work — Claude Code is. You just keep it moving.
+You are NOT doing the work — Claude Code is. You keep it moving and report its progress.
 
 ## VISION.md (current project vision):
 {vision}
@@ -49,27 +49,32 @@ You are NOT doing the work — Claude Code is. You just keep it moving.
 
 Respond with a JSON object (no markdown fences):
 {{
-  "cc_summary": "1-2 sentences: what CC has been doing",
+  "cc_summary": "2-3 sentences describing what CC has been doing or just accomplished. Be specific — mention ticket numbers, file names, actions taken. The user reads this to understand progress without looking at the terminal.",
   "cc_asked_for": "what CC is waiting for, or null if not waiting",
   "action": "wait" | "send" | "trigger",
   "message": "exact text to send to CC if action=send, else null",
-  "reason": "why you chose this action"
+  "reason": "1 sentence: why you chose this action"
 }}
 
 ## Action guide:
-- **"wait"**: CC is actively working (writing code, running commands, thinking). No intervention needed.
-- **"send"**: CC is waiting for input — a question, permission prompt, confirmation, or it's stuck.
-  Send the appropriate response. Be concise and direct.
-- **"trigger"**: CC has gone idle (finished its work, sitting at prompt). Send a pilot trigger
-  to start a new cycle. Only trigger if CC has been idle for at least {idle_threshold} consecutive ticks.
+- **"wait"**: CC is actively working (writing code, running commands, thinking). Provide a detailed summary of what it's doing.
+- **"send"**: CC is waiting for input — a question, permission prompt, confirmation, or it's stuck. Send the appropriate response. Be concise and direct.
+- **"trigger"**: CC has finished its work and is sitting at the `>` prompt idle. Send a pilot trigger to start a new cycle.
+
+## How to detect idle CC:
+CC is idle when you see the `>` prompt at the bottom of the terminal with NO ongoing work above it.
+Signs of idle: "Cycle complete", "Ready for the next trigger", a bare `>` prompt after a report.
+Signs of working: "Thinking...", "Running...", tool calls in progress, code being written.
+**When CC is clearly idle, ALWAYS use "trigger" — do not wait.**
 
 ## Rules:
 - If CC asked a yes/no question, answer it based on the VISION and board context
-- If CC is in the middle of writing code or running commands, ALWAYS "wait"
-- If CC just finished a report and is at the prompt, "trigger" to start next cycle
+- If CC is in the middle of writing code or running commands, "wait" but describe what it's doing
+- If CC just finished a cycle/report and is at the prompt, "trigger" IMMEDIATELY
 - Never interrupt CC mid-task
 - Keep messages short and direct when sending input
 - If CC seems stuck in a loop (same error 3+ times), send corrective guidance
+- ALWAYS write a detailed, specific cc_summary — the user relies on this for progress updates
 """
 
 
@@ -388,3 +393,34 @@ async def get_supervisor_events(project_id: str, limit: int = 50) -> list[dict]:
     key = f"pilot:{project_id}:supervisor_events"
     raw = await r.lrange(key, -limit, -1)
     return [json.loads(item) for item in raw]
+
+
+async def nudge(project_id: str) -> dict | None:
+    """Trigger an immediate PilotAgent tick for a project (called by frontend on CC idle)."""
+    if project_id not in _active_pilots:
+        # Create pilot agent on the fly if needed
+        project = await redis_client.get_project(project_id)
+        if not project or not project.get("pilot_mode") or not is_alive(project_id):
+            return None
+
+        agent_settings_raw = project.get("agent_settings", "{}")
+        if isinstance(agent_settings_raw, str):
+            try:
+                agent_settings = json.loads(agent_settings_raw)
+            except json.JSONDecodeError:
+                agent_settings = {}
+        else:
+            agent_settings = agent_settings_raw
+
+        _active_pilots[project_id] = PilotAgent(
+            project_id=project_id,
+            project=project,
+            agent_settings=agent_settings if agent_settings.get("enabled") else None,
+        )
+
+    try:
+        event = await _active_pilots[project_id].tick()
+        return dict(event) if event else None
+    except Exception as e:
+        logger.error("PilotAgent nudge failed for %s: %s", project_id, e)
+        return None
