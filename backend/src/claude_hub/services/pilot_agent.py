@@ -74,6 +74,8 @@ Signs of working: "Thinking...", "Running...", tool calls in progress, code bein
 - Never interrupt CC mid-task
 - Keep messages short and direct when sending input
 - If CC seems stuck in a loop (same error 3+ times), send corrective guidance
+- **If CC keeps doing review cycles without starting any tickets**, use "send" with a direct instruction like "You need to start ticket #N now: POST /tickets/{id}/start" instead of triggering another cycle
+- **If the board has TODO tickets but nothing IN_PROGRESS after multiple triggers**, CC is stuck — use "send" to give it explicit instructions to start a ticket
 - ALWAYS write a detailed, specific cc_summary — the user relies on this for progress updates
 """
 

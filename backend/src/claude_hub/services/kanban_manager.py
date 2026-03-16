@@ -420,6 +420,8 @@ Review every non-archived ticket. For each one, decide its fate:
 **TODO tickets:**
 - Still needed? → keep, possibly update description if stale
 - Already implemented or no longer relevant? → archive it
+- Ready to start (no unmet dependencies, no other ticket in progress)? → POST /tickets/{{id}}/start to begin a Claude Code session for it
+- **IMPORTANT:** Always start the highest-priority unblocked TODO ticket if nothing is currently IN_PROGRESS. The board won't make progress unless you start tickets!
 
 **IN_PROGRESS tickets:**
 - Leave them alone — a session is active, don't interrupt.
@@ -478,8 +480,12 @@ Sanity check:
 - Would a senior engineer agree this is the right next step?
 
 ### STEP 9: Execute
-Execute the plan using the API tools.
-Set `"pilot": true` on every ticket you create.
+Execute the plan using the API tools:
+- **Start tickets**: If you identified TODO tickets to start in Step 5, POST /tickets/{{id}}/start NOW
+- **Create tickets**: Set `"pilot": true` on every ticket you create
+- **Other actions**: retry, answer, resolve-conflicts, request-changes as decided in triage
+
+**The most important action is starting work.** If nothing is IN_PROGRESS and there are startable TODO tickets, you MUST start one.
 
 ### STEP 10: Report
 Post a brief summary:
