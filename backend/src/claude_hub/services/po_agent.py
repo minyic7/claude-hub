@@ -245,6 +245,11 @@ class POAgent:
         actions_taken = []
         for action in think_result.get("actions", []):
             action_type = action.get("type")
+
+            # Resolve ticket_id: LLM may return seq number (#3), int, or partial UUID
+            if "ticket_id" in action and action_type != "create_ticket":
+                action["ticket_id"] = self._resolve_ticket_id(action["ticket_id"], board_state)
+
             try:
                 if action_type == "create_ticket":
                     title = action.get("title", "untitled")
@@ -576,6 +581,51 @@ class POAgent:
                 logger.info("Fixed broken deps for '%s': %s → %s", title, deps, resolved)
                 # Update in-memory board_state too
                 ticket["depends_on"] = resolved
+
+    def _resolve_ticket_id(self, raw_id: str | int, board_state: list[dict]) -> str:
+        """Resolve a ticket reference to UUID.
+
+        LLM may return "#3", "3", integer 3, short UUID prefix, or full UUID.
+        """
+        import re
+
+        # Build lookup maps
+        seq_to_id: dict[int, str] = {}
+        id_set: set[str] = set()
+        for t in board_state:
+            tid = t.get("id", "")
+            seq = t.get("seq", 0)
+            if tid:
+                id_set.add(tid)
+                if seq:
+                    seq_to_id[seq] = tid
+
+        # Already a valid UUID
+        if isinstance(raw_id, str) and raw_id in id_set:
+            return raw_id
+
+        # Integer seq
+        if isinstance(raw_id, int) and raw_id in seq_to_id:
+            return seq_to_id[raw_id]
+
+        # String with number: "#3", "TICKET-3", "3"
+        if isinstance(raw_id, str):
+            match = re.search(r'\d+', raw_id)
+            if match:
+                seq_num = int(match.group())
+                if seq_num in seq_to_id:
+                    resolved = seq_to_id[seq_num]
+                    logger.info("PO: resolved ticket_id '%s' → %s (seq %d)", raw_id, resolved[:8], seq_num)
+                    return resolved
+
+            # Try prefix match (short UUID)
+            for tid in id_set:
+                if tid.startswith(raw_id):
+                    logger.info("PO: resolved ticket_id '%s' → %s (prefix match)", raw_id, tid[:8])
+                    return tid
+
+        logger.warning("PO: could not resolve ticket_id '%s', passing as-is", raw_id)
+        return str(raw_id)
 
     def _resolve_depends_on(self, raw_deps: list, board_state: list[dict]) -> list[str]:
         """Resolve dependency references to UUIDs.
@@ -1073,7 +1123,7 @@ class POAgent:
             '      "rationale": "...",       // for create_ticket — MUST reference VISION.md\n'
             '      "priority": 0,            // for create_ticket\n'
             '      "depends_on": [],         // for create_ticket — use ticket UUIDs from the board (the "id" field)\n'
-            '      "ticket_id": "...",       // for start_ticket / stop_ticket / retry_ticket / answer_ticket\n'
+            '      "ticket_id": "...",       // for start_ticket / stop_ticket / retry_ticket / answer_ticket — use the UUID "id" field from the board, NOT the seq number\n'
             '      "answer": "...",          // for answer_ticket — answer to blocked question\n'
             '      "message": "...",         // for raise_to_user\n'
             '      "content": "..."          // for update_vision — PO section content\n'
