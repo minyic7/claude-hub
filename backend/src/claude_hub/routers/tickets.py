@@ -665,7 +665,7 @@ async def _verify_and_review(ticket_id: str) -> None:
         pass
 
     # Load per-project agent settings
-    from claude_hub.routers.po import get_agent_settings_for_project
+    from claude_hub.routers.settings_router import get_agent_settings_for_project
     project = await _get_project_for_ticket(ticket)
     agent_cfg = await get_agent_settings_for_project(ticket.get("project_id", ""))
     agent_enabled = agent_cfg.get("enabled", True)
@@ -737,7 +737,7 @@ async def _tail_and_broadcast(ticket_id: str, log_path: str) -> None:
 
     try:
         # Load per-project agent settings
-        from claude_hub.routers.po import get_agent_settings_for_project
+        from claude_hub.routers.settings_router import get_agent_settings_for_project
         ticket = await redis_client.get_ticket(ticket_id)
         agent_cfg = await get_agent_settings_for_project(ticket.get("project_id", "") if ticket else "")
         agent_enabled = agent_cfg.get("enabled", True)
@@ -890,7 +890,7 @@ async def request_changes(ticket_id: str, body: dict):
         task += f"\nDo NOT create a new PR — push to the same branch so the existing PR #{pr_number} is updated."
 
     # Auto-resolve conversations if enabled
-    from claude_hub.routers.po import get_agent_settings_for_project
+    from claude_hub.routers.settings_router import get_agent_settings_for_project
     agent_cfg = await get_agent_settings_for_project(ticket.get("project_id", ""))
     if agent_cfg.get("auto_resolve_conversations") and pr_number:
         repo_url = project.get("repo_url", "")
@@ -1327,7 +1327,7 @@ async def sync_pr_reviews(ticket_id: str):
     # Auto-trigger request-changes if unresolved threads and setting enabled
     auto_dispatched = False
     if threads and updated and updated.get("status") == "review":
-        from claude_hub.routers.po import get_agent_settings_for_project
+        from claude_hub.routers.settings_router import get_agent_settings_for_project
         agent_cfg = await get_agent_settings_for_project(updated.get("project_id", ""))
         if agent_cfg.get("auto_resolve_conversations"):
             feedback_lines = ["Address these unresolved review conversations:\n"]

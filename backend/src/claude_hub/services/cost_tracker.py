@@ -29,7 +29,7 @@ def calculate_cost(usage: dict, model: str) -> float:
 
 async def _get_budgets(project_id: str = "") -> dict:
     """Get budget limits from per-project agent settings."""
-    from claude_hub.routers.po import get_agent_settings_for_project
+    from claude_hub.routers.settings_router import get_agent_settings_for_project
     cfg = await get_agent_settings_for_project(project_id)
     return {
         "per_ticket": cfg.get("budget_per_ticket_usd", 2.00),

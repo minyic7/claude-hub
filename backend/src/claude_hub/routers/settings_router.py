@@ -57,6 +57,21 @@ async def get_max_sessions() -> int:
     return cfg.get("max_sessions", 4)
 
 
+async def get_agent_settings_for_project(project_id: str) -> dict:
+    """Load per-project agent settings, returning defaults if not configured."""
+    from claude_hub.models.ticket import AgentSettings
+
+    project = await redis_client.get_project(project_id)
+    if not project:
+        return AgentSettings().model_dump()
+    raw = project.get("agent_settings", "")
+    try:
+        cfg = json.loads(raw) if isinstance(raw, str) and raw else {}
+    except (json.JSONDecodeError, TypeError):
+        cfg = {}
+    return AgentSettings(**cfg).model_dump()
+
+
 async def get_gh_token() -> str:
     """Deprecated: gh_token is now per-project only. Returns empty string."""
     return ""
