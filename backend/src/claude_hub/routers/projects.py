@@ -207,8 +207,11 @@ async def update_project(project_id: str, body: ProjectUpdate):
     if pilot_fields & updates.keys():
         from claude_hub.services.kanban_manager import rebuild_claude_md, send_pilot_trigger, is_alive
         full_project = await redis_client.get_project(project_id)
-        if full_project and rebuild_claude_md(project_id, full_project) and is_alive(project_id):
-            send_pilot_trigger(project_id, "config_changed")
+        if full_project:
+            rebuild_claude_md(project_id, full_project)
+            # Only send trigger if pilot mode is ON (don't trigger when disabling)
+            if full_project.get("pilot_mode") and is_alive(project_id):
+                send_pilot_trigger(project_id, "config_changed")
 
     updated = await redis_client.get_project(project_id)
     updated["gh_token"] = _mask_token(updated.get("gh_token", ""))
