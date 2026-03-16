@@ -429,6 +429,14 @@ async def nudge(project_id: str) -> dict | None:
             agent_settings = agent_settings_raw
 
         if not agent_settings.get("api_key"):
+            await broadcast({
+                "type": "notification",
+                "data": {
+                    "level": "warning",
+                    "title": "Pilot Agent requires API key",
+                    "message": "Go to Settings → Agent → TicketAgent to configure an API key. Pilot Agent needs it to operate.",
+                },
+            })
             return None
 
         _active_pilots[project_id] = PilotAgent(

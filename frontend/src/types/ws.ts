@@ -14,3 +14,4 @@ export type WSEvent =
   | { type: 'activity_cleared'; ticket_id: string }
   | { type: 'ticket_created'; ticket_id: string; data: Ticket }
   | { type: 'supervisor_event'; data: { project_id: string; timestamp: string; cc_summary: string; cc_asked_for: string | null; action: string; message: string | null; reason: string } }
+  | { type: 'notification'; data: { level?: string; title?: string; message?: string } }

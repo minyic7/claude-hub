@@ -220,6 +220,14 @@ export function useWebSocket(url: string): UseWebSocketReturn {
         window.dispatchEvent(new CustomEvent('supervisor_event', { detail: msg.data }))
         break
 
+      case 'notification': {
+        if (!initDone.current) break
+        const notif = msg.data as { level?: string; title?: string; message?: string }
+        const nType = notif.level === 'error' ? 'error' : notif.level === 'warning' ? 'warning' : 'info'
+        emitNotification('', notif.title || 'System', nType as Notification['type'], notif.message || notif.title || '')
+        break
+      }
+
       case 'ticket_created': {
         const newTicket = msg.data
         setTickets((prev) => {
