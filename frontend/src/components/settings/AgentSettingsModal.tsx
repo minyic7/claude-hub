@@ -48,7 +48,7 @@ const DEFAULT_AGENT: ProjectAgentSettings = {
   budget_per_ticket_usd: 2.00,
   budget_daily_usd: 50.00,
   budget_monthly_usd: 500.00,
-  pilot_provider: null,
+  pilot_provider: 'anthropic',
   pilot_api_key: '',
   pilot_endpoint_url: '',
   pilot_model: '',
@@ -266,6 +266,13 @@ export function AgentSettingsModal({ open, onClose, initialTab, activeProjectId,
             {/* ── Agent Tab: TicketAgent subtab ── */}
             {activeTab === 'agent' && activeProjectId && agentLoaded && agentSubtab === 'ticket-agent' && (
               <>
+                {/* API key warning */}
+                {agentSettings.enabled && !agentSettings.api_key && (
+                  <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-400">
+                    API Key is required for TicketAgent supervision. Configure it below.
+                  </div>
+                )}
+
                 {/* Enabled */}
                 <label className="flex items-center justify-between">
                   <span className="text-sm text-[var(--color-text-primary)]">Agent Enabled</span>
@@ -494,21 +501,23 @@ export function AgentSettingsModal({ open, onClose, initialTab, activeProjectId,
 
             {/* ── Agent Tab: Pilot Mode subtab ── */}
             {activeTab === 'agent' && activeProjectId && agentLoaded && agentSubtab === 'pilot' && (() => {
-              const pilotProvider = agentSettings.pilot_provider || agentSettings.provider
+              const pilotProvider = agentSettings.pilot_provider || 'anthropic'
               const pilotModels = pilotProvider === 'anthropic' ? ANTHROPIC_MODELS
                 : pilotProvider === 'openai' ? OPENAI_MODELS : []
               const pilotModel = agentSettings.pilot_model || ''
-              const inheritLabel = (field: string) =>
-                !agentSettings[`pilot_${field}` as keyof ProjectAgentSettings]
-                  ? ' (inherited from TicketAgent)' : ''
 
               return (
               <>
+                {/* API key warning */}
+                {!agentSettings.pilot_api_key && (
+                  <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-400">
+                    API Key is required for PilotAgent. Configure it below before enabling Pilot Mode.
+                  </div>
+                )}
+
                 {/* LLM Provider */}
                 <div>
-                  <label className="mb-1 block text-sm text-[var(--color-text-primary)]">
-                    Provider{inheritLabel('provider')}
-                  </label>
+                  <label className="mb-1 block text-sm text-[var(--color-text-primary)]">Provider</label>
                   <div className="grid grid-cols-3 gap-2">
                     {PROVIDERS.map((p) => (
                       <button
@@ -529,19 +538,14 @@ export function AgentSettingsModal({ open, onClose, initialTab, activeProjectId,
 
                 {/* API Key */}
                 <div>
-                  <label className="mb-1 block text-sm text-[var(--color-text-primary)]">
-                    API Key{inheritLabel('api_key')}
-                  </label>
+                  <label className="mb-1 block text-sm text-[var(--color-text-primary)]">API Key</label>
                   <input
                     type="password"
                     value={agentSettings.pilot_api_key}
                     onChange={(e) => setAgentSettings({ ...agentSettings, pilot_api_key: e.target.value })}
-                    placeholder={agentSettings.pilot_api_key ? 'sk-...' : '(using TicketAgent key)'}
+                    placeholder="sk-..."
                     className="w-full rounded border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2 py-1.5 text-xs text-[var(--color-text-primary)] font-mono"
                   />
-                  <p className="mt-0.5 text-[10px] text-[var(--color-text-muted)]">
-                    Leave empty to use TicketAgent's API key.
-                  </p>
                 </div>
 
                 {/* Endpoint URL */}
@@ -552,7 +556,7 @@ export function AgentSettingsModal({ open, onClose, initialTab, activeProjectId,
                       type="url"
                       value={agentSettings.pilot_endpoint_url}
                       onChange={(e) => setAgentSettings({ ...agentSettings, pilot_endpoint_url: e.target.value })}
-                      placeholder={agentSettings.pilot_endpoint_url ? '' : '(using TicketAgent endpoint)'}
+                      placeholder="https://your-endpoint.com/v1"
                       className="w-full rounded border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2 py-1.5 text-xs text-[var(--color-text-primary)] font-mono"
                     />
                   </div>

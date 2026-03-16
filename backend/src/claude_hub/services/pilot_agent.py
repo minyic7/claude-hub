@@ -177,13 +177,14 @@ class PilotAgent(BaseAgent):
         kanban_dir = os.path.join(settings.data_dir, "kanbans", project_id)
         tmux_session = _session_name(project_id)
 
-        # Build pilot-specific settings: use pilot_* fields if set, fallback to main
-        pilot_settings = dict(agent_settings) if agent_settings else {}
+        # Build pilot-specific settings (fully independent from TicketAgent)
         cfg = agent_settings or {}
-        pilot_settings["provider"] = cfg.get("pilot_provider") or cfg.get("provider", "anthropic")
-        pilot_settings["api_key"] = cfg.get("pilot_api_key") or cfg.get("api_key", "")
-        pilot_settings["endpoint_url"] = cfg.get("pilot_endpoint_url") or cfg.get("endpoint_url", "")
-        pilot_settings["model"] = cfg.get("pilot_model") or "claude-sonnet-4-6"
+        pilot_settings = {
+            "provider": cfg.get("pilot_provider", "anthropic"),
+            "api_key": cfg.get("pilot_api_key", ""),
+            "endpoint_url": cfg.get("pilot_endpoint_url", ""),
+            "model": cfg.get("pilot_model") or "claude-sonnet-4-6",
+        }
 
         # Use a placeholder system prompt — rebuilt each tick with fresh context
         super().__init__(
@@ -446,17 +447,10 @@ async def tick_all_pilots() -> None:
             else:
                 agent_settings = agent_settings_raw
 
-            if not agent_settings.get("api_key"):
-                if project_id not in _api_key_warned:
-                    _api_key_warned.add(project_id)
-                    await broadcast({
-                        "type": "notification",
-                        "data": {
-                            "level": "warning",
-                            "title": "Pilot Agent requires API key",
-                            "message": "Go to Settings → Agent → TicketAgent to configure an API key. Pilot Agent needs it to operate.",
-                        },
-                    })
+            pilot_key = agent_settings.get("pilot_api_key", "")
+            if not pilot_key:
+                # No API key — use QA Agent CC session as fallback
+                await _tick_via_qa_agent(project_id, project, agent_settings)
                 continue
 
             _api_key_warned.discard(project_id)
@@ -496,16 +490,10 @@ async def nudge(project_id: str) -> dict | None:
         else:
             agent_settings = agent_settings_raw
 
-        if not agent_settings.get("api_key"):
-            await broadcast({
-                "type": "notification",
-                "data": {
-                    "level": "warning",
-                    "title": "Pilot Agent requires API key",
-                    "message": "Go to Settings → Agent → TicketAgent to configure an API key. Pilot Agent needs it to operate.",
-                },
-            })
-            return None
+        pilot_key = agent_settings.get("pilot_api_key", "")
+        if not pilot_key:
+            # Use QA Agent CC fallback
+            return await _tick_via_qa_agent(project_id, project, agent_settings, force=True)
 
         _active_pilots[project_id] = PilotAgent(
             project_id=project_id,
@@ -521,3 +509,160 @@ async def nudge(project_id: str) -> dict | None:
     except Exception as e:
         logger.error("PilotAgent nudge failed for %s: %s", project_id, e)
         return None
+
+
+# ── QA Agent fallback ─────────────────────────────────────────────────
+
+_qa_next_tick_at: dict[str, datetime] = {}
+_qa_last_message: dict[str, str] = {}
+_qa_last_message_at: dict[str, datetime] = {}
+
+
+async def _tick_via_qa_agent(
+    project_id: str, project: dict, agent_settings: dict, force: bool = False,
+) -> dict | None:
+    """Run a PilotAgent tick using the QA Agent CC session instead of API call."""
+    from claude_hub.services.qa_session import is_alive as qa_alive, ask_qa_agent
+
+    if not qa_alive(project_id):
+        logger.debug("QA Agent not running for %s, skipping tick", project_id)
+        return None
+
+    if not is_alive(project_id):
+        return None
+
+    # Respect wait timer (unless forced by nudge)
+    now = datetime.now(timezone.utc)
+    if not force and project_id in _qa_next_tick_at and now < _qa_next_tick_at[project_id]:
+        return None
+
+    # Read context (same as PilotAgent.tick)
+    kanban_dir = os.path.join(settings.data_dir, "kanbans", project_id)
+    tmux_session = _session_name(project_id)
+
+    # 1. Pane output
+    try:
+        result = subprocess.run(
+            ["tmux", "capture-pane", "-t", tmux_session, "-p", "-S", f"-{MAX_PANE_LINES}"],
+            capture_output=True, text=True, timeout=5,
+        )
+        pane_output = result.stdout.strip() if result.returncode == 0 else ""
+    except Exception:
+        pane_output = ""
+
+    if not pane_output:
+        return None
+
+    # 2. Vision
+    vision_path = os.path.join(kanban_dir, "VISION.md")
+    try:
+        with open(vision_path) as f:
+            vision = f.read()[:3000]
+    except FileNotFoundError:
+        vision = "(no VISION.md found)"
+
+    # 3. Board
+    tickets = await redis_client.list_tickets_by_project(project_id)
+    if tickets:
+        board_lines = []
+        for t in tickets:
+            line = f"  #{t.get('seq', '?')} [{t.get('status', '?')}] {t.get('title', 'untitled')}"
+            if t.get("pr_number"):
+                line += f" (PR #{t['pr_number']})"
+            board_lines.append(line)
+        board = "\n".join(board_lines)
+    else:
+        board = "(empty board)"
+
+    # 4. Last message context
+    last_msg = _qa_last_message.get(project_id)
+    last_msg_at = _qa_last_message_at.get(project_id)
+    if last_msg and last_msg_at:
+        ago = int((now - last_msg_at).total_seconds())
+        last_message_context = f'You sent this {ago}s ago: "{last_msg}"'
+    else:
+        last_message_context = "(this is your first check-in — no prior messages sent)"
+
+    # Build prompt for QA Agent
+    prompt = f"""You are acting as the Pilot Agent — a simulated user for a Claude Code kanban session.
+
+VISION.md:
+{vision}
+
+Board state:
+{board}
+
+Your last message to CC:
+{last_message_context}
+
+CC terminal output (newest at bottom):
+{pane_output[-3000:]}
+
+Respond with ONLY a JSON object (no markdown, no commentary):
+{{"cc_summary": "what CC has been doing", "action": "wait" or "message", "wait_seconds": <number>, "message": "text to send (if action=message, else null)", "reason": "why"}}
+
+Rules:
+- If CC is actively working → action: "wait"
+- If CC is idle at '>' prompt → action: "message" with guidance
+- If CC asked a question → action: "message" with an answer
+- wait_seconds: 15-120 depending on task"""
+
+    # Send to QA Agent and wait for response
+    response = await ask_qa_agent(project_id, prompt, timeout=90)
+    if not response:
+        return None
+
+    # Parse JSON from response
+    decision = PilotAgent._try_parse_json(response)
+    if not decision:
+        logger.warning("QA Agent returned unparseable response for %s: %s", project_id, response[:200])
+        return None
+
+    # Schedule next tick
+    wait_seconds = decision.get("wait_seconds", DEFAULT_WAIT_SECONDS)
+    try:
+        wait_seconds = max(0, int(wait_seconds))
+    except (TypeError, ValueError):
+        wait_seconds = DEFAULT_WAIT_SECONDS
+    _qa_next_tick_at[project_id] = now + timedelta(seconds=wait_seconds)
+
+    # Act on decision
+    action = decision.get("action", "wait")
+    if action == "message":
+        message = decision.get("message", "")
+        if message:
+            try:
+                subprocess.run(
+                    ["tmux", "send-keys", "-t", tmux_session, "-l", message],
+                    capture_output=True, timeout=5,
+                )
+                subprocess.run(
+                    ["tmux", "send-keys", "-t", tmux_session, "Enter"],
+                    capture_output=True, timeout=5,
+                )
+                _qa_last_message[project_id] = message
+                _qa_last_message_at[project_id] = now
+                logger.info("QA PilotAgent sent to %s: %s", project_id, message[:80])
+            except Exception as e:
+                logger.warning("QA PilotAgent send failed for %s: %s", project_id, e)
+
+    # Record event (same format as API-based PilotAgent)
+    event = SupervisorEvent(
+        cc_summary=decision.get("cc_summary", ""),
+        action=action,
+        message=decision.get("message"),
+        reason=decision.get("reason", ""),
+    )
+
+    # Store in Redis and broadcast
+    r = redis_client.get_pool()
+    key = f"pilot:{project_id}:supervisor_events"
+    await r.rpush(key, json.dumps(dict(event)))
+    await r.ltrim(key, -MAX_EVENTS_STORED, -1)
+
+    await broadcast({
+        "type": "supervisor_event",
+        "data": {"project_id": project_id, **event},
+    })
+
+    return dict(event)

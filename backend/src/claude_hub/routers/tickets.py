@@ -631,6 +631,135 @@ async def _run_contextual_review(ticket_id: str, ticket_agent, agent_cfg: dict) 
     await append_ticket_note(ticket_id, "review", note_content, author="ticket_agent")
 
 
+async def _try_qa_agent_review(ticket_id: str, ticket: dict, verify_result) -> bool:
+    """Try to review using QA Agent CC session. Returns True if review was performed."""
+    from claude_hub.services.qa_session import is_alive as qa_alive, ask_qa_agent
+    from claude_hub.services.ticket_service import transition
+    from claude_hub.services.agent_review import _record_activity
+
+    project_id = ticket.get("project_id", "")
+    if not qa_alive(project_id):
+        return False
+
+    # Get diff for review
+    clone_path = ticket.get("clone_path", "")
+    if not clone_path:
+        return False
+
+    try:
+        import subprocess
+        diff_result = subprocess.run(
+            ["git", "diff", f"origin/{ticket['base_branch']}...{ticket['branch']}", "--stat"],
+            cwd=clone_path, capture_output=True, text=True, timeout=30,
+        )
+        diff_stat = diff_result.stdout[:2000] if diff_result.returncode == 0 else "(diff unavailable)"
+
+        diff_result2 = subprocess.run(
+            ["git", "diff", f"origin/{ticket['base_branch']}...{ticket['branch']}"],
+            cwd=clone_path, capture_output=True, text=True, timeout=30,
+        )
+        diff_content = diff_result2.stdout[:30000] if diff_result2.returncode == 0 else ""
+    except Exception:
+        diff_stat = "(diff unavailable)"
+        diff_content = ""
+
+    try:
+        await transition(ticket_id, TicketStatus.REVIEWING)
+        await broadcast({
+            "type": "ticket_updated",
+            "ticket_id": ticket_id,
+            "data": await redis_client.get_ticket(ticket_id),
+        })
+    except Exception:
+        pass
+
+    await _record_activity(ticket_id, "review", "Starting code review (QA Agent CC)...")
+
+    # Build review prompt
+    prompt = f"""Review this code change for ticket: {ticket.get('title', 'Unknown')}
+
+Description: {ticket.get('description', 'N/A')[:500]}
+
+Diff stats:
+{diff_stat}
+
+Diff:
+{diff_content[:20000]}
+
+Respond with ONLY a JSON object (no markdown, no commentary):
+{{"verdict": "approve" or "reject", "summary": "1-2 sentence review summary", "issues": [{{"severity": "critical|major|minor", "file": "path", "description": "issue"}}], "feedback": "if rejecting, what to fix"}}
+
+Rules:
+- approve if the code reasonably addresses the ticket description
+- reject only for critical issues (bugs, security, missing core functionality)
+- be pragmatic — minor style issues are not grounds for rejection"""
+
+    response = await ask_qa_agent(project_id, prompt, timeout=120)
+    if not response:
+        logger.warning("QA Agent review timeout for %s", ticket_id)
+        # Timeout — approve to avoid blocking
+        try:
+            updated = await transition(ticket_id, TicketStatus.AWAITING_MERGE,
+                                       pr_url=verify_result.pr_url,
+                                       pr_number=verify_result.pr_number)
+            await broadcast({"type": "ticket_updated", "ticket_id": ticket_id, "data": updated})
+            await process_queue()
+        except Exception:
+            pass
+        return True
+
+    # Parse review result
+    from claude_hub.services.pilot_agent import PilotAgent
+    result = PilotAgent._try_parse_json(response)
+    if not result:
+        logger.warning("QA Agent review returned unparseable response for %s", ticket_id)
+        # Unparseable — approve to avoid blocking
+        try:
+            updated = await transition(ticket_id, TicketStatus.AWAITING_MERGE,
+                                       pr_url=verify_result.pr_url,
+                                       pr_number=verify_result.pr_number)
+            await broadcast({"type": "ticket_updated", "ticket_id": ticket_id, "data": updated})
+            await process_queue()
+        except Exception:
+            pass
+        return True
+
+    verdict = result.get("verdict", "approve")
+    summary = result.get("summary", "")
+    issues = result.get("issues", [])
+
+    if verdict == "approve":
+        await _record_activity(ticket_id, "review", f"QA Agent APPROVED: {summary}")
+        try:
+            updated = await transition(ticket_id, TicketStatus.AWAITING_MERGE,
+                                       pr_url=verify_result.pr_url,
+                                       pr_number=verify_result.pr_number)
+            await broadcast({"type": "ticket_updated", "ticket_id": ticket_id, "data": updated})
+            await process_queue()
+        except Exception as e:
+            logger.error("Failed to transition %s after QA approval: %s", ticket_id, e)
+    else:
+        await _record_activity(ticket_id, "review", f"QA Agent REJECTED: {summary}")
+        feedback = result.get("feedback", "Address the review issues.")
+        try:
+            await _respawn_with_feedback(ticket_id, feedback)
+        except Exception as e:
+            logger.error("Failed to respawn %s after QA rejection: %s", ticket_id, e)
+            try:
+                updated = await transition(ticket_id, TicketStatus.FAILED,
+                                           failed_reason=f"QA review rejected, respawn failed: {e}")
+                await broadcast({"type": "ticket_updated", "ticket_id": ticket_id, "data": updated})
+                await process_queue()
+            except Exception:
+                pass
+
+    # Record review note
+    note_content = f"{'APPROVED' if verdict == 'approve' else 'REJECTED'} (QA Agent CC): {summary}"
+    await append_ticket_note(ticket_id, "review", note_content, author="qa_agent")
+
+    return True
+
+
 async def _run_agent_review(ticket_id: str, agent_cfg: dict) -> None:
     """Run agent code review. On approve → REVIEW, on reject → spawn new session."""
     from claude_hub.services.agent_review import review_pr
@@ -834,15 +963,19 @@ async def _verify_and_review(ticket_id: str, ticket_agent=None) -> None:
                 # Use the TicketAgent that watched the session — it has full context
                 await _run_contextual_review(ticket_id, ticket_agent, agent_cfg)
             else:
-                updated = await transition(ticket_id, TicketStatus.AWAITING_MERGE,
-                                           pr_url=result.pr_url,
-                                           pr_number=result.pr_number)
-                await broadcast({
-                    "type": "ticket_updated",
-                    "ticket_id": ticket_id,
-                    "data": updated,
-                })
-                await process_queue()
+                # Try QA Agent CC fallback for review (zero API cost)
+                qa_reviewed = await _try_qa_agent_review(ticket_id, ticket, result)
+                if not qa_reviewed:
+                    # No QA Agent available — go straight to AWAITING_MERGE
+                    updated = await transition(ticket_id, TicketStatus.AWAITING_MERGE,
+                                               pr_url=result.pr_url,
+                                               pr_number=result.pr_number)
+                    await broadcast({
+                        "type": "ticket_updated",
+                        "ticket_id": ticket_id,
+                        "data": updated,
+                    })
+                    await process_queue()
         else:
             # Record blocker note
             await append_ticket_note(

@@ -56,7 +56,7 @@ class AgentSettings(BaseModel):
     budget_monthly_usd: float = 500.00
 
     # ── PilotAgent settings (empty = inherit from TicketAgent) ──
-    pilot_provider: Literal["anthropic", "openai", "openai_compatible"] | None = None
+    pilot_provider: Literal["anthropic", "openai", "openai_compatible"] = "anthropic"
     pilot_api_key: str = ""
     pilot_endpoint_url: str = ""
     pilot_model: str = ""

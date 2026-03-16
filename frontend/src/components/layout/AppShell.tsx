@@ -9,6 +9,7 @@ import { CreateProjectModal } from '../projects/CreateProjectModal'
 import { AgentSettingsModal } from '../settings/AgentSettingsModal'
 import { KanbanTerminal } from '../common/KanbanTerminal'
 import { PilotAgentPanel } from '../common/PilotAgentPanel'
+import { QATerminal } from '../common/QATerminal'
 import { DocsOverlay } from '../common/DocsOverlay'
 import type { DeployState } from '../../hooks/useDeployStatus'
 import type { WorkflowRun } from '../../lib/api'
@@ -51,7 +52,7 @@ export function AppShell({
   const [showDocs, setShowDocs] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState<Project | null>(null)
   const [pilotConfirm, setPilotConfirm] = useState(false)
-  const [panelTab, setPanelTab] = useState<'terminal' | 'pilot'>('terminal')
+  const [panelTab, setPanelTab] = useState<'terminal' | 'pilot' | 'qa'>('terminal')
 
   const activeProject = activeProjectId ? projects.get(activeProjectId) : null
 
@@ -350,7 +351,7 @@ export function AppShell({
             pilotMode={activeProject?.pilot_mode}
             tabBar={
               <div className="flex border-b border-[var(--color-border)] bg-[#1a1b26] shrink-0">
-                {(['terminal', 'pilot'] as const).map(tab => (
+                {(['terminal', 'qa', 'pilot'] as const).map(tab => (
                   <button
                     key={tab}
                     onClick={() => setPanelTab(tab)}
@@ -360,13 +361,15 @@ export function AppShell({
                         : 'text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]'
                     }`}
                   >
-                    {tab === 'terminal' ? 'Terminal' : 'Pilot Agent'}
+                    {tab === 'terminal' ? 'Terminal' : tab === 'qa' ? 'QA Agent' : 'Pilot Agent'}
                   </button>
                 ))}
               </div>
             }
             overlayContent={panelTab === 'pilot' ? (
               <PilotAgentPanel projectId={activeProjectId} visible />
+            ) : panelTab === 'qa' ? (
+              <QATerminal projectId={activeProjectId} visible />
             ) : undefined}
           />
         )}
@@ -397,40 +400,10 @@ export function AppShell({
 
       {/* Pilot mode confirmation */}
       {pilotConfirm && activeProject && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50">
-          <div className="w-80 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-panel)] p-5 shadow-xl">
-            <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">
-              {activeProject.pilot_mode ? 'Disable Pilot Mode' : 'Enable Pilot Mode'}
-            </h3>
-            <p className="mt-2 text-xs text-[var(--color-text-muted)]">
-              {activeProject.pilot_mode
-                ? 'Disabling Pilot Mode will restore manual terminal input. The kanban session will continue running.'
-                : 'Enabling Pilot Mode gives the kanban CC full autonomy to create and manage tickets. Terminal input will be disabled.'}
-            </p>
-            <div className="mt-4 flex justify-end gap-2">
-              <button
-                onClick={() => setPilotConfirm(false)}
-                className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-xs text-[var(--color-text-primary)] hover:bg-[var(--color-bg-secondary)]"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={async () => {
-                  const newVal = !activeProject.pilot_mode
-                  setPilotConfirm(false)
-                  try {
-                    await api.projects.update(activeProject.id, { pilot_mode: newVal })
-                  } catch { /* ignore */ }
-                }}
-                className={`rounded-md px-3 py-1.5 text-xs font-medium text-white hover:opacity-90 ${
-                  activeProject.pilot_mode ? 'bg-[var(--color-text-muted)]' : 'bg-purple-500'
-                }`}
-              >
-                {activeProject.pilot_mode ? 'Disable' : 'Enable'}
-              </button>
-            </div>
-          </div>
-        </div>
+        <PilotConfirmDialog
+          activeProject={activeProject}
+          onClose={() => setPilotConfirm(false)}
+        />
       )}
 
       {/* Delete project confirmation */}
@@ -467,6 +440,62 @@ export function AppShell({
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+function PilotConfirmDialog({ activeProject, onClose }: { activeProject: Project; onClose: () => void }) {
+  const [missingKey, setMissingKey] = useState(false)
+  const [checked, setChecked] = useState(activeProject.pilot_mode) // skip check when disabling
+
+  useEffect(() => {
+    if (activeProject.pilot_mode) return // disabling — no check needed
+    api.settings.getProjectAgent(activeProject.id).then((s) => {
+      if (!s.pilot_api_key) setMissingKey(true)
+      setChecked(true)
+    }).catch(() => setChecked(true))
+  }, [activeProject.id, activeProject.pilot_mode])
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50">
+      <div className="w-80 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-panel)] p-5 shadow-xl">
+        <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">
+          {activeProject.pilot_mode ? 'Disable Pilot Mode' : 'Enable Pilot Mode'}
+        </h3>
+        <p className="mt-2 text-xs text-[var(--color-text-muted)]">
+          {activeProject.pilot_mode
+            ? 'Disabling Pilot Mode will restore manual terminal input. The kanban session will continue running.'
+            : 'Enabling Pilot Mode gives the kanban CC full autonomy to create and manage tickets. Terminal input will be disabled.'}
+        </p>
+        {missingKey && (
+          <div className="mt-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-400">
+            PilotAgent API Key is not configured. Go to Settings → Agent → PilotAgent to set it up.
+          </div>
+        )}
+        <div className="mt-4 flex justify-end gap-2">
+          <button
+            onClick={onClose}
+            className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-xs text-[var(--color-text-primary)] hover:bg-[var(--color-bg-secondary)]"
+          >
+            Cancel
+          </button>
+          <button
+            disabled={!checked}
+            onClick={async () => {
+              const newVal = !activeProject.pilot_mode
+              onClose()
+              try {
+                await api.projects.update(activeProject.id, { pilot_mode: newVal })
+              } catch { /* ignore */ }
+            }}
+            className={`rounded-md px-3 py-1.5 text-xs font-medium text-white hover:opacity-90 disabled:opacity-50 ${
+              activeProject.pilot_mode ? 'bg-[var(--color-text-muted)]' : 'bg-purple-500'
+            }`}
+          >
+            {activeProject.pilot_mode ? 'Disable' : 'Enable'}
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
