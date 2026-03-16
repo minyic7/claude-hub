@@ -6,8 +6,8 @@ const COLUMN_MIN_WIDTH = 260
 const STORAGE_KEY = 'kanban-active-tab'
 
 // Priority order: kept visible longest → folded first
-// todo (highest priority to keep) → in_progress → review → merged (first to fold)
-const COLUMN_PRIORITY: TicketStatus[] = ['todo', 'in_progress', 'review', 'merged']
+// todo (highest priority to keep) → in_progress → awaiting_merge → merged (first to fold)
+const COLUMN_PRIORITY: TicketStatus[] = ['todo', 'in_progress', 'awaiting_merge', 'merged']
 
 function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value))

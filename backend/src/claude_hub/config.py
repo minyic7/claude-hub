@@ -35,6 +35,7 @@ class Settings(BaseSettings):
     max_total_sessions: int = 12
     gh_token: str = ""
     agent_check_interval: int = 5
+    session_timeout_minutes: int = 30  # Max duration for IN_PROGRESS sessions (0 = no timeout)
 
 
 settings = Settings()

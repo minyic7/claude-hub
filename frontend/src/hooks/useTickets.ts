@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import type { Ticket, TicketStatus } from '../types/ticket'
 
-const COLUMN_ORDER: TicketStatus[] = ['todo', 'in_progress', 'review', 'merged']
+const COLUMN_ORDER: TicketStatus[] = ['todo', 'in_progress', 'awaiting_merge', 'merged']
 
 // These statuses are shown within their parent column
 const STATUS_MAPPING: Record<TicketStatus, TicketStatus> = {
@@ -11,8 +11,8 @@ const STATUS_MAPPING: Record<TicketStatus, TicketStatus> = {
   blocked: 'in_progress',
   verifying: 'in_progress',
   reviewing: 'in_progress',
-  review: 'review',
-  merging: 'review',
+  awaiting_merge: 'awaiting_merge',
+  merging: 'awaiting_merge',
   merged: 'merged',
   failed: 'in_progress',
 }
@@ -28,7 +28,7 @@ export function useTickets(ticketMap: Map<string, Ticket>): KanbanColumn[] {
     const columns: Record<string, Ticket[]> = {
       todo: [],
       in_progress: [],
-      review: [],
+      awaiting_merge: [],
       merged: [],
     }
 
@@ -73,13 +73,13 @@ export function useTickets(ticketMap: Map<string, Ticket>): KanbanColumn[] {
     }
     columns.todo = sorted
     columns.in_progress.sort((a, b) => (a.started_at || a.created_at).localeCompare(b.started_at || b.created_at))
-    columns.review.sort((a, b) => (a.started_at || a.created_at).localeCompare(b.started_at || b.created_at))
+    columns.awaiting_merge.sort((a, b) => (a.started_at || a.created_at).localeCompare(b.started_at || b.created_at))
     columns.merged.sort((a, b) => (b.completed_at || b.created_at).localeCompare(a.completed_at || a.created_at))
 
     const labels: Record<string, string> = {
       todo: 'TODO',
       in_progress: 'IN PROGRESS',
-      review: 'REVIEW',
+      awaiting_merge: 'AWAITING MERGE',
       merged: 'MERGED',
     }
 

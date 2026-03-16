@@ -11,7 +11,7 @@ interface StatusTimelineProps {
 const STAGES = [
   { key: 'todo', label: 'Todo', icon: ListTodo },
   { key: 'in_progress', label: 'In Progress', icon: Code },
-  { key: 'review', label: 'Review', icon: Circle },
+  { key: 'awaiting_merge', label: 'Awaiting Merge', icon: Circle },
   { key: 'merged', label: 'Merged', icon: GitMerge },
 ] as const
 
@@ -23,7 +23,7 @@ const STATUS_TO_STAGE: Record<string, number> = {
   blocked: 1,
   verifying: 1,
   failed: 1,
-  review: 2,
+  awaiting_merge: 2,
   merging: 2,
   merged: 3,
 }
@@ -46,7 +46,7 @@ export function StatusTimeline({ ticket, activities }: StatusTimelineProps) {
   const timestamps: Record<StageKey, string | null> = {
     todo: ticket.created_at,
     in_progress: ticket.started_at,
-    review: findReviewTimestamp(activities),
+    awaiting_merge: findReviewTimestamp(activities),
     merged: ticket.completed_at,
   }
 

@@ -20,15 +20,68 @@ logger = logging.getLogger(__name__)
 
 
 async def _pr_poll_loop() -> None:
-    """Background loop: check review ticket PR statuses every 10 seconds."""
+    """Background loop: check review ticket PR statuses and session timeouts every 10 seconds."""
     while True:
         try:
             await asyncio.sleep(10)
             await tickets.sync_review_status()
+            await _check_session_timeouts()
         except asyncio.CancelledError:
             break
         except Exception as e:
             logger.error("PR poll error: %s", e)
+
+
+async def _check_session_timeouts() -> None:
+    """Fail IN_PROGRESS tickets whose sessions have exceeded the timeout."""
+    if settings.session_timeout_minutes <= 0:
+        return
+
+    from datetime import datetime, timezone, timedelta
+    from claude_hub.services import session_manager
+    from claude_hub.services.ticket_service import transition
+    from claude_hub.models.ticket import TicketStatus
+
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=settings.session_timeout_minutes)
+
+    for status in ("in_progress", "blocked"):
+        tickets_list = await redis_client.list_tickets(status)
+        for ticket in tickets_list:
+            started = ticket.get("started_at")
+            if not started:
+                continue
+            try:
+                started_dt = datetime.fromisoformat(started.replace("Z", "+00:00"))
+            except (ValueError, TypeError):
+                continue
+            if started_dt > cutoff:
+                continue
+
+            tid = ticket["id"]
+            elapsed = int((datetime.now(timezone.utc) - started_dt).total_seconds() / 60)
+            logger.warning("Session timeout for ticket %s (%d min > %d min limit)", tid[:8], elapsed, settings.session_timeout_minutes)
+
+            session_manager.stop_session(tid)
+            session_manager.update_session_status(tid, "failed")
+            try:
+                updated = await transition(tid, TicketStatus.FAILED,
+                                           failed_reason=f"Session timed out after {elapsed} minutes")
+                await ws.broadcast({
+                    "type": "ticket_updated",
+                    "ticket_id": tid,
+                    "data": updated,
+                })
+                await ws.broadcast({
+                    "type": "notification",
+                    "data": {
+                        "level": "warning",
+                        "title": f"Session timeout for #{ticket.get('seq', '?')}",
+                        "message": f"Session ran for {elapsed} minutes, exceeding the {settings.session_timeout_minutes}-minute limit.",
+                        "ticket_id": tid,
+                    },
+                })
+            except Exception as e:
+                logger.error("Failed to timeout ticket %s: %s", tid[:8], e)
 
 
 async def _kanban_sync_loop() -> None:
@@ -50,10 +103,47 @@ async def _kanban_sync_loop() -> None:
             logger.error("Kanban sync error: %s", e)
 
 
-async def _recover_orphaned_tickets() -> None:
-    """On startup, find IN_PROGRESS/BLOCKED tickets with dead tmux sessions → auto-restart."""
-    from claude_hub.services import session_manager, clone_manager
+async def _migrate_review_to_awaiting_merge() -> None:
+    """One-time migration: rename 'review' status to 'awaiting_merge' in Redis."""
+    r = redis_client.get_pool()
 
+    # Move tickets from old status set to new
+    old_key = "tickets:by_status:review"
+    new_key = "tickets:by_status:awaiting_merge"
+    old_members = await r.smembers(old_key)
+    if old_members:
+        for tid in old_members:
+            await r.sadd(new_key, tid)
+            await r.hset(f"ticket:{tid}", "status", "awaiting_merge")
+        await r.delete(old_key)
+        logger.info("Migrated %d tickets from 'review' to 'awaiting_merge'", len(old_members))
+
+
+async def _recover_orphaned_tickets() -> None:
+    """On startup, recover orphaned tickets:
+    - IN_PROGRESS/BLOCKED/VERIFYING with dead sessions → auto-restart
+    - MERGING → fallback to AWAITING_MERGE (background task lost on restart)
+    """
+    from claude_hub.services import session_manager, clone_manager
+    from claude_hub.services.ticket_service import transition
+    from claude_hub.models.ticket import TicketStatus
+
+    # Recover MERGING tickets: background wait_for_ci task was lost on restart
+    merging_tickets = await redis_client.list_tickets("merging")
+    for ticket in merging_tickets:
+        tid = ticket["id"]
+        try:
+            updated = await transition(tid, TicketStatus.AWAITING_MERGE)
+            await ws.broadcast({
+                "type": "ticket_updated",
+                "ticket_id": tid,
+                "data": updated,
+            })
+            logger.info("Recovered MERGING ticket %s → AWAITING_MERGE (retry merge manually)", tid[:8])
+        except Exception as e:
+            logger.error("Failed to recover MERGING ticket %s: %s", tid[:8], e)
+
+    # Recover session-based tickets
     for status in ("in_progress", "blocked", "verifying"):
         tickets_list = await redis_client.list_tickets(status)
         for ticket in tickets_list:
@@ -102,6 +192,7 @@ async def lifespan(app: FastAPI):
     logger.info("Connecting to Redis at %s", settings.redis_url)
     await redis_client.connect()
     logger.info("Redis connected")
+    await _migrate_review_to_awaiting_merge()
     await _recover_orphaned_tickets()
     poll_task = asyncio.create_task(_pr_poll_loop())
     kanban_sync_task = asyncio.create_task(_kanban_sync_loop())

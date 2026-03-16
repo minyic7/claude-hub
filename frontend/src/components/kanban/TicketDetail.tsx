@@ -31,7 +31,7 @@ function depStatusIcon(status: TicketStatus) {
     case 'blocked': return <AlertCircle size={12} className="text-[var(--color-accent-red)]" />
     case 'verifying': return <Loader2 size={12} className="text-[var(--color-accent-yellow)] animate-spin" />
     case 'reviewing': return <Loader2 size={12} className="text-[var(--color-accent-yellow)] animate-spin" />
-    case 'review': return <CircleDot size={12} className="text-[var(--color-accent-yellow)]" />
+    case 'awaiting_merge': return <CircleDot size={12} className="text-[var(--color-accent-yellow)]" />
     case 'merging': return <Loader2 size={12} className="text-[var(--color-accent-green)] animate-spin" />
     case 'failed': return <AlertCircle size={12} className="text-[var(--color-accent-red)]" />
     default: return <CircleDot size={12} className="text-[var(--color-text-muted)]" />
@@ -43,7 +43,7 @@ function depStatusColor(status: TicketStatus): string {
     case 'merged': return 'text-[var(--color-accent-green)]'
     case 'in_progress': return 'text-[var(--color-accent-blue)]'
     case 'blocked': case 'failed': return 'text-[var(--color-accent-red)]'
-    case 'review': return 'text-[var(--color-accent-yellow)]'
+    case 'awaiting_merge': return 'text-[var(--color-accent-yellow)]'
     default: return 'text-[var(--color-text-muted)]'
   }
 }
@@ -108,7 +108,7 @@ export function TicketDetail({ ticket, activities, allTickets, onClose, onDelete
 
   // Poll CI status when ticket is merging or in review
   useEffect(() => {
-    if (ticket.status !== 'merging' && ticket.status !== 'review') {
+    if (ticket.status !== 'merging' && ticket.status !== 'awaiting_merge') {
       setCiStatus(null)
       return
     }
@@ -354,7 +354,7 @@ export function TicketDetail({ ticket, activities, allTickets, onClose, onDelete
               </Button>
             </>
           )}
-          {ticket.status === 'review' && (
+          {ticket.status === 'awaiting_merge' && (
             <>
               <Button size="sm" variant="secondary" onClick={() => setConfirmRevert(true)}>
                 <Undo2 size={12} className="mr-1" /> Revert
@@ -410,7 +410,7 @@ export function TicketDetail({ ticket, activities, allTickets, onClose, onDelete
       <div ref={scrollRef} onScroll={updateScrollState} className="h-full overflow-y-auto">
 
       {/* Deploy queue banner */}
-      {mergeQueueLocked && ticket.status === 'review' && (
+      {mergeQueueLocked && ticket.status === 'awaiting_merge' && (
         <div className="border-b border-[var(--color-border)] p-3">
           <div className="flex items-center gap-2 rounded-lg border border-[var(--color-accent-yellow)]/30 bg-[var(--color-accent-yellow)]/5 px-3 py-2 text-xs text-[var(--color-accent-yellow)]">
             <Loader2 size={14} className="animate-spin shrink-0" />
@@ -420,7 +420,7 @@ export function TicketDetail({ ticket, activities, allTickets, onClose, onDelete
       )}
 
       {/* Unresolved conversations banner */}
-      {ticket.status === 'review' && ticket.pr_number && (
+      {ticket.status === 'awaiting_merge' && ticket.pr_number && (
         <div className="border-b border-[var(--color-border)] p-3">
           {unresolvedCount == null ? (
             <div className="flex items-center justify-between rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-3 py-2 text-xs text-[var(--color-text-muted)]">
@@ -535,7 +535,7 @@ export function TicketDetail({ ticket, activities, allTickets, onClose, onDelete
       )}
 
       {/* Request Changes form */}
-      {showChangesForm && ticket.status === 'review' && (
+      {showChangesForm && ticket.status === 'awaiting_merge' && (
         <div className="border-b border-[var(--color-border)] p-3">
           <div className="rounded-lg border border-[var(--color-accent-yellow)]/30 bg-[var(--color-accent-yellow)]/5 p-3">
             <p className="mb-2 text-xs font-medium text-[var(--color-accent-yellow)]">Request Changes</p>
@@ -559,7 +559,7 @@ export function TicketDetail({ ticket, activities, allTickets, onClose, onDelete
       )}
 
       {/* Conflict banner for review tickets */}
-      {ticket.status === 'review' && ticket.has_conflicts && (
+      {ticket.status === 'awaiting_merge' && ticket.has_conflicts && (
         <div className="border-b border-[var(--color-border)] p-3">
           <div className="rounded-lg border border-[var(--color-accent-yellow)]/30 bg-[var(--color-accent-yellow)]/5 p-3">
             <div className="flex items-start gap-2">

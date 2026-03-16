@@ -10,7 +10,7 @@ Tickets are grouped into four visual columns based on their status:
 |--------|-------------------|
 | **To Do** | `todo`, `queued` |
 | **In Progress** | `in_progress`, `blocked`, `verifying`, `reviewing`, `failed` |
-| **Review** | `review`, `merging` |
+| **Awaiting Merge** | `awaiting_merge`, `merging` |
 | **Merged** | `merged` |
 
 ### Sorting
@@ -40,7 +40,7 @@ Tickets flow through a defined state machine with enforced transitions:
 ```
                         ┌──── FAILED (retry possible)
                         │
-TODO ─► QUEUED ─► IN_PROGRESS ─► VERIFYING ─► REVIEWING ─► REVIEW ─► MERGING ─► MERGED
+TODO ─► QUEUED ─► IN_PROGRESS ─► VERIFYING ─► REVIEWING ─► AWAITING_MERGE ─► MERGING ─► MERGED
                      │    ▲                                   │
                      ▼    │                                   │
                    BLOCKED ──────────────────────────────────►┘

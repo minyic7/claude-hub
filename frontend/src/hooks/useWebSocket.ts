@@ -3,7 +3,6 @@ import type { Project, Ticket, TicketStatus } from '../types/ticket'
 import type { ActivityEvent } from '../types/activity'
 import type { WSEvent } from '../types/ws'
 import type { Notification } from './useNotifications'
-import { api } from '../lib/api'
 
 export interface TicketNotification {
   ticketId: string
@@ -17,7 +16,7 @@ let notifSeq = 0
 
 const statusLabels: Partial<Record<TicketStatus, string>> = {
   in_progress: 'started',
-  review: 'ready for review',
+  awaiting_merge: 'ready for review',
   merging: 'merging',
   merged: 'merged',
   failed: 'failed',
@@ -61,8 +60,6 @@ export function useWebSocket(url: string): UseWebSocketReturn {
 
     ws.onopen = () => {
       setConnected(true)
-      // Sync review ticket PR statuses with GitHub on (re)connect
-      api.tickets.syncReviewStatus().catch(() => {})
     }
 
     ws.onclose = () => {

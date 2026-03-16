@@ -134,10 +134,10 @@ After a Claude Code session completes, the TicketAgent performs a code review of
 
 ### Review Outcomes
 
-- **Approve** — the ticket moves to **Review** for human sign-off
+- **Approve** — the ticket moves to **Awaiting Merge** for human sign-off
 - **Reject** — a new session starts with the agent's feedback included
 
-A maximum of **3 review rounds** prevents infinite loops. After 3 rejections, the ticket moves to Review regardless.
+A maximum of **3 review rounds** prevents infinite loops. After 3 rejections, the ticket is marked as Failed for manual review.
 
 ## Enabling the Agent
 

@@ -560,7 +560,7 @@ async def _run_agent_review(ticket_id: str, agent_cfg: dict) -> None:
 
     if verdict == "approve":
         try:
-            updated = await transition(ticket_id, TicketStatus.REVIEW)
+            updated = await transition(ticket_id, TicketStatus.AWAITING_MERGE)
             await broadcast({
                 "type": "ticket_updated",
                 "ticket_id": ticket_id,
@@ -704,7 +704,7 @@ async def _verify_and_review(ticket_id: str) -> None:
             if agent_enabled and agent_cfg.get("api_key"):
                 await _run_agent_review(ticket_id, agent_cfg)
             else:
-                updated = await transition(ticket_id, TicketStatus.REVIEW,
+                updated = await transition(ticket_id, TicketStatus.AWAITING_MERGE,
                                            pr_url=result.pr_url,
                                            pr_number=result.pr_number)
                 await broadcast({
@@ -800,7 +800,7 @@ async def _tail_and_broadcast(ticket_id: str, log_path: str) -> None:
 async def mark_review(ticket_id: str):
     from claude_hub.services.ticket_service import InvalidTransition, transition
     try:
-        updated = await transition(ticket_id, TicketStatus.REVIEW)
+        updated = await transition(ticket_id, TicketStatus.AWAITING_MERGE)
     except ValueError:
         raise HTTPException(404, "Ticket not found")
     except InvalidTransition as e:
@@ -1136,7 +1136,7 @@ async def sync_review_status():
     import subprocess
     from claude_hub.services.ticket_service import transition
 
-    review_tickets = await redis_client.list_tickets("review")
+    review_tickets = await redis_client.list_tickets("awaiting_merge")
     synced = []
     for ticket in review_tickets:
         pr_number = ticket.get("pr_number")
@@ -1195,6 +1195,15 @@ async def sync_review_status():
             if now_conflicted:
                 from claude_hub.services import session_manager
                 if not session_manager.has_active_session(ticket["id"]):
+                    await broadcast({
+                        "type": "notification",
+                        "data": {
+                            "level": "warning",
+                            "title": f"Auto-resolving conflicts for #{ticket.get('seq', '?')}",
+                            "message": "Merge conflict detected. Starting auto-resolution session.",
+                            "ticket_id": ticket["id"],
+                        },
+                    })
                     try:
                         await resolve_conflicts(ticket["id"])
                         logger.info("Auto-triggered conflict resolution for ticket %s", ticket["id"])
@@ -1326,7 +1335,7 @@ async def sync_pr_reviews(ticket_id: str):
 
     # Auto-trigger request-changes if unresolved threads and setting enabled
     auto_dispatched = False
-    if threads and updated and updated.get("status") == "review":
+    if threads and updated and updated.get("status") == "awaiting_merge":
         from claude_hub.routers.settings_router import get_agent_settings_for_project
         agent_cfg = await get_agent_settings_for_project(updated.get("project_id", ""))
         if agent_cfg.get("auto_resolve_conversations"):
@@ -1594,8 +1603,8 @@ async def revert_ticket(ticket_id: str):
         raise HTTPException(404, "Ticket not found")
 
     current = ticket.get("status")
-    if current not in ("failed", "review"):
-        raise HTTPException(409, f"Cannot revert ticket in {current} status (only failed or review)")
+    if current not in ("failed", "awaiting_merge"):
+        raise HTTPException(409, f"Cannot revert ticket in {current} status (only failed or awaiting_merge)")
 
     from claude_hub.services.ticket_service import InvalidTransition, transition
 

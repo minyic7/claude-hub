@@ -14,7 +14,7 @@ export type TicketStatus =
   | 'blocked'
   | 'verifying'
   | 'reviewing'
-  | 'review'
+  | 'awaiting_merge'
   | 'merging'
   | 'merged'
   | 'failed'

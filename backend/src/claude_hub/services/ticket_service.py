@@ -16,11 +16,11 @@ VALID_TRANSITIONS: dict[TicketStatus, list[TicketStatus]] = {
     TicketStatus.QUEUED: [TicketStatus.IN_PROGRESS, TicketStatus.TODO],
     TicketStatus.IN_PROGRESS: [TicketStatus.TODO, TicketStatus.BLOCKED, TicketStatus.VERIFYING, TicketStatus.FAILED],
     TicketStatus.BLOCKED: [TicketStatus.IN_PROGRESS, TicketStatus.FAILED],
-    TicketStatus.VERIFYING: [TicketStatus.REVIEWING, TicketStatus.REVIEW, TicketStatus.FAILED],
-    TicketStatus.REVIEWING: [TicketStatus.REVIEW, TicketStatus.IN_PROGRESS, TicketStatus.FAILED],
-    TicketStatus.REVIEW: [TicketStatus.MERGING, TicketStatus.MERGED, TicketStatus.IN_PROGRESS, TicketStatus.TODO],
+    TicketStatus.VERIFYING: [TicketStatus.REVIEWING, TicketStatus.AWAITING_MERGE, TicketStatus.FAILED],
+    TicketStatus.REVIEWING: [TicketStatus.AWAITING_MERGE, TicketStatus.IN_PROGRESS, TicketStatus.FAILED],
+    TicketStatus.AWAITING_MERGE: [TicketStatus.MERGING, TicketStatus.MERGED, TicketStatus.IN_PROGRESS, TicketStatus.TODO],
     TicketStatus.MERGING: [TicketStatus.MERGED, TicketStatus.FAILED],
-    TicketStatus.FAILED: [TicketStatus.IN_PROGRESS, TicketStatus.REVIEW, TicketStatus.TODO],
+    TicketStatus.FAILED: [TicketStatus.IN_PROGRESS, TicketStatus.AWAITING_MERGE, TicketStatus.TODO],
     TicketStatus.MERGED: [],
 }
 
@@ -64,7 +64,7 @@ async def _transition_inner(ticket_id: str, target: TicketStatus, **extra_fields
         send_kanban_update(project_id)
 
     # Auto-sync PR reviews when entering review status
-    if target == TicketStatus.REVIEW and updated and updated.get("pr_number"):
+    if target == TicketStatus.AWAITING_MERGE and updated and updated.get("pr_number"):
         asyncio.create_task(_auto_sync_reviews(ticket_id))
 
     return updated

@@ -51,7 +51,7 @@ async def github_webhook(
 
     # Find ticket with this PR number
     merged_ticket_id = None
-    tickets = await redis_client.list_tickets("review")
+    tickets = await redis_client.list_tickets("awaiting_merge")
     for ticket in tickets:
         if ticket.get("pr_number") == pr_number:
             try:
@@ -71,23 +71,28 @@ async def github_webhook(
                 logger.error("Failed to auto-merge ticket %s: %s", ticket["id"], e)
                 return {"status": "error", "message": str(e)}
 
-    # After a PR merges, update other review branches and kanban branches
+    # After a PR merges, update other review branches and sync kanban branch
     import asyncio
     asyncio.create_task(_update_review_branches(pr_number, base_branch))
-    asyncio.create_task(_sync_all_kanban_branches())
 
+    # Only sync the kanban branch for the affected project (not all projects)
     if merged_ticket_id:
+        merged_ticket = await redis_client.get_ticket(merged_ticket_id)
+        if merged_ticket:
+            asyncio.create_task(_sync_kanban_branch_for_project(merged_ticket.get("project_id", "")))
         return {"status": "merged", "ticket_id": merged_ticket_id}
     return {"status": "no_matching_ticket", "pr_number": pr_number}
 
 
-async def _sync_all_kanban_branches() -> None:
-    """Sync all active kanban branches with latest main."""
+async def _sync_kanban_branch_for_project(project_id: str) -> None:
+    """Sync the kanban branch for a specific project after its PR merges."""
+    if not project_id:
+        return
     from claude_hub.services.kanban_manager import sync_kanban_branch, is_alive
-    projects = await redis_client.list_projects()
-    for project in projects:
-        if is_alive(project["id"]):
-            sync_kanban_branch(project["id"], project.get("gh_token", ""))
+    if is_alive(project_id):
+        project = await redis_client.get_project(project_id)
+        if project:
+            sync_kanban_branch(project_id, project.get("gh_token", ""))
 
 
 async def _handle_pr_review(payload: dict) -> dict:
@@ -106,7 +111,7 @@ async def _handle_pr_review(payload: dict) -> dict:
     logger.info("PR #%d review %s by %s (action: %s)", pr_number, review_state, reviewer, action)
 
     # Find ticket with this PR number across all active statuses
-    for status in ("review", "merging", "failed", "in_progress", "verifying", "reviewing"):
+    for status in ("awaiting_merge", "merging", "failed", "in_progress", "verifying", "reviewing"):
         tickets = await redis_client.list_tickets(status)
         for ticket in tickets:
             if ticket.get("pr_number") == pr_number:
@@ -165,7 +170,7 @@ async def _handle_pr_review_comment(payload: dict) -> dict:
     prefix = "Review comment" if action == "created" else "Review comment (edited)"
     logger.info("PR #%d %s by %s on %s", pr_number, prefix.lower(), commenter, path)
 
-    for status in ("review", "merging", "failed", "in_progress", "verifying", "reviewing"):
+    for status in ("awaiting_merge", "merging", "failed", "in_progress", "verifying", "reviewing"):
         tickets = await redis_client.list_tickets(status)
         for ticket in tickets:
             if ticket.get("pr_number") == pr_number:
@@ -193,7 +198,7 @@ async def _update_review_branches(merged_pr_number: int, base_branch: str) -> No
     import subprocess
     from claude_hub.services.ticket_service import append_ticket_note
 
-    for status in ("review", "reviewing", "verifying"):
+    for status in ("awaiting_merge", "reviewing", "verifying"):
         tickets = await redis_client.list_tickets(status)
         for ticket in tickets:
             pr_number = ticket.get("pr_number")
@@ -247,7 +252,16 @@ async def _update_review_branches(merged_pr_number: int, base_branch: str) -> No
                     await broadcast({"type": "ticket_updated", "ticket_id": ticket["id"], "data": updated})
                     logger.info("Merge conflict for ticket %s (PR #%d) — triggering resolution", ticket["id"], pr_number)
 
-                    # Auto-trigger conflict resolution
+                    # Auto-trigger conflict resolution + notify user
+                    await broadcast({
+                        "type": "notification",
+                        "data": {
+                            "level": "warning",
+                            "title": f"Auto-resolving conflicts for #{ticket.get('seq', '?')}",
+                            "message": f"Merge conflict detected after PR #{merged_pr_number} merged. Starting auto-resolution session.",
+                            "ticket_id": ticket["id"],
+                        },
+                    })
                     try:
                         from claude_hub.routers.tickets import resolve_conflicts
                         await resolve_conflicts(ticket["id"])

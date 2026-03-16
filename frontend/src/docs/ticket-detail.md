@@ -104,7 +104,7 @@ Scores are visualized in two ways:
 ### Verdict
 
 Each round results in either:
-- **Approve** (green) — code passes review, ticket moves to Review status for human review
+- **Approve** (green) — code passes review, ticket moves to Awaiting Merge status for human review
 - **Reject** (red) — issues found, feedback sent as the task for a new Claude Code session
 
 ### Issues
@@ -171,7 +171,7 @@ A shortcut for Request Changes with pre-filled instructions to fetch, rebase on 
 
 ### Mark Ready for Review
 
-Manually overrides the ticket status to **Review**, bypassing the agent review process. Useful when the agent incorrectly rejects code.
+Manually overrides the ticket status to **Awaiting Merge**, bypassing the agent review process. Useful when the agent incorrectly rejects code.
 
 ### Duplicate
 
@@ -206,7 +206,7 @@ When a pull request exists, the detail panel shows live CI status:
 
 - **Status** — passed, failed, pending, or no_ci
 - **Individual checks** — name, state, and link for each GitHub Actions check
-- **Polling** — CI status is polled every 10 seconds while the ticket is in Review or Merging status
+- **Polling** — CI status is polled every 10 seconds while the ticket is in Awaiting Merge or Merging status
 
 ## Merge Conflict Detection
 
