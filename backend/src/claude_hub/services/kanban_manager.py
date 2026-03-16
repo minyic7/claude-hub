@@ -341,8 +341,16 @@ These operations are outside your scope. Do not attempt them:
 
 VISION.md exists on this branch (kanban-claude-hub) and contains the project vision.
 
-- Goal and Scope sections: set by the user — read these to understand project direction.
-  You may suggest edits to the user but must never modify the file yourself.
+### Structure
+- **Goal** — what the project exists to achieve (source of truth for ticket planning)
+- **Scope** — what is in/out of scope (In Scope / Out of Scope subsections)
+- **Milestones** — ordered deliverables (user-managed, do not touch)
+
+### Rules
+- Goal and Scope are set by the user — read these to understand project direction.
+  You may suggest edits to the user but must never modify the file yourself (unless Pilot Mode writable).
+- Never modify or remove existing content — only append.
+- Never touch Milestones — only the user manages milestones.
 - On startup: read VISION.md if it exists to orient yourself before greeting the user.
 - Before every response: silently run `git pull origin kanban-claude-hub --quiet`,
   then check if VISION.md has changed since you last read it. If it has, re-read it
@@ -434,12 +442,17 @@ Review every non-archived ticket. For each one, decide its fate:
 
 ### STEP 6: Read VISION.md
 Read VISION.md from this branch.
-Focus on Goal and Scope — these define what matters.
+
+VISION.md has three sections:
+- **Goal** — what the project exists to achieve
+- **Scope** — In Scope / Out of Scope subsections
+- **Milestones** — ordered deliverables (user-managed, NEVER touch)
+
+Focus on Goal and Scope — these are the source of truth for all ticket planning.
 
 Vision mode is: **{vision_mode}**
 
-{"If vision_mode is readonly:" if vision_mode == "readonly" else "If vision_mode is writable:"}
-{"You may NOT modify VISION.md. If you believe the vision should be extended or updated, include a Vision Amendment Proposals section at the end of your Step 10 report. The user will review and update VISION.md manually." if vision_mode == "readonly" else "You MAY extend the Goal or Scope sections when: (1) the current Goal/Scope has been fully implemented, (2) you have a clear next direction based on what exists, (3) the extension is additive — never remove or contradict existing content. Always edit VISION.md before creating new tickets so new tickets are grounded in the updated vision. Only modify Goal and Scope — never touch other sections."}
+{"You may NOT modify VISION.md. If you believe the vision should be extended, include a **Vision Amendment Proposals** section at the end of your Step 10 report. The user will review and update VISION.md manually." if vision_mode == "readonly" else "You MAY APPEND to Goal and Scope sections when: (1) the current Goal/Scope has been fully implemented, (2) you have a clear next direction based on what exists, (3) the extension is additive — never remove or contradict existing content. Always edit VISION.md and `git commit + push` before creating new tickets so they are grounded in the updated vision. NEVER touch Milestones — only the user manages milestones."}
 
 ### STEP 7: Identify gaps
 Cross-reference:
@@ -576,12 +589,26 @@ def start_kanban(project: dict, gh_token: str = "") -> str:
             project_name = project.get("name", "Project")
             with open(vision_path, "w") as f:
                 f.write(f"# {project_name} — Vision\n\n"
-                        "<!-- USER_SECTION_START -->\n"
-                        "## Goals\n"
+                        "## Goal\n\n"
+                        "What this project exists to achieve.\n\n"
                         "- (Add your project goals here)\n\n"
-                        "## Scope\n"
-                        "- (Define what is in scope and out of scope)\n"
-                        "<!-- USER_SECTION_END -->\n")
+                        "## Scope\n\n"
+                        "What is in scope and what is explicitly out of scope.\n\n"
+                        "### In Scope\n"
+                        "- (Define what is in scope)\n\n"
+                        "### Out of Scope\n"
+                        "- (Define what is out of scope)\n\n"
+                        "## Milestones\n\n"
+                        "Ordered list of deliverables. Check off as completed.\n\n"
+                        "- [ ] (First milestone)\n\n"
+                        "---\n\n"
+                        "<!-- KANBAN_CC_RULES:\n"
+                        "  - Goal and Scope are the source of truth for all ticket planning.\n"
+                        "  - In writable mode, CC may APPEND to Goal and Scope sections only.\n"
+                        "  - CC must NEVER modify or remove existing content in any section.\n"
+                        "  - CC must NEVER touch Milestones — only the user manages milestones.\n"
+                        "  - In readonly mode, CC proposes amendments in the Step 10 report.\n"
+                        "-->\n")
             subprocess.run(
                 ["git", "add", "VISION.md"],
                 cwd=kanban_dir, capture_output=True,
