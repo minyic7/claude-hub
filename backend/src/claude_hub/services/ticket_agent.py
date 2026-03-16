@@ -1,5 +1,6 @@
 import json
 import logging
+import subprocess
 
 from claude_hub import redis_client
 from claude_hub.routers.ws import broadcast
@@ -261,6 +262,128 @@ class TicketAgent(BaseAgent):
             await self._process_batch(event_buffer)
 
         logger.info("TicketAgent finished for %s", self.agent_id)
+
+    # ── Review (reuses conversation context) ─────────────────────
+
+    async def review(self) -> dict:
+        """Review the PR diff using the TicketAgent's existing conversation context.
+
+        Called after run() ends so the agent already knows what CC did.
+        Returns a review dict with verdict, scores, summary, issues, feedback.
+        """
+        clone_path = self.ticket.get("clone_path", "")
+        base_branch = self.ticket.get("base_branch", "main")
+        diff = self._get_diff(clone_path, base_branch)
+
+        if not diff or "Error getting diff" in diff:
+            return {
+                "verdict": "approve",
+                "scores": {"correctness": 5, "security": 5, "quality": 5, "completeness": 5},
+                "summary": "Could not retrieve diff, auto-approving for human review.",
+                "issues": [],
+                "feedback": "",
+            }
+
+        review_prompt = (
+            "The Claude Code session just ended. Here is the PR diff. "
+            "You watched the entire session, so you already know what was implemented.\n\n"
+            "Review the diff and respond with a JSON object (no markdown fences):\n"
+            '{"verdict": "approve" | "reject", '
+            '"scores": {"correctness": 1-10, "security": 1-10, "quality": 1-10, "completeness": 1-10}, '
+            '"summary": "1-2 sentence assessment", '
+            '"issues": [{"severity": "critical|major|minor", "file": "path", "line": 0, "description": "..."}], '
+            '"feedback": "if rejected, specific fix instructions"}\n\n'
+            "Rules:\n"
+            "- Only reject for critical or major issues. Minor issues = approve with notes.\n"
+            "- You already saw CC implement this — trust your observations.\n"
+            "- ONLY output valid JSON.\n\n"
+            f"{diff}"
+        )
+
+        self.messages.append({"role": "user", "content": review_prompt})
+        self._trim_context()
+
+        # Budget check
+        ok, reason = await cost_tracker.can_spend(self.agent_id, 0.01)
+        if not ok:
+            return {
+                "verdict": "approve",
+                "scores": {"correctness": 5, "security": 5, "quality": 5, "completeness": 5},
+                "summary": f"Budget exceeded ({reason}), auto-approving.",
+                "issues": [],
+                "feedback": "",
+            }
+
+        await self._call_api()
+
+        # Parse the review response
+        return self._parse_review_response()
+
+    def _get_diff(self, clone_path: str, base_branch: str) -> str:
+        """Get diff between feature branch and base branch."""
+        try:
+            subprocess.run(["git", "fetch", "origin"], cwd=clone_path, capture_output=True)
+            stat_result = subprocess.run(
+                ["git", "diff", f"origin/{base_branch}...HEAD", "--stat"],
+                cwd=clone_path, capture_output=True, text=True,
+            )
+            diff_result = subprocess.run(
+                ["git", "diff", f"origin/{base_branch}...HEAD"],
+                cwd=clone_path, capture_output=True, text=True,
+            )
+            diff = diff_result.stdout
+            if len(diff) > 50000:
+                diff = diff[:50000] + "\n\n... (diff truncated at 50KB) ..."
+            return f"## Diff Stats\n{stat_result.stdout}\n\n## Full Diff\n{diff}"
+        except Exception as e:
+            return f"Error getting diff: {e}"
+
+    def _parse_review_response(self) -> dict:
+        """Extract review JSON from the last assistant message."""
+        fallback = {
+            "verdict": "approve",
+            "scores": {"correctness": 5, "security": 5, "quality": 5, "completeness": 5},
+            "summary": "Could not parse review response, auto-approving.",
+            "issues": [],
+            "feedback": "",
+        }
+
+        for msg in reversed(self.messages):
+            if msg["role"] == "assistant":
+                content = msg.get("content", [])
+                text = ""
+                if isinstance(content, str):
+                    text = content
+                elif isinstance(content, list):
+                    for block in content:
+                        if isinstance(block, dict) and block.get("type") == "text":
+                            text += block.get("text", "")
+                if not text:
+                    continue
+
+                text = text.strip()
+                if text.startswith("```"):
+                    lines = text.split("\n")
+                    lines = [l for l in lines if not l.startswith("```")]
+                    text = "\n".join(lines)
+
+                # Find JSON in text
+                start = text.find("{")
+                end = text.rfind("}") + 1
+                if start >= 0 and end > start:
+                    try:
+                        result = json.loads(text[start:end])
+                        result.setdefault("verdict", "approve")
+                        result.setdefault("scores", {"correctness": 5, "security": 5, "quality": 5, "completeness": 5})
+                        result.setdefault("summary", "")
+                        result.setdefault("issues", [])
+                        result.setdefault("feedback", "")
+                        return result
+                    except json.JSONDecodeError:
+                        pass
+                break
+
+        return fallback
 
     async def _process_batch(self, events: list[dict]) -> None:
         summary = "\n".join(

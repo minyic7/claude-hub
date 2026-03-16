@@ -525,6 +525,112 @@ async def retry_ticket(ticket_id: str, body: dict | None = None):
 MAX_REVIEW_ROUNDS = 3
 
 
+async def _run_contextual_review(ticket_id: str, ticket_agent, agent_cfg: dict) -> None:
+    """Run review using TicketAgent that already watched the session (has full context)."""
+    from claude_hub.services.ticket_service import transition
+    from claude_hub.services.agent_review import _record_activity
+
+    try:
+        await transition(ticket_id, TicketStatus.REVIEWING)
+        await broadcast({
+            "type": "ticket_updated",
+            "ticket_id": ticket_id,
+            "data": await redis_client.get_ticket(ticket_id),
+        })
+    except Exception as e:
+        logger.warning("Failed to transition %s to REVIEWING: %s", ticket_id, e)
+        return
+
+    await _record_activity(ticket_id, "review", "Starting code review (TicketAgent with full session context)...")
+
+    try:
+        result = await ticket_agent.review()
+    except Exception as e:
+        logger.error("TicketAgent review failed for %s: %s", ticket_id, e)
+        result = {
+            "verdict": "approve",
+            "scores": {"correctness": 5, "security": 5, "quality": 5, "completeness": 5},
+            "summary": f"Review error: {e}. Auto-approving for human review.",
+            "issues": [],
+            "feedback": "",
+        }
+
+    # Record review result (same format as cold review)
+    import json as _json
+    from datetime import datetime, timezone
+    ticket = await redis_client.get_ticket(ticket_id)
+    history = ticket.get("agent_review") or []
+    if isinstance(history, str):
+        try:
+            history = _json.loads(history)
+        except (ValueError, TypeError):
+            history = []
+    if not isinstance(history, list):
+        history = [history]
+    entry = {
+        "round": len(history) + 1,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "contextual": True,  # flag: this review had full session context
+        **result,
+    }
+    history.append(entry)
+    await redis_client.update_ticket_fields(ticket_id, {
+        "agent_review": _json.dumps(history),
+    })
+
+    verdict = result.get("verdict", "approve")
+    summary = result.get("summary", "")
+    issues = result.get("issues", [])
+    critical = sum(1 for i in issues if i.get("severity") == "critical")
+    major = sum(1 for i in issues if i.get("severity") == "major")
+
+    if verdict == "approve":
+        await _record_activity(ticket_id, "review",
+                               f"Review APPROVED: {summary} (issues: {critical} critical, {major} major)")
+        try:
+            updated = await transition(ticket_id, TicketStatus.AWAITING_MERGE)
+            await broadcast({
+                "type": "ticket_updated",
+                "ticket_id": ticket_id,
+                "data": updated,
+            })
+            await process_queue()
+        except Exception as e:
+            logger.error("Failed to transition %s to AWAITING_MERGE after approval: %s", ticket_id, e)
+    else:
+        await _record_activity(ticket_id, "review",
+                               f"Review REJECTED: {summary} (issues: {critical} critical, {major} major)")
+        # Rejected — same flow as cold review: respawn with feedback
+        feedback = result.get("feedback", "Address the review issues.")
+        try:
+            await _respawn_with_feedback(ticket_id, feedback)
+        except Exception as e:
+            logger.error("Failed to respawn session for %s after rejection: %s", ticket_id, e)
+            try:
+                updated = await transition(ticket_id, TicketStatus.FAILED,
+                                           failed_reason=f"Review rejected, respawn failed: {e}")
+                await broadcast({
+                    "type": "ticket_updated",
+                    "ticket_id": ticket_id,
+                    "data": updated,
+                })
+                await process_queue()
+            except Exception:
+                pass
+
+    # Append structured review note
+    issues_text = ""
+    if issues:
+        issues_text = "\n".join(
+            f"- [{i.get('severity', '?')}] {i.get('file', '?')}: {i.get('description', '')}"
+            for i in issues[:5]
+        )
+    note_content = f"{'APPROVED' if verdict == 'approve' else 'REJECTED'} (contextual review): {summary}"
+    if issues_text:
+        note_content += f"\n{issues_text}"
+    await append_ticket_note(ticket_id, "review", note_content, author="ticket_agent")
+
+
 async def _run_agent_review(ticket_id: str, agent_cfg: dict) -> None:
     """Run agent code review. On approve → REVIEW, on reject → spawn new session."""
     from claude_hub.services.agent_review import review_pr
@@ -663,8 +769,12 @@ async def _respawn_with_feedback(ticket_id: str, feedback: str) -> None:
     asyncio.create_task(_tail_and_broadcast(ticket_id, log_path))
 
 
-async def _verify_and_review(ticket_id: str) -> None:
-    """Run verification + review flow after a session ends."""
+async def _verify_and_review(ticket_id: str, ticket_agent=None) -> None:
+    """Run verification + review flow after a session ends.
+
+    If ticket_agent is provided (TicketAgent with full conversation context),
+    it will be used for review instead of a cold LLM call.
+    """
     from claude_hub.services.ticket_service import transition
 
     ticket = await redis_client.get_ticket(ticket_id)
@@ -721,7 +831,12 @@ async def _verify_and_review(ticket_id: str) -> None:
             )
 
             if agent_enabled and agent_cfg.get("api_key"):
-                await _run_agent_review(ticket_id, agent_cfg)
+                if ticket_agent:
+                    # Use the TicketAgent that watched the session — it has full context
+                    await _run_contextual_review(ticket_id, ticket_agent, agent_cfg)
+                else:
+                    # Fallback: cold review (e.g. respawn after rejection)
+                    await _run_agent_review(ticket_id, agent_cfg)
             else:
                 updated = await transition(ticket_id, TicketStatus.AWAITING_MERGE,
                                            pr_url=result.pr_url,
@@ -761,11 +876,12 @@ async def _tail_and_broadcast(ticket_id: str, log_path: str) -> None:
         agent_cfg = await get_agent_settings_for_project(ticket.get("project_id", "") if ticket else "")
         agent_enabled = agent_cfg.get("enabled", True)
 
+        ticket_agent = None
         if agent_enabled and agent_cfg.get("api_key"):
             # Agent mode: TicketAgent handles tailing + broadcasting + intervention
             from claude_hub.services.ticket_agent import TicketAgent
-            agent = TicketAgent(ticket_id, ticket, agent_settings=agent_cfg)
-            await agent.run(log_path)
+            ticket_agent = TicketAgent(ticket_id, ticket, agent_settings=agent_cfg)
+            await ticket_agent.run(log_path)
         else:
             # Simple mode: just tail and broadcast
             from claude_hub.services import session_manager
@@ -782,7 +898,7 @@ async def _tail_and_broadcast(ticket_id: str, log_path: str) -> None:
         from claude_hub.services import session_manager as _sm
         _sm.cleanup_session(ticket_id)
 
-        await _verify_and_review(ticket_id)
+        await _verify_and_review(ticket_id, ticket_agent=ticket_agent)
 
     except Exception as e:
         logger.error("Error tailing log for ticket %s: %s", ticket_id, e)
