@@ -1,4 +1,5 @@
 import type { Project, ProjectCreate, Ticket, TicketCreate } from '../types/ticket'
+import type { SupervisorEvent } from '../components/common/PilotAgentPanel'
 
 const BASE = '/api'
 
@@ -80,6 +81,8 @@ export const api = {
     update: (id: string, data: Partial<ProjectCreate>) =>
       request<Project>(`/projects/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
     delete: (id: string) => request<void>(`/projects/${id}`, { method: 'DELETE' }),
+    getSupervisorEvents: (id: string, limit = 50) =>
+      request<SupervisorEvent[]>(`/projects/${id}/supervisor/events?limit=${limit}`),
   },
   tickets: {
     list: (projectId?: string, status?: string) => {

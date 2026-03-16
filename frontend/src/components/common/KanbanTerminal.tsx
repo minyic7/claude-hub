@@ -29,10 +29,11 @@ interface KanbanTerminalProps {
   visible: boolean
   onClose: () => void
   tabBar?: React.ReactNode
+  overlayContent?: React.ReactNode
   pilotMode?: boolean
 }
 
-export function KanbanTerminal({ projectId, projectName, visible, onClose, tabBar, pilotMode }: KanbanTerminalProps) {
+export function KanbanTerminal({ projectId, projectName, visible, onClose, tabBar, overlayContent, pilotMode }: KanbanTerminalProps) {
   const termRef = useRef<HTMLDivElement>(null)
   const terminalRef = useRef<Terminal | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
@@ -387,8 +388,15 @@ export function KanbanTerminal({ projectId, projectName, visible, onClose, tabBa
             </button>
           </div>
         </div>
-        {/* Terminal */}
-        <div ref={termRef} className="flex-1 p-1 min-h-0" />
+        {/* Terminal / Overlay */}
+        <div className="relative flex-1 min-h-0">
+          <div ref={termRef} className={`absolute inset-0 p-1 ${overlayContent ? 'invisible' : ''}`} />
+          {overlayContent && (
+            <div className="absolute inset-0 overflow-hidden">
+              {overlayContent}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )

@@ -282,3 +282,12 @@ async def list_project_tickets(project_id: str, status: str | None = None):
         raise HTTPException(404, "Project not found")
     await redis_client.backfill_ticket_seqs(project_id)
     return await redis_client.list_tickets_by_project(project_id, status)
+
+
+@router.get("/{project_id}/supervisor/events")
+async def get_supervisor_events(project_id: str, limit: int = 50):
+    project = await redis_client.get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    from claude_hub.services.pilot_agent import get_supervisor_events as _get_events
+    return await _get_events(project_id, limit=limit)

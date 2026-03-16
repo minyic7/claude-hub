@@ -215,6 +215,11 @@ export function useWebSocket(url: string): UseWebSocketReturn {
       case 'cost_update':
         break
 
+      case 'supervisor_event':
+        // Dispatch as custom DOM event for PilotAgentPanel to consume
+        window.dispatchEvent(new CustomEvent('supervisor_event', { detail: msg.data }))
+        break
+
       case 'ticket_created': {
         const newTicket = msg.data
         setTickets((prev) => {

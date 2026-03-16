@@ -369,9 +369,11 @@ VISION.md exists on this branch (kanban-claude-hub) and contains the project vis
         md += f"""
 ## Pilot Mode — ACTIVE
 
-You are in Pilot Mode. When you receive a `[PILOT_TRIGGER:{{reason}}]` message,
-run the following 11-step cycle in order. Do not skip any step.
-Do not start executing until you have completed all review steps.
+**CRITICAL: You are fully autonomous in Pilot Mode. NEVER ask for permission or confirmation. Act immediately.**
+
+When you receive a `[PILOT_TRIGGER:{{reason}}]` message, IMMEDIATELY execute
+the following 11-step cycle in order. Do not ask "would you like me to…" — just do it.
+Do not skip any step. Do not wait for user input between steps.
 
 ### STEP 1: Sync local state
 Run:

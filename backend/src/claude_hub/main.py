@@ -103,6 +103,22 @@ async def _kanban_sync_loop() -> None:
             logger.error("Kanban sync error: %s", e)
 
 
+PILOT_TICK_SECONDS = int(os.environ.get("CLAUDE_HUB_PILOT_TICK_SECONDS", "30"))
+
+
+async def _pilot_agent_loop() -> None:
+    """Background loop: tick all active PilotAgents every N seconds."""
+    while True:
+        try:
+            await asyncio.sleep(PILOT_TICK_SECONDS)
+            from claude_hub.services.pilot_agent import tick_all_pilots
+            await tick_all_pilots()
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.error("Pilot agent loop error: %s", e)
+
+
 async def _migrate_review_to_awaiting_merge() -> None:
     """One-time migration: rename 'review' status to 'awaiting_merge' in Redis."""
     r = redis_client.get_pool()
@@ -196,13 +212,16 @@ async def lifespan(app: FastAPI):
     await _recover_orphaned_tickets()
     poll_task = asyncio.create_task(_pr_poll_loop())
     kanban_sync_task = asyncio.create_task(_kanban_sync_loop())
+    pilot_task = asyncio.create_task(_pilot_agent_loop())
     yield
     poll_task.cancel()
     kanban_sync_task.cancel()
-    try:
-        await poll_task
-    except asyncio.CancelledError:
-        pass
+    pilot_task.cancel()
+    for task in (poll_task, kanban_sync_task, pilot_task):
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
     await redis_client.disconnect()
     logger.info("Redis disconnected")
 

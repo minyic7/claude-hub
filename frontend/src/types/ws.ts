@@ -13,3 +13,4 @@ export type WSEvent =
   | { type: 'project_deleted'; project_id: string }
   | { type: 'activity_cleared'; ticket_id: string }
   | { type: 'ticket_created'; ticket_id: string; data: Ticket }
+  | { type: 'supervisor_event'; data: { project_id: string; timestamp: string; cc_summary: string; cc_asked_for: string | null; action: string; message: string | null; reason: string } }

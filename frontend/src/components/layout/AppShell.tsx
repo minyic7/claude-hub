@@ -8,6 +8,7 @@ import { CreateTicketModal } from '../tickets/CreateTicketModal'
 import { CreateProjectModal } from '../projects/CreateProjectModal'
 import { AgentSettingsModal } from '../settings/AgentSettingsModal'
 import { KanbanTerminal } from '../common/KanbanTerminal'
+import { PilotAgentPanel } from '../common/PilotAgentPanel'
 import { DocsOverlay } from '../common/DocsOverlay'
 import type { DeployState } from '../../hooks/useDeployStatus'
 import type { WorkflowRun } from '../../lib/api'
@@ -50,6 +51,7 @@ export function AppShell({
   const [showDocs, setShowDocs] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState<Project | null>(null)
   const [pilotConfirm, setPilotConfirm] = useState(false)
+  const [panelTab, setPanelTab] = useState<'terminal' | 'pilot'>('terminal')
 
   const activeProject = activeProjectId ? projects.get(activeProjectId) : null
 
@@ -340,15 +342,33 @@ export function AppShell({
           )}
         </div>
         {!isMobile && activeProjectId && (
-          <>
-            <KanbanTerminal
-              projectId={activeProjectId}
-              projectName={activeProject?.name}
-              visible={showKanbanTerminal}
-              onClose={() => setShowKanbanTerminal(false)}
-              pilotMode={activeProject?.pilot_mode}
-            />
-          </>
+          <KanbanTerminal
+            projectId={activeProjectId}
+            projectName={activeProject?.name}
+            visible={showKanbanTerminal}
+            onClose={() => setShowKanbanTerminal(false)}
+            pilotMode={activeProject?.pilot_mode}
+            tabBar={
+              <div className="flex border-b border-[var(--color-border)] bg-[#1a1b26] shrink-0">
+                {(['terminal', 'pilot'] as const).map(tab => (
+                  <button
+                    key={tab}
+                    onClick={() => setPanelTab(tab)}
+                    className={`px-3 py-1.5 text-[11px] font-medium transition-colors ${
+                      panelTab === tab
+                        ? 'text-[var(--color-text-primary)] border-b-2 border-[var(--color-accent-blue)]'
+                        : 'text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]'
+                    }`}
+                  >
+                    {tab === 'terminal' ? 'Terminal' : 'Pilot Agent'}
+                  </button>
+                ))}
+              </div>
+            }
+            overlayContent={panelTab === 'pilot' ? (
+              <PilotAgentPanel projectId={activeProjectId} visible />
+            ) : undefined}
+          />
         )}
       </main>
 
