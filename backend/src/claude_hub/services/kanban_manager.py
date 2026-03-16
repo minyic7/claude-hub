@@ -229,15 +229,12 @@ curl -s -X POST {auth_header}{api_base_url}/api/tickets/reorder \\
 - Your branch is auto-synced with `{base_branch}` every 30 seconds and after PR merges.
 - Before answering user questions about code, run `git log --oneline -1 origin/{base_branch}` to confirm you have the latest. If behind, run `git merge origin/{base_branch} --no-edit` first.
 
-## Vision and PO Memory
+## Vision
 
-VISION.md exists on this branch (kanban-claude-hub) and is the shared memory
-between you and the PO Agent.
+VISION.md exists on this branch (kanban-claude-hub) and contains the project vision.
 
 - Goal and Scope sections: set by the user — read these to understand project direction.
   You may suggest edits to the user but must never modify the file yourself.
-- PO Memory sections: maintained by the PO Agent — read these to understand
-  current phase, active decisions, and what the PO is planning next.
 - On startup: read VISION.md if it exists to orient yourself before greeting the user.
 - Before every response: silently run `git pull origin kanban-claude-hub --quiet`,
   then check if VISION.md has changed since you last read it. If it has, re-read it

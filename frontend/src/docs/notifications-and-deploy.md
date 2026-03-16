@@ -10,7 +10,7 @@ The bell icon in the header is the central hub for all application events. A bad
 |------|-------|----------|
 | **Info** | Blue | Session started, status changed, PR created |
 | **Success** | Green | PR merged, deploy succeeded, review passed |
-| **Warning** | Yellow | Agent escalation, review requested changes, PO alert |
+| **Warning** | Yellow | Agent escalation, review requested changes |
 | **Error** | Red | Session failed, CI failure, API error |
 
 ### Notification Sources
@@ -31,10 +31,6 @@ Notifications are generated from multiple systems:
 
 **PR events:**
 - Notification when a PR is created for a ticket, with a link to the PR
-
-**PO Agent:**
-- `po_message` events surface as info notifications
-- `po_alert` watchdog warnings surface as warning notifications
 
 **API errors:**
 - Any failed API call automatically generates an error notification with the error detail

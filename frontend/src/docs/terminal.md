@@ -6,7 +6,6 @@ The integrated terminal panel provides direct access to Claude Code CLI sessions
 
 - Click the **terminal toggle** button in the header (right side)
 - The terminal appears as a resizable right panel alongside the Kanban board
-- Switch between the **Terminal** tab and the **PO Chat** tab at the top of the panel
 
 Each project has its own dedicated terminal session. When you switch projects, the terminal reconnects to the new project's session.
 

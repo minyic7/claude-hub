@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
-import { LogOut, Server, Bot, User, Crown } from 'lucide-react'
+import { LogOut, Server, Bot, User } from 'lucide-react'
 import { Modal } from '../common/Modal'
-import { api, clearToken, type GlobalSettings, type ProjectAgentSettings, type AgentProvider, type POSettings } from '../../lib/api'
+import { api, clearToken, type GlobalSettings, type ProjectAgentSettings, type AgentProvider } from '../../lib/api'
 
 const PROVIDERS: { id: AgentProvider; label: string; description: string }[] = [
   { id: 'anthropic', label: 'Anthropic', description: 'Claude models via Anthropic API' },
@@ -21,12 +21,11 @@ const OPENAI_MODELS = [
   { id: 'o3', label: 'o3', cost: '$$$' },
 ]
 
-type Tab = 'system' | 'agent' | 'po' | 'account'
+type Tab = 'system' | 'agent' | 'account'
 
 const TABS: { id: Tab; label: string; icon: typeof Server }[] = [
   { id: 'system', label: 'System', icon: Server },
   { id: 'agent', label: 'TicketAgent', icon: Bot },
-  { id: 'po', label: 'PO Agent', icon: Crown },
   { id: 'account', label: 'Account', icon: User },
 ]
 
@@ -43,23 +42,6 @@ const DEFAULT_AGENT: ProjectAgentSettings = {
   budget_per_ticket_usd: 2.00,
   budget_daily_usd: 50.00,
   budget_monthly_usd: 500.00,
-}
-
-const DEFAULT_PO: POSettings = {
-  enabled: false,
-  mode: 'semi_auto',
-  max_active_tickets: 10,
-  max_pending_approval: 5,
-  max_new_per_cycle: 3,
-  report_interval_hours: 1,
-  deployment_type: 'auto',
-  docs_format: 'auto',
-  git_history_threshold: 10,
-  git_history_days: 7,
-  observe_model: 'claude-sonnet-4-6',
-  think_model: 'claude-opus-4-6',
-  think_budget_tokens: 8000,
-  compaction_model: 'claude-sonnet-4-6',
 }
 
 interface Props {
@@ -82,10 +64,6 @@ export function AgentSettingsModal({ open, onClose, initialTab, activeProjectId 
   const [agentSettings, setAgentSettings] = useState<ProjectAgentSettings>(DEFAULT_AGENT)
   const [agentLoaded, setAgentLoaded] = useState(false)
 
-  // PO settings (per-project)
-  const [poSettings, setPoSettings] = useState<POSettings>(DEFAULT_PO)
-  const [poLoaded, setPoLoaded] = useState(false)
-
   // Sync initialTab when modal opens
   useEffect(() => {
     if (open && initialTab) setActiveTab(initialTab)
@@ -100,13 +78,9 @@ export function AgentSettingsModal({ open, onClose, initialTab, activeProjectId 
       // Load per-project settings
       if (activeProjectId) {
         setAgentLoaded(false)
-        setPoLoaded(false)
         api.settings.getProjectAgent(activeProjectId)
           .then((s) => { setAgentSettings(s); setAgentLoaded(true) })
           .catch(() => { setAgentSettings(DEFAULT_AGENT); setAgentLoaded(true) })
-        api.po.getSettings(activeProjectId)
-          .then((s) => { setPoSettings(s); setPoLoaded(true) })
-          .catch(() => { setPoSettings(DEFAULT_PO); setPoLoaded(true) })
       }
     }
   }, [open, activeProjectId])
@@ -122,9 +96,6 @@ export function AgentSettingsModal({ open, onClose, initialTab, activeProjectId 
       } else if (activeTab === 'agent' && activeProjectId) {
         const updated = await api.settings.updateProjectAgent(activeProjectId, agentSettings)
         setAgentSettings(updated)
-      } else if (activeTab === 'po' && activeProjectId) {
-        const updated = await api.po.updateSettings(activeProjectId, poSettings)
-        setPoSettings(updated)
       }
       setSaved(true)
       setTimeout(() => setSaved(false), 2000)
@@ -165,9 +136,8 @@ export function AgentSettingsModal({ open, onClose, initialTab, activeProjectId 
     : agentSettings.provider === 'openai' ? OPENAI_MODELS
     : []
 
-  const needsProject = (activeTab === 'agent' || activeTab === 'po') && !activeProjectId
+  const needsProject = activeTab === 'agent' && !activeProjectId
   const agentNotLoaded = activeTab === 'agent' && activeProjectId && !agentLoaded
-  const poNotLoaded = activeTab === 'po' && activeProjectId && !poLoaded
 
   return (
     <Modal open={open} onClose={onClose} title="Settings" wide>
@@ -196,11 +166,11 @@ export function AgentSettingsModal({ open, onClose, initialTab, activeProjectId 
 
             {/* Needs project message */}
             {needsProject && (
-              <p className="text-sm text-[var(--color-text-muted)]">Select a project to configure {activeTab === 'agent' ? 'TicketAgent' : 'PO Agent'} settings.</p>
+              <p className="text-sm text-[var(--color-text-muted)]">Select a project to configure TicketAgent settings.</p>
             )}
 
             {/* Loading */}
-            {(agentNotLoaded || poNotLoaded) && (
+            {agentNotLoaded && (
               <p className="text-sm text-[var(--color-text-muted)]">Loading...</p>
             )}
 
@@ -467,223 +437,6 @@ export function AgentSettingsModal({ open, onClose, initialTab, activeProjectId 
               </>
             )}
 
-            {/* ── PO Agent Tab ── */}
-            {activeTab === 'po' && activeProjectId && poLoaded && (
-              <>
-                {/* Enabled */}
-                <label className="flex items-center justify-between">
-                  <span className="text-sm text-[var(--color-text-primary)]">PO Agent Enabled</span>
-                  <button
-                    onClick={() => setPoSettings({ ...poSettings, enabled: !poSettings.enabled })}
-                    className={`relative h-6 w-11 rounded-full transition-colors ${
-                      poSettings.enabled ? 'bg-[var(--color-accent-blue)]' : 'bg-[var(--color-border)]'
-                    }`}
-                  >
-                    <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
-                      poSettings.enabled ? 'left-[22px]' : 'left-0.5'
-                    }`} />
-                  </button>
-                </label>
-
-                {/* Mode */}
-                <div>
-                  <label className="mb-1 block text-sm text-[var(--color-text-primary)]">Approval Mode</label>
-                  <div className="grid grid-cols-2 gap-2">
-                    {(['semi_auto', 'full_auto'] as const).map((m) => (
-                      <button
-                        key={m}
-                        onClick={() => setPoSettings({ ...poSettings, mode: m })}
-                        className={`rounded-md border px-3 py-2 text-xs transition-colors ${
-                          poSettings.mode === m
-                            ? 'border-[var(--color-accent-blue)] bg-[var(--color-accent-blue)]/10 text-[var(--color-accent-blue)]'
-                            : 'border-[var(--color-border)] text-[var(--color-text-muted)] hover:border-[var(--color-text-muted)]'
-                        }`}
-                      >
-                        <div className="font-medium">{m === 'semi_auto' ? 'Semi-Auto' : 'Full Auto'}</div>
-                        <div className="mt-0.5 text-[10px] leading-tight">
-                          {m === 'semi_auto' ? 'Tickets require approval' : 'Tickets created directly'}
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Report interval */}
-                <div>
-                  <label className="mb-1 flex items-center justify-between text-sm text-[var(--color-text-primary)]">
-                    <span>Report Interval</span>
-                    <span className="font-mono text-xs text-[var(--color-text-muted)]">{poSettings.report_interval_hours} hr</span>
-                  </label>
-                  <input
-                    type="range"
-                    min={1}
-                    max={24}
-                    value={poSettings.report_interval_hours}
-                    onChange={(e) => setPoSettings({ ...poSettings, report_interval_hours: Number(e.target.value) })}
-                    className="w-full accent-[var(--color-accent-blue)]"
-                  />
-                  <div className="flex justify-between text-[10px] text-[var(--color-text-muted)]">
-                    <span>Frequent (1 hr)</span>
-                    <span>Relaxed (24 hr)</span>
-                  </div>
-                </div>
-
-                {/* Capacity */}
-                <div>
-                  <label className="mb-1 block text-sm text-[var(--color-text-primary)]">Capacity Limits</label>
-                  <div className="grid grid-cols-3 gap-2">
-                    <div>
-                      <span className="text-[10px] text-[var(--color-text-muted)]">Max Active</span>
-                      <input
-                        type="number"
-                        min={1}
-                        max={20}
-                        value={poSettings.max_active_tickets}
-                        onChange={(e) => setPoSettings({ ...poSettings, max_active_tickets: Number(e.target.value) })}
-                        className="w-full rounded border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2 py-1 text-xs text-[var(--color-text-primary)]"
-                      />
-                    </div>
-                    <div>
-                      <span className="text-[10px] text-[var(--color-text-muted)]">Max New/Cycle</span>
-                      <input
-                        type="number"
-                        min={1}
-                        max={10}
-                        value={poSettings.max_new_per_cycle}
-                        onChange={(e) => setPoSettings({ ...poSettings, max_new_per_cycle: Number(e.target.value) })}
-                        className="w-full rounded border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2 py-1 text-xs text-[var(--color-text-primary)]"
-                      />
-                    </div>
-                    <div>
-                      <span className="text-[10px] text-[var(--color-text-muted)]">Max Pending</span>
-                      <input
-                        type="number"
-                        min={1}
-                        max={20}
-                        value={poSettings.max_pending_approval}
-                        onChange={(e) => setPoSettings({ ...poSettings, max_pending_approval: Number(e.target.value) })}
-                        className="w-full rounded border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2 py-1 text-xs text-[var(--color-text-primary)]"
-                      />
-                      <span className="text-[9px] text-[var(--color-text-muted)]">semi-auto only</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Scope */}
-                <div>
-                  <label className="mb-1 block text-sm text-[var(--color-text-primary)]">Deployment Scope</label>
-                  <div className="grid grid-cols-3 gap-2">
-                    {(['auto', 'github_pages', 'docker', 'docs_only', 'none'] as const).map((dt) => (
-                      <button
-                        key={dt}
-                        onClick={() => setPoSettings({ ...poSettings, deployment_type: dt })}
-                        className={`rounded-md border px-2 py-1.5 text-[11px] transition-colors ${
-                          poSettings.deployment_type === dt
-                            ? 'border-purple-400 bg-purple-500/10 text-purple-400'
-                            : 'border-[var(--color-border)] text-[var(--color-text-muted)] hover:border-[var(--color-text-muted)]'
-                        }`}
-                      >
-                        {dt === 'auto' ? 'Auto' : dt === 'github_pages' ? 'GH Pages' : dt === 'docker' ? 'Docker' : dt === 'docs_only' ? 'Docs' : 'None'}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Git history */}
-                <div>
-                  <label className="mb-1 block text-sm text-[var(--color-text-primary)]">Git History Context</label>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <span className="text-[10px] text-[var(--color-text-muted)]">Max Commits</span>
-                      <input
-                        type="number"
-                        min={0}
-                        max={50}
-                        value={poSettings.git_history_threshold}
-                        onChange={(e) => setPoSettings({ ...poSettings, git_history_threshold: Number(e.target.value) })}
-                        className="w-full rounded border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2 py-1 text-xs text-[var(--color-text-primary)]"
-                      />
-                    </div>
-                    <div>
-                      <span className="text-[10px] text-[var(--color-text-muted)]">Days Window</span>
-                      <input
-                        type="number"
-                        min={1}
-                        max={30}
-                        value={poSettings.git_history_days}
-                        onChange={(e) => setPoSettings({ ...poSettings, git_history_days: Number(e.target.value) })}
-                        className="w-full rounded border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2 py-1 text-xs text-[var(--color-text-primary)]"
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {/* LLM Models */}
-                <div>
-                  <label className="mb-1 block text-sm text-[var(--color-text-primary)]">LLM Models</label>
-                  <div className="space-y-2">
-                    <div>
-                      <span className="text-[10px] text-[var(--color-text-muted)]">Observe (fast, cheap)</span>
-                      <div className="grid grid-cols-3 gap-1">
-                        {ANTHROPIC_MODELS.map((m) => (
-                          <button
-                            key={m.id}
-                            onClick={() => setPoSettings({ ...poSettings, observe_model: m.id })}
-                            className={`rounded border px-2 py-1 text-[11px] transition-colors ${
-                              poSettings.observe_model === m.id
-                                ? 'border-purple-400 bg-purple-500/10 text-purple-400'
-                                : 'border-[var(--color-border)] text-[var(--color-text-muted)] hover:border-[var(--color-text-muted)]'
-                            }`}
-                          >
-                            {m.label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                    <div>
-                      <span className="text-[10px] text-[var(--color-text-muted)]">Think (reasoning)</span>
-                      <div className="grid grid-cols-3 gap-1">
-                        {ANTHROPIC_MODELS.map((m) => (
-                          <button
-                            key={m.id}
-                            onClick={() => setPoSettings({ ...poSettings, think_model: m.id })}
-                            className={`rounded border px-2 py-1 text-[11px] transition-colors ${
-                              poSettings.think_model === m.id
-                                ? 'border-purple-400 bg-purple-500/10 text-purple-400'
-                                : 'border-[var(--color-border)] text-[var(--color-text-muted)] hover:border-[var(--color-text-muted)]'
-                            }`}
-                          >
-                            {m.label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Think budget */}
-                <div>
-                  <label className="mb-1 flex items-center justify-between text-sm text-[var(--color-text-primary)]">
-                    <span>Think Budget</span>
-                    <span className="font-mono text-xs text-[var(--color-text-muted)]">~{poSettings.think_budget_tokens} tokens</span>
-                  </label>
-                  <input
-                    type="range"
-                    min={2000}
-                    max={16000}
-                    step={1000}
-                    value={poSettings.think_budget_tokens}
-                    onChange={(e) => setPoSettings({ ...poSettings, think_budget_tokens: Number(e.target.value) })}
-                    className="w-full accent-[var(--color-accent-blue)]"
-                  />
-                  <div className="flex justify-between text-[10px] text-[var(--color-text-muted)]">
-                    <span>Quick (cheap)</span>
-                    <span>Deep (costly)</span>
-                  </div>
-                </div>
-              </>
-            )}
-
             {/* ── Account Tab ── */}
             {activeTab === 'account' && (
               <div className="flex flex-col items-start gap-4">
@@ -701,7 +454,7 @@ export function AgentSettingsModal({ open, onClose, initialTab, activeProjectId 
             )}
           </div>
 
-          {/* Footer — save/cancel (only for system, agent & po tabs) */}
+          {/* Footer — save/cancel (only for system & agent tabs) */}
           {activeTab !== 'account' && !needsProject && (
             <div className="flex items-center justify-end gap-2 border-t border-[var(--color-border)] pt-3 mt-3">
               {error && <span className="text-xs text-[var(--color-accent-red)] mr-auto">{error}</span>}

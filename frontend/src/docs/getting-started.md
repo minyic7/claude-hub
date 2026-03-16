@@ -128,7 +128,7 @@ WebSocket connections pass the JWT token as a query parameter (`?token=...`) sin
 | Backend | Python 3.13+, FastAPI | API, WebSocket, session orchestration |
 | Auth | JWT via FastAPI `Depends()` | Token-based authentication |
 | Sessions | tmux + Claude Code CLI | Code generation in isolated sessions |
-| Agents | Anthropic API | TicketAgent supervision, code review, PO agent |
+| Agents | Anthropic API | TicketAgent supervision, code review |
 | State | Redis | All persistent state, real-time pub/sub |
 | Real-time | WebSocket | Live updates for tickets, activity, terminal |
 

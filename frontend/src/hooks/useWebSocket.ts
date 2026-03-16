@@ -16,7 +16,6 @@ export interface TicketNotification {
 let notifSeq = 0
 
 const statusLabels: Partial<Record<TicketStatus, string>> = {
-  po_pending: 'pending PO approval',
   in_progress: 'started',
   review: 'ready for review',
   merging: 'merging',
@@ -234,28 +233,6 @@ export function useWebSocket(url: string): UseWebSocketReturn {
         break
       }
 
-      case 'po_status':
-      case 'po_message':
-        // PO status/message events — currently handled passively via notifications
-        if (initDone.current && msg.type === 'po_message') {
-          emitNotification('', 'PO Agent', 'info', `PO: ${msg.message}`)
-        }
-        break
-
-      case 'po_alert':
-        if (initDone.current) {
-          emitNotification('', 'PO Agent', 'warning', `PO Alert: ${msg.message}`)
-        }
-        break
-
-      case 'po_activity':
-        // Dispatch custom event for POChatPanel to pick up
-        window.dispatchEvent(new CustomEvent('ws:po_activity', { detail: msg }))
-        // Emit notification for errors so they're visible even without PO panel open
-        if (initDone.current && msg.entry.level === 'error') {
-          emitNotification('', 'PO Agent', 'error', `PO: ${msg.entry.message}`)
-        }
-        break
     }
   }, [emitNotification])
 

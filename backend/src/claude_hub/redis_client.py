@@ -237,23 +237,6 @@ async def clear_activity(ticket_id: str) -> bool:
     return bool(await r.delete(f"ticket:{ticket_id}:activity"))
 
 
-# ─── PO Activity Log ──────────────────────────────────────────────────────
-
-PO_ACTIVITY_CAP = 100
-
-
-async def append_po_activity(project_id: str, event: dict) -> None:
-    r = _r()
-    await r.rpush(f"project:{project_id}:po_activity", json.dumps(event))
-    await r.ltrim(f"project:{project_id}:po_activity", -PO_ACTIVITY_CAP, -1)
-
-
-async def get_po_activity(project_id: str, count: int = 100) -> list[dict]:
-    r = _r()
-    raw = await r.lrange(f"project:{project_id}:po_activity", -count, -1)
-    return [json.loads(item) for item in raw]
-
-
 # ─── Queue helpers ──────────────────────────────────────────────────────────
 
 QUEUE_KEY = "tickets:queue"
@@ -342,7 +325,7 @@ _JSON_FIELDS = {"metadata", "depends_on", "agent_review"}
 _FLOAT_FIELDS = {"agent_cost_usd"}
 _INT_FIELDS = {"pr_number"}
 _INT_FIELDS_DEFAULT_ZERO = {"priority", "agent_tokens", "seq"}
-_BOOL_FIELDS = {"has_conflicts", "archived", "po_proposed"}
+_BOOL_FIELDS = {"has_conflicts", "archived"}
 _NULLABLE_FIELDS = {
     "blocked_question", "failed_reason", "clone_path", "pr_url",
     "pr_number", "tmux_session", "started_at", "completed_at", "status_changed_at", "external_id",

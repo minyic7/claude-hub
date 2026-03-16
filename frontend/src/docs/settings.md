@@ -1,6 +1,6 @@
 # Settings
 
-Access settings via the **gear icon** in the header. The modal is organized into four tabs: System, TicketAgent, PO Agent, and Account.
+Access settings via the **gear icon** in the header. The modal is organized into three tabs: System, TicketAgent, and Account.
 
 All settings (except Account) are stored in Redis and take effect immediately. API keys and tokens are masked in the UI after saving.
 
@@ -113,71 +113,6 @@ Three spending limits to control costs:
 | **Per Ticket** | $2.00 | $0.10 | $0.50 |
 | **Daily** | $50.00 | $1.00 | $5.00 |
 | **Monthly** | $500.00 | $1.00 | $50.00 |
-
-## PO Agent
-
-Per-project Product Owner agent settings. These configure the autonomous planning agent for the currently selected project. See the [PO Agent docs](#) for detailed feature explanations.
-
-### Enabled
-
-Master toggle. Saving with enabled=true starts the agent; saving with enabled=false stops it.
-
-- **Default:** off
-
-### Approval Mode
-
-| Mode | Behavior |
-|------|----------|
-| **Semi-Auto** | Created tickets require user approval (PO Pending status) |
-| **Full Auto** | Tickets are created directly in To Do status |
-
-- **Default:** Semi-Auto
-
-### Report Interval
-
-How often the agent generates a project status report.
-
-- **Range:** 1 – 24 hours (slider)
-- **Default:** 1 hour
-- Left = "Frequent (1 hr)", Right = "Relaxed (24 hr)"
-
-### Capacity Limits
-
-| Field | Default | Range | Description |
-|-------|---------|-------|-------------|
-| **Max Active** | 10 | 1–20 | Total PO-created tickets in active statuses |
-| **Max New/Cycle** | 3 | 1–10 | Max tickets created per OTA cycle |
-| **Max Pending** | 5 | 1–20 | Max tickets awaiting approval (semi-auto only) |
-
-### Deployment Scope
-
-Informs the agent about the project's deployment model: **Auto**, **GitHub Pages**, **Docker**, **Docs Only**, or **None**.
-
-- **Default:** Auto
-
-### Git History Context
-
-| Field | Default | Range | Description |
-|-------|---------|-------|-------------|
-| **Max Commits** | 10 | 0–50 | Commits to fetch for context (0 = disabled) |
-| **Days Window** | 7 | 1–30 | How far back to look |
-
-### LLM Models
-
-| Phase | Default | Purpose |
-|-------|---------|---------|
-| **Observe (fast)** | claude-sonnet-4-6 | Summarization, deduplication, git history |
-| **Think (reasoning)** | claude-opus-4-6 | Deep planning with extended thinking |
-
-Each has a dropdown with Haiku, Sonnet, and Opus options.
-
-### Think Budget
-
-Extended thinking token budget for the Think phase.
-
-- **Range:** 2,000 – 16,000 tokens (step 1,000)
-- **Default:** 8,000
-- Left = "Quick (cheap)", Right = "Deep (costly)"
 
 ## Account
 

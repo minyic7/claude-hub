@@ -8,7 +8,7 @@ Tickets are grouped into four visual columns based on their status:
 
 | Column | Statuses Included |
 |--------|-------------------|
-| **To Do** | `po_pending`, `todo`, `queued` |
+| **To Do** | `todo`, `queued` |
 | **In Progress** | `in_progress`, `blocked`, `verifying`, `reviewing`, `failed` |
 | **Review** | `review`, `merging` |
 | **Merged** | `merged` |

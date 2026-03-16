@@ -47,37 +47,6 @@ class AgentSettings(BaseModel):
     budget_monthly_usd: float = 500.00
 
 
-# ─── PO Settings ─────────────────────────────────────────────────────────────
-
-class POSettings(BaseModel):
-    enabled: bool = False
-    mode: Literal["full_auto", "semi_auto"] = "semi_auto"
-
-    # Capacity controls
-    max_active_tickets: int = 10
-    max_pending_approval: int = 5
-    max_new_per_cycle: int = 3
-
-    # Timing
-    report_interval_hours: int = 1
-
-    # Scope
-    deployment_type: Literal[
-        "auto", "github_pages", "docker", "docs_only", "none"
-    ] = "auto"
-    docs_format: Literal["html", "md", "auto"] = "auto"
-
-    # Git history context
-    git_history_threshold: int = 10
-    git_history_days: int = 7
-
-    # LLM model configuration
-    observe_model: str = "claude-sonnet-4-6"
-    think_model: str = "claude-opus-4-6"
-    think_budget_tokens: int = 10000
-    compaction_model: str = "claude-sonnet-4-6"
-
-
 # ─── Ticket ──────────────────────────────────────────────────────────────────
 
 class BranchType(str, Enum):
@@ -91,7 +60,6 @@ class BranchType(str, Enum):
 
 
 class TicketStatus(str, Enum):
-    PO_PENDING = "po_pending"
     TODO = "todo"
     QUEUED = "queued"
     IN_PROGRESS = "in_progress"
@@ -140,10 +108,6 @@ class Ticket(BaseModel):
     # Priority (lower = higher priority)
     priority: int = 0
     archived: bool = False
-
-    # PO Agent
-    po_proposed: bool = False
-    po_rationale: str = ""
 
     # Cost
     agent_cost_usd: float = 0.0

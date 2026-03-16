@@ -59,7 +59,6 @@ Use the **project dropdown** in the header to switch between projects. When you 
 
 - The Kanban board updates to show only tickets for the selected project
 - The terminal reconnects to the selected project's tmux session
-- The PO Chat panel filters to the active project
 - Status bar stats update (running, blocked, total, archived counts)
 
 Your active project selection is saved to `localStorage` and restored on next visit. If no project is selected, the first available project is auto-selected.
@@ -90,7 +89,6 @@ Each project operates independently with its own:
 |----------|-------|
 | Kanban board | Separate ticket set per project |
 | Terminal session | Dedicated tmux/kanban session |
-| PO Agent | Per-project configuration and chat |
 | Ticket sequence | Independent ticket numbering |
 | Clone directory | Isolated git clone per ticket |
 | Webhooks | Per-project GitHub webhook registration |

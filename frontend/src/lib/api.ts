@@ -189,34 +189,6 @@ export const api = {
     updateAgent: (data: Partial<GlobalSettings>) =>
       request<GlobalSettings>('/settings/agent', { method: 'PUT', body: JSON.stringify(data) }),
   },
-  po: {
-    getSettings: (projectId: string) =>
-      request<POSettings>(`/projects/${projectId}/po/settings`),
-    updateSettings: (projectId: string, data: POSettings) =>
-      request<POSettings>(`/projects/${projectId}/po/settings`, {
-        method: 'PUT', body: JSON.stringify(data),
-      }),
-    status: (projectId: string) =>
-      request<POStatus>(`/projects/${projectId}/po/status`),
-    run: (projectId: string) =>
-      request<{ status: string }>(`/projects/${projectId}/po/run`, { method: 'POST' }),
-    chat: (projectId: string, message: string) =>
-      request<{ response: string }>(`/projects/${projectId}/po/chat`, {
-        method: 'POST', body: JSON.stringify({ message }),
-      }),
-    chatHistory: (projectId: string, limit = 50) =>
-      request<{ messages: POMessage[] }>(`/projects/${projectId}/po/chat/history?limit=${limit}`),
-    report: (projectId: string) =>
-      request<{ report: string; generated_at: string | null }>(`/projects/${projectId}/po/report`),
-    requestReport: (projectId: string) =>
-      request<{ status: string }>(`/projects/${projectId}/po/report`, { method: 'POST' }),
-    approve: (ticketId: string) =>
-      request<Ticket>(`/tickets/${ticketId}/po/approve`, { method: 'POST' }),
-    reject: (ticketId: string) =>
-      request<{ status: string }>(`/tickets/${ticketId}/po/reject`, { method: 'POST' }),
-    activity: (projectId: string, limit = 100) =>
-      request<{ entries: POActivityEntry[] }>(`/projects/${projectId}/po/activity?limit=${limit}`),
-  },
   kanban: {
     start: (projectId: string) =>
       request<KanbanStatus>(`/projects/${projectId}/kanban/start`, { method: 'POST' }),
@@ -265,42 +237,6 @@ export interface CIStatus {
   status: 'passed' | 'failed' | 'pending' | 'no_ci'
   checks: CICheck[]
   summary: string
-}
-
-export interface POSettings {
-  enabled: boolean
-  mode: 'semi_auto' | 'full_auto'
-  max_active_tickets: number
-  max_pending_approval: number
-  max_new_per_cycle: number
-  report_interval_hours: number
-  deployment_type: 'auto' | 'github_pages' | 'docker' | 'docs_only' | 'none'
-  docs_format: 'html' | 'md' | 'auto'
-  git_history_threshold: number
-  git_history_days: number
-  observe_model: string
-  think_model: string
-  think_budget_tokens: number
-  compaction_model: string
-}
-
-export interface POStatus {
-  running: boolean
-  status: string
-  cycle_n: number
-}
-
-export interface POMessage {
-  role: 'user' | 'assistant' | 'system'
-  content: string
-  timestamp: string
-}
-
-export interface POActivityEntry {
-  ts: string
-  level: 'info' | 'warn' | 'error'
-  cycle: number
-  message: string
 }
 
 export type AgentProvider = 'anthropic' | 'openai' | 'openai_compatible'

@@ -11,8 +11,6 @@ from claude_hub.config import settings
 from claude_hub.routers import kanban, github_actions, projects, tickets, webhooks, ws
 from claude_hub.routers.auth_router import router as auth_router
 from claude_hub.routers.settings_router import router as settings_router
-from claude_hub.routers.po import router as po_router
-from claude_hub.services.po_manager import po_manager
 
 logging.basicConfig(
     level=getattr(logging, settings.log_level.upper(), logging.INFO),
@@ -50,67 +48,6 @@ async def _kanban_sync_loop() -> None:
             break
         except Exception as e:
             logger.error("Kanban sync error: %s", e)
-
-
-async def _merge_queue_loop() -> None:
-    """Background loop: auto-merge review tickets by priority for full_auto projects."""
-    while True:
-        try:
-            await asyncio.sleep(15)
-            all_projects = await redis_client.list_projects()
-            for project in all_projects:
-                pid = project["id"]
-                # Only for projects with full_auto PO
-                if not po_manager.is_running(pid):
-                    continue
-                agent = po_manager.get(pid)
-                if not agent or agent.settings.mode != "full_auto":
-                    continue
-
-                # Get review tickets sorted by priority
-                all_tickets = await redis_client.list_tickets_by_project(pid)
-                review_tickets = sorted(
-                    [t for t in all_tickets if t.get("status") == "review"],
-                    key=lambda t: t.get("priority", 0),
-                )
-
-                if not review_tickets:
-                    continue
-
-                # Merge one at a time (to handle rebases between merges)
-                ticket = review_tickets[0]
-                tid = ticket["id"]
-                title = ticket.get("title", tid[:8])
-
-                # If ticket has conflicts, trigger resolution instead of merging
-                from claude_hub.routers.tickets import _is_conflicted
-                if _is_conflicted(ticket):
-                    # Check if there's already an active session resolving it
-                    from claude_hub.services import session_manager
-                    if not session_manager.has_active_session(tid):
-                        try:
-                            from claude_hub.routers.tickets import resolve_conflicts
-                            await resolve_conflicts(tid)
-                            logger.info("Merge queue: triggered conflict resolution for '%s'", title)
-                            await agent._emit_activity("info", f"Merge queue: resolving conflicts for '{title}'")
-                        except Exception as e:
-                            logger.warning("Merge queue: conflict resolve failed for '%s': %s", title, e)
-                            await agent._emit_activity("warn", f"Merge queue: conflict resolve failed '{title}': {e}")
-                    continue
-
-                try:
-                    from claude_hub.routers.tickets import merge_ticket
-                    await merge_ticket(tid)
-                    logger.info("Merge queue: merged '%s' (priority %d)", title, ticket.get("priority", 0))
-                    await agent._emit_activity("info", f"Merge queue: merged '{title}'")
-                except Exception as e:
-                    logger.warning("Merge queue: failed to merge '%s': %s", title, e)
-                    await agent._emit_activity("warn", f"Merge queue: failed '{title}': {e}")
-                    # Don't try the next one — wait for next loop iteration
-        except asyncio.CancelledError:
-            break
-        except Exception as e:
-            logger.error("Merge queue error: %s", e)
 
 
 async def _recover_orphaned_tickets() -> None:
@@ -166,15 +103,11 @@ async def lifespan(app: FastAPI):
     await redis_client.connect()
     logger.info("Redis connected")
     await _recover_orphaned_tickets()
-    await po_manager.start_all_enabled()
     poll_task = asyncio.create_task(_pr_poll_loop())
     kanban_sync_task = asyncio.create_task(_kanban_sync_loop())
-    merge_queue_task = asyncio.create_task(_merge_queue_loop())
     yield
-    await po_manager.stop_all()
     poll_task.cancel()
     kanban_sync_task.cancel()
-    merge_queue_task.cancel()
     try:
         await poll_task
     except asyncio.CancelledError:
@@ -207,7 +140,6 @@ app.include_router(tickets.router, dependencies=auth_dep)
 app.include_router(settings_router, dependencies=auth_dep)
 app.include_router(github_actions.router, dependencies=auth_dep)
 app.include_router(kanban.router, dependencies=auth_dep)
-app.include_router(po_router, dependencies=auth_dep)
 # WS auth is handled inside the endpoint (query param), not via router dependency
 app.include_router(ws.router)
 app.include_router(kanban.ws_router)

@@ -5,7 +5,6 @@ import ticketDetail from './ticket-detail.md?raw'
 import terminal from './terminal.md?raw'
 import notificationsAndDeploy from './notifications-and-deploy.md?raw'
 import ticketAgent from './ticket-agent.md?raw'
-import poAgent from './po-agent.md?raw'
 import settings from './settings.md?raw'
 
 export interface DocPage {
@@ -50,7 +49,6 @@ export const docSections: DocSection[] = [
     title: 'Agents',
     pages: [
       { id: 'ticket-agent', title: 'Ticket Agent', content: ticketAgent },
-      { id: 'po-agent', title: 'PO Agent', content: poAgent },
     ],
   },
   {

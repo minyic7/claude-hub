@@ -1,5 +1,5 @@
 import { type FormEvent, type MouseEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { AlertCircle, Archive, ArchiveRestore, Check, CircleDot, ClipboardCheck, Clock, Crown, Eye, GitMerge, Loader2, Lock, MessageCircleQuestion, Pencil, Play, Plug, Rocket, RotateCcw, ExternalLink, Send, X } from 'lucide-react'
+import { AlertCircle, Archive, ArchiveRestore, Check, CircleDot, ClipboardCheck, Clock, Eye, GitMerge, Loader2, Lock, MessageCircleQuestion, Pencil, Play, Plug, Rocket, RotateCcw, ExternalLink, Send, X } from 'lucide-react'
 import type { Ticket, TicketStatus } from '../../types/ticket'
 import type { ActivityEvent } from '../../types/activity'
 import { Badge } from '../common/Badge'
@@ -287,10 +287,6 @@ export function TicketCard({ ticket, latestActivity, activityEvents, onClick, on
 
           <div className="mb-2 flex items-center gap-1.5">
             <Badge color="blue">{ticket.branch_type}</Badge>
-            {ticket.status === 'po_pending' && <Badge color="purple">PO PENDING</Badge>}
-            {ticket.po_proposed && ticket.status !== 'po_pending' && (
-              <span className="inline-flex items-center rounded bg-purple-500/10 px-1.5 py-0.5 text-[10px] font-medium text-purple-400" title="Created by PO Agent">PO</span>
-            )}
             {ticket.status === 'queued' && <Badge color="yellow">QUEUED</Badge>}
             {(ticket.status === 'queued' || ticket.status === 'review') && ticket.priority >= 0 && (
               <span className="inline-flex items-center rounded bg-[var(--color-bg-secondary)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--color-text-muted)]" title={`Merge priority ${ticket.priority} (lower = first)`}>
@@ -340,34 +336,6 @@ export function TicketCard({ ticket, latestActivity, activityEvents, onClick, on
               </span>
             </button>
           ))}
-        </div>
-      )}
-
-      {/* PO Pending: rationale + approve/reject */}
-      {!editing && ticket.status === 'po_pending' && (
-        <div className="space-y-2">
-          {ticket.po_rationale && (
-            <p className="rounded bg-purple-500/10 px-2 py-1.5 text-xs text-purple-300 leading-relaxed line-clamp-3">
-              {ticket.po_rationale}
-            </p>
-          )}
-          <div className="flex gap-2">
-            <Button
-              size="sm"
-              onClick={safeAction(() => api.po.approve(ticket.id), { status: 'todo' }, { status: 'po_pending' })}
-              className="flex-1"
-            >
-              <Check size={12} className="mr-1" /> Approve
-            </Button>
-            <Button
-              size="sm"
-              variant="secondary"
-              onClick={safeAction(() => api.po.reject(ticket.id), { archived: true }, { archived: false })}
-              className="flex-1"
-            >
-              <X size={12} className="mr-1" /> Reject
-            </Button>
-          </div>
         </div>
       )}
 
@@ -586,8 +554,6 @@ function statusFlashColor(status: string): string {
 function StatusIndicator({ status, entering }: { status: string; entering?: boolean }) {
   const cls = `shrink-0 status-icon${entering ? ' status-icon--enter' : ''}`
   switch (status) {
-    case 'po_pending':
-      return <Crown size={14} className={`${cls} text-purple-400`} />
     case 'queued':
       return <Clock size={14} className={`${cls} text-[var(--color-accent-yellow)]`} />
     case 'in_progress':

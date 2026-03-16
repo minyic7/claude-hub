@@ -12,7 +12,6 @@ logger = logging.getLogger(__name__)
 _transition_locks: dict[str, asyncio.Lock] = {}
 
 VALID_TRANSITIONS: dict[TicketStatus, list[TicketStatus]] = {
-    TicketStatus.PO_PENDING: [TicketStatus.TODO],  # Approve → TODO
     TicketStatus.TODO: [TicketStatus.IN_PROGRESS, TicketStatus.QUEUED],
     TicketStatus.QUEUED: [TicketStatus.IN_PROGRESS, TicketStatus.TODO],
     TicketStatus.IN_PROGRESS: [TicketStatus.TODO, TicketStatus.BLOCKED, TicketStatus.VERIFYING, TicketStatus.FAILED],
@@ -67,16 +66,6 @@ async def _transition_inner(ticket_id: str, target: TicketStatus, **extra_fields
     # Auto-sync PR reviews when entering review status
     if target == TicketStatus.REVIEW and updated and updated.get("pr_number"):
         asyncio.create_task(_auto_sync_reviews(ticket_id))
-
-    # Trigger PO agent to rank review queue when a ticket enters review
-    if target == TicketStatus.REVIEW and project_id:
-        from claude_hub.services.po_manager import po_manager
-        po_manager.trigger(project_id, "review_entered")
-
-    # Trigger PO agent when a ticket merges
-    if target == TicketStatus.MERGED and project_id:
-        from claude_hub.services.po_manager import po_manager
-        po_manager.trigger(project_id, "merged")
 
     return updated
 
