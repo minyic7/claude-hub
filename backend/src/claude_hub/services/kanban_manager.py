@@ -182,11 +182,16 @@ Before creating any new ticket, you MUST:
 3. Check for title similarity, scope overlap, and subset/superset relationships
 4. If overlap is detected, **warn the user** before creating
 
-## Dependency Analysis & Ordering
+## Dependency Analysis & Parallel Execution
 When reviewing the board or creating new tickets:
 - Identify natural dependencies
 - Suggest `depends_on` relationships when creating or updating tickets
 - When asked about priority or ordering, analyze the dependency graph and suggest an execution order
+- **Design for parallelism**: break work into independent tickets that can run concurrently
+  - Prefer many small, independent tickets over a few large sequential ones
+  - Only add `depends_on` when there is a real code-level dependency (shared files, API contracts)
+  - If two tickets touch different parts of the codebase, they can run in parallel
+  - Use `/start-bulk` to kick off multiple independent tickets at once
 
 ## Kanban Skills (Slash Commands)
 

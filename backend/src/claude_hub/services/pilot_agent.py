@@ -10,7 +10,7 @@ import json
 import logging
 import os
 import subprocess
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from claude_hub import redis_client
 from claude_hub.config import settings
@@ -29,6 +29,7 @@ logger = logging.getLogger(__name__)
 
 MAX_PANE_LINES = 200       # Max lines to capture from tmux pane
 MAX_EVENTS_STORED = 200    # Max supervisor events kept in Redis
+DEFAULT_WAIT_SECONDS = 30  # Fallback if LLM doesn't specify wait_seconds
 
 PILOT_SYSTEM_PROMPT = """You are the Pilot Agent — a simulated user interacting with a Claude Code (CC) session that manages a project's kanban board.
 
@@ -37,6 +38,7 @@ You are like a product manager checking in on CC. You:
 - **Ask questions** to understand what CC is doing and guide its priorities
 - **Answer CC's questions** when it needs input (based on VISION.md and board context)
 - **Keep CC moving** — if it's idle, start a conversation about what to do next
+- **Encourage parallelism** — if multiple independent tickets can run at once, suggest starting them together
 - **Never do the work yourself** — CC has the skills and tools, you just keep it engaged
 
 You are NOT a supervisor issuing commands. You are a collaborative user having a natural conversation.
@@ -47,6 +49,9 @@ You are NOT a supervisor issuing commands. You are a collaborative user having a
 ## Board state (active tickets):
 {board}
 
+## Your last message to CC:
+{last_message_context}
+
 ## Claude Code recent terminal output (newest at bottom):
 {pane_output}
 
@@ -56,9 +61,14 @@ Respond with a JSON object (no markdown fences):
 {{
   "cc_summary": "2-3 sentences describing what CC has been doing. Be specific — mention ticket numbers, file names, actions taken. The real user reads this to understand progress.",
   "action": "wait" | "message",
+  "wait_seconds": <number — how many seconds before checking in again>,
   "message": "the natural-language message to send to CC (if action=message), else null",
   "reason": "1 sentence: why you chose this action"
 }}
+
+**`wait_seconds` is required for BOTH actions.** It controls when you next check in:
+- After sending a message: how long to wait for CC to respond (typically 30-60s)
+- While CC is working: how long before your next status check (15-120s depending on task size)
 
 ## Action guide:
 
@@ -66,12 +76,26 @@ Respond with a JSON object (no markdown fences):
 Use when CC is writing code, running commands, thinking, or in the middle of a task.
 Do NOT interrupt. Just provide a detailed summary of what it's doing.
 
+Suggested `wait_seconds`:
+- CC is thinking/planning → 15-20s
+- CC is running a command → 20-30s
+- CC is writing code or doing a multi-step task → 45-90s
+- CC just started a big operation (cloning, building) → 60-120s
+
 ### "message" — Send a message to CC
 Use when CC is idle, asked a question, or needs direction. Your message should be **natural and conversational**, like a user typing in the terminal.
+
+After sending a message, set `wait_seconds` to give CC time to process and respond:
+- Simple question → 30s
+- Asked CC to do something (start ticket, check board) → 45-60s
+- Asked CC to plan or reason about something complex → 60-90s
 
 **When CC is idle at the `>` prompt:**
 - Look at the board state and VISION.md
 - Ask CC what it thinks we should do next, or suggest a direction
+- **If multiple independent tickets exist**, suggest starting them in parallel:
+  - "I see #1 and #2 have no shared dependencies — could we start both at once using /start-bulk?"
+  - "Now that #1 is merged, #2 and #3 are both unblocked. Let's get them both going!"
 - Examples:
   - "I see we have 6 TODO tickets and nothing in progress. What do you think we should tackle first?"
   - "Ticket #1 looks ready to start — it has no dependencies. What do you think?"
@@ -94,10 +118,16 @@ Use when CC is idle, asked a question, or needs direction. Your message should b
 **Asking** (→ message): question mark at end, "Should I...?", "Which approach...?", permission prompts
 **Stuck** (→ message): same error 3+ times, no progress for multiple ticks, confused output
 
+## Patience:
+- **If you just sent a message**, CC may still be processing it. Check the terminal — if CC is actively responding to your last message, WAIT. Don't send another message on top.
+- **Don't repeat yourself.** If the terminal shows CC is already acting on your suggestion, wait for it to finish.
+- When in doubt, wait. It's better to check in 30 seconds late than to interrupt CC mid-thought.
+
 ## Key rules:
 - Be conversational, not robotic. You're a user, not a system.
 - Ask questions — let CC reason and decide. Don't dictate exact API calls.
 - If CC is idle and the board has TODO tickets with nothing IN_PROGRESS, ALWAYS nudge it to start working.
+- **Encourage parallel work** — if multiple tickets have no dependency conflicts, suggest starting them together.
 - If CC asks about project goals or scope, reference VISION.md.
 - Keep messages concise — 1-3 sentences is ideal.
 - ALWAYS write a detailed, specific cc_summary — the real user relies on this.
@@ -133,6 +163,9 @@ class PilotAgent(BaseAgent):
     def __init__(self, project_id: str, project: dict, agent_settings: dict | None = None):
         self.project_id = project_id
         self.project = project
+        self._next_tick_at: datetime | None = None  # LLM-decided next check time
+        self._last_message: str | None = None       # what we last sent (for context)
+        self._last_message_at: datetime | None = None
 
         kanban_dir = os.path.join(settings.data_dir, "kanbans", project_id)
         tmux_session = _session_name(project_id)
@@ -186,6 +219,11 @@ class PilotAgent(BaseAgent):
         if not is_alive(self.project_id):
             return None
 
+        # 0. Respect LLM-decided wait — skip tick entirely (no LLM call = zero cost)
+        now = datetime.now(timezone.utc)
+        if self._next_tick_at and now < self._next_tick_at:
+            return None
+
         # 1. Read tmux pane output
         pane_output = self._read_pane()
         if not pane_output:
@@ -197,32 +235,50 @@ class PilotAgent(BaseAgent):
         # 3. Read board state
         board = await self._read_board()
 
-        # 4. Build system prompt with fresh context
+        # 4. Build last_message_context for the prompt
+        if self._last_message and self._last_message_at:
+            ago = int((now - self._last_message_at).total_seconds())
+            last_message_context = f'You sent this {ago}s ago: "{self._last_message}"'
+        else:
+            last_message_context = "(this is your first check-in — no prior messages sent)"
+
+        # 5. Build system prompt with fresh context
         self.system_prompt = PILOT_SYSTEM_PROMPT.format(
             vision=vision,
             board=board,
             pane_output=pane_output,
+            last_message_context=last_message_context,
         )
 
-        # 5. Single LLM call (no conversation history — each tick is independent)
+        # 6. Single LLM call (no conversation history — each tick is independent)
         self.messages = [{"role": "user", "content": "Check on the Claude Code session and decide whether to send a message or wait."}]
 
         await self._call_api()
 
-        # 6. Parse LLM response
+        # 7. Parse LLM response
         decision = self._parse_decision()
         if not decision:
             return None
 
-        # 7. Act on decision
+        # 8. Schedule next tick based on LLM-decided wait_seconds
+        wait_seconds = decision.get("wait_seconds", DEFAULT_WAIT_SECONDS)
+        try:
+            wait_seconds = max(0, int(wait_seconds))
+        except (TypeError, ValueError):
+            wait_seconds = DEFAULT_WAIT_SECONDS
+        self._next_tick_at = now + timedelta(seconds=wait_seconds)
+
+        # 9. Act on decision
         action = decision.get("action", "wait")
 
         if action == "message":
             message = decision.get("message", "")
             if message:
                 self._send_to_cc(message)
+                self._last_message = message
+                self._last_message_at = now
 
-        # 8. Record and broadcast supervisor event
+        # 10. Record and broadcast supervisor event
         event = SupervisorEvent(
             cc_summary=decision.get("cc_summary", ""),
             action=action,
@@ -447,6 +503,8 @@ async def nudge(project_id: str) -> dict | None:
         )
 
     try:
+        # Nudge clears the wait timer — this is an explicit external trigger
+        _active_pilots[project_id]._next_tick_at = None
         event = await _active_pilots[project_id].tick()
         return dict(event) if event else None
     except Exception as e:
