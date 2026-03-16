@@ -22,11 +22,17 @@ const OPENAI_MODELS = [
 ]
 
 type Tab = 'system' | 'agent' | 'account'
+type AgentSubtab = 'ticket-agent' | 'pilot'
 
 const TABS: { id: Tab; label: string; icon: typeof Server }[] = [
   { id: 'system', label: 'System', icon: Server },
-  { id: 'agent', label: 'TicketAgent', icon: Bot },
+  { id: 'agent', label: 'Agent', icon: Bot },
   { id: 'account', label: 'Account', icon: User },
+]
+
+const AGENT_SUBTABS: { id: AgentSubtab; label: string }[] = [
+  { id: 'ticket-agent', label: 'TicketAgent' },
+  { id: 'pilot', label: 'Pilot Mode' },
 ]
 
 const DEFAULT_AGENT: ProjectAgentSettings = {
@@ -60,6 +66,7 @@ export function AgentSettingsModal({ open, onClose, initialTab, activeProjectId,
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null)
   const [activeTab, setActiveTab] = useState<Tab>(initialTab || 'system')
+  const [agentSubtab, setAgentSubtab] = useState<AgentSubtab>('ticket-agent')
 
   // Per-project agent settings
   const [agentSettings, setAgentSettings] = useState<ProjectAgentSettings>(DEFAULT_AGENT)
@@ -106,14 +113,17 @@ export function AgentSettingsModal({ open, onClose, initialTab, activeProjectId,
         const updated = await api.settings.updateGlobal(globalSettings)
         setGlobalSettings(updated)
       } else if (activeTab === 'agent' && activeProjectId) {
-        const updated = await api.settings.updateProjectAgent(activeProjectId, agentSettings)
-        setAgentSettings(updated)
-        // Save pilot config to project
-        await api.projects.update(activeProjectId, {
-          max_board_tickets: maxBoardTickets,
-          max_tickets_per_cycle: maxTicketsPerCycle,
-          vision_mode: visionMode,
-        })
+        if (agentSubtab === 'ticket-agent') {
+          const updated = await api.settings.updateProjectAgent(activeProjectId, agentSettings)
+          setAgentSettings(updated)
+        } else {
+          // Save pilot config to project
+          await api.projects.update(activeProjectId, {
+            max_board_tickets: maxBoardTickets,
+            max_tickets_per_cycle: maxTicketsPerCycle,
+            vision_mode: visionMode,
+          })
+        }
       }
       setSaved(true)
       setTimeout(() => setSaved(false), 2000)
@@ -180,11 +190,32 @@ export function AgentSettingsModal({ open, onClose, initialTab, activeProjectId,
 
         {/* Right content */}
         <div className="flex flex-1 flex-col pl-4 min-w-0">
+          {/* Agent subtabs */}
+          {activeTab === 'agent' && activeProjectId && agentLoaded && (
+            <div className="flex gap-1 border-b border-[var(--color-border)] pb-2 mb-3">
+              {AGENT_SUBTABS.map((st) => (
+                <button
+                  key={st.id}
+                  onClick={() => setAgentSubtab(st.id)}
+                  className={`rounded-md px-2.5 py-1 text-[11px] font-medium transition-colors ${
+                    agentSubtab === st.id
+                      ? st.id === 'pilot'
+                        ? 'bg-purple-500/10 text-purple-400'
+                        : 'bg-[var(--color-accent-blue)]/10 text-[var(--color-accent-blue)]'
+                      : 'text-[var(--color-text-muted)] hover:bg-[var(--color-bg-secondary)] hover:text-[var(--color-text-primary)]'
+                  }`}
+                >
+                  {st.label}
+                </button>
+              ))}
+            </div>
+          )}
+
           <div className="flex-1 overflow-y-auto space-y-4">
 
             {/* Needs project message */}
             {needsProject && (
-              <p className="text-sm text-[var(--color-text-muted)]">Select a project to configure TicketAgent settings.</p>
+              <p className="text-sm text-[var(--color-text-muted)]">Select a project to configure agent settings.</p>
             )}
 
             {/* Loading */}
@@ -226,8 +257,8 @@ export function AgentSettingsModal({ open, onClose, initialTab, activeProjectId,
               </>
             )}
 
-            {/* ── TicketAgent Tab (per-project) ── */}
-            {activeTab === 'agent' && activeProjectId && agentLoaded && (
+            {/* ── Agent Tab: TicketAgent subtab ── */}
+            {activeTab === 'agent' && activeProjectId && agentLoaded && agentSubtab === 'ticket-agent' && (
               <>
                 {/* Enabled */}
                 <label className="flex items-center justify-between">
@@ -452,10 +483,15 @@ export function AgentSettingsModal({ open, onClose, initialTab, activeProjectId,
                     </div>
                   </div>
                 </div>
+              </>
+            )}
 
-                {/* Pilot Mode Limits */}
+            {/* ── Agent Tab: Pilot Mode subtab ── */}
+            {activeTab === 'agent' && activeProjectId && agentLoaded && agentSubtab === 'pilot' && (
+              <>
+                {/* Ticket Limits */}
                 <div>
-                  <label className="mb-1 block text-sm text-[var(--color-text-primary)]">Pilot Mode Limits</label>
+                  <label className="mb-1 block text-sm text-[var(--color-text-primary)]">Ticket Limits</label>
                   <p className="mb-2 text-[10px] text-[var(--color-text-muted)]">
                     Controls how many tickets the kanban CC can manage in Pilot Mode.
                   </p>
