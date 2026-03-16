@@ -62,7 +62,7 @@ function SupervisorEventCard({ event }: { event: SupervisorEvent }) {
 export function PilotAgentPanel({ projectId, visible }: PilotAgentPanelProps) {
   const [events, setEvents] = useState<SupervisorEvent[]>([])
   const [showWaiting, setShowWaiting] = useState(false)
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
   const autoScroll = useRef(true)
 
