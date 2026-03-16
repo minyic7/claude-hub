@@ -127,6 +127,19 @@ def _build_kanban_claude_md(project: dict, api_base_url: str, auth_token: str = 
     vision_mode = project.get("vision_mode", "readonly")
     auth = f'-H "Authorization: Bearer {auth_token}"' if auth_token else ""
 
+    if vision_mode == "readonly":
+        vision_instructions = (
+            '**VISION.md is READ-ONLY.** You may NOT modify it. '
+            'If you believe the vision needs updating, tell the user — they will edit it.'
+        )
+    else:
+        vision_instructions = (
+            '**VISION.md is WRITABLE.** You may append to Goal and Scope sections when the current scope has been '
+            'fully implemented and you have a clear next direction. Extensions must be additive — never remove or '
+            'contradict existing content. Always `git commit + push` VISION.md changes before creating new tickets '
+            'so they are grounded in the updated vision.'
+        )
+
     md = f"""# Kanban Claude Code — {project_name}
 
 You are the **Kanban Claude Code** for the "{project_name}" project.
