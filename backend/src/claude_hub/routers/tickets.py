@@ -817,6 +817,11 @@ async def mark_review(ticket_id: str):
 @router.post("/{ticket_id}/resolve-conflicts")
 async def resolve_conflicts(ticket_id: str):
     """Auto-trigger a Claude Code session to rebase and resolve merge conflicts."""
+    from claude_hub.services import session_manager
+    if session_manager.has_active_session(ticket_id):
+        logger.info("Skipping resolve_conflicts for %s: session already active", ticket_id)
+        return {"status": "already_resolving"}
+
     CONFLICT_FEEDBACK = (
         "The PR has merge conflicts with the base branch. You must:\n"
         "1. Run `git fetch origin` to get the latest changes\n"
@@ -825,6 +830,9 @@ async def resolve_conflicts(ticket_id: str):
         "4. Run `git push --force-with-lease` to update the PR\n"
         "Do NOT create a new PR. Fix conflicts on this branch."
     )
+    # Reset agent_review history — conflict resolution is a fresh session,
+    # review count should not carry over from previous rounds
+    await redis_client.update_ticket_fields(ticket_id, {"agent_review": "[]"})
     # Delegate to request_changes with pre-filled conflict feedback
     return await request_changes(ticket_id, {"feedback": CONFLICT_FEEDBACK})
 
@@ -1000,31 +1008,33 @@ async def _enqueue_ticket(ticket_id: str, priority: int = 0) -> None:
 async def process_queue() -> str | None:
     """Try to start the next queued ticket. Called when a session completes."""
     from claude_hub.services import session_manager
-
-    if session_manager.active_session_count() >= settings.max_sessions:
-        return None
-
-    ticket_id = await redis_client.dequeue_ticket()
-    if not ticket_id:
-        return None
-
-    ticket = await redis_client.get_ticket(ticket_id)
-    if not ticket or ticket.get("status") != "queued":
-        # Ticket was cancelled/deleted while queued — try next
-        return await process_queue()
-
-    # Transition QUEUED → TODO first (so start_ticket can do TODO → IN_PROGRESS)
     from claude_hub.services.ticket_service import transition
-    try:
-        await transition(ticket_id, TicketStatus.TODO)
-    except Exception:
-        return await process_queue()
 
-    try:
-        await start_ticket(ticket_id)
-        return ticket_id
-    except HTTPException:
-        return await process_queue()
+    # Iterative loop instead of recursion to avoid stack overflow
+    for _ in range(50):  # Safety limit
+        if session_manager.active_session_count() >= settings.max_sessions:
+            return None
+
+        ticket_id = await redis_client.dequeue_ticket()
+        if not ticket_id:
+            return None
+
+        ticket = await redis_client.get_ticket(ticket_id)
+        if not ticket or ticket.get("status") != "queued":
+            continue  # Skip invalid, try next
+
+        try:
+            await transition(ticket_id, TicketStatus.TODO)
+        except Exception:
+            continue  # Skip failed transition, try next
+
+        try:
+            await start_ticket(ticket_id)
+            return ticket_id
+        except HTTPException:
+            continue  # Skip failed start, try next
+
+    return None
 
 
 @router.get("/queue")

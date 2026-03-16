@@ -8,6 +8,9 @@ from claude_hub import redis_client
 
 logger = logging.getLogger(__name__)
 
+# Per-ticket locks to prevent concurrent transitions (TOCTOU race)
+_transition_locks: dict[str, asyncio.Lock] = {}
+
 VALID_TRANSITIONS: dict[TicketStatus, list[TicketStatus]] = {
     TicketStatus.PO_PENDING: [TicketStatus.TODO],  # Approve → TODO
     TicketStatus.TODO: [TicketStatus.IN_PROGRESS, TicketStatus.QUEUED],
@@ -31,6 +34,14 @@ class InvalidTransition(Exception):
 
 
 async def transition(ticket_id: str, target: TicketStatus, **extra_fields: object) -> dict:
+    # Per-ticket lock prevents concurrent transitions (TOCTOU race)
+    if ticket_id not in _transition_locks:
+        _transition_locks[ticket_id] = asyncio.Lock()
+    async with _transition_locks[ticket_id]:
+        return await _transition_inner(ticket_id, target, **extra_fields)
+
+
+async def _transition_inner(ticket_id: str, target: TicketStatus, **extra_fields: object) -> dict:
     ticket = await redis_client.get_ticket(ticket_id)
     if not ticket:
         raise ValueError(f"Ticket {ticket_id} not found")
