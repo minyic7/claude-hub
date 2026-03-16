@@ -352,6 +352,7 @@ class PilotAgent(BaseAgent):
 # ── Module-level helpers for main.py ───────────────────────────────────
 
 _active_pilots: dict[str, PilotAgent] = {}
+_api_key_warned: set[str] = set()  # Track which projects we've warned about missing API key
 
 
 async def tick_all_pilots() -> None:
@@ -375,10 +376,25 @@ async def tick_all_pilots() -> None:
             else:
                 agent_settings = agent_settings_raw
 
+            # Require API key for PilotAgent to function
+            if not agent_settings.get("api_key"):
+                if project_id not in _api_key_warned:
+                    _api_key_warned.add(project_id)
+                    await broadcast({
+                        "type": "notification",
+                        "data": {
+                            "level": "warning",
+                            "title": "Pilot Agent requires API key",
+                            "message": "Go to Settings → Agent → TicketAgent to configure an API key. Pilot Agent needs it to operate.",
+                        },
+                    })
+                continue
+
+            _api_key_warned.discard(project_id)
             _active_pilots[project_id] = PilotAgent(
                 project_id=project_id,
                 project=project,
-                agent_settings=agent_settings if agent_settings.get("enabled") else None,
+                agent_settings=agent_settings,
             )
 
         try:
@@ -412,10 +428,13 @@ async def nudge(project_id: str) -> dict | None:
         else:
             agent_settings = agent_settings_raw
 
+        if not agent_settings.get("api_key"):
+            return None
+
         _active_pilots[project_id] = PilotAgent(
             project_id=project_id,
             project=project,
-            agent_settings=agent_settings if agent_settings.get("enabled") else None,
+            agent_settings=agent_settings,
         )
 
     try:
