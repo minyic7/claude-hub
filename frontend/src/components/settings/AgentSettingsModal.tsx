@@ -32,7 +32,7 @@ const TABS: { id: Tab; label: string; icon: typeof Server }[] = [
 
 const AGENT_SUBTABS: { id: AgentSubtab; label: string }[] = [
   { id: 'ticket-agent', label: 'TicketAgent' },
-  { id: 'pilot', label: 'Pilot Mode' },
+  { id: 'pilot', label: 'PilotAgent' },
 ]
 
 const DEFAULT_AGENT: ProjectAgentSettings = {
