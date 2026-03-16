@@ -830,13 +830,9 @@ async def _verify_and_review(ticket_id: str, ticket_agent=None) -> None:
                 author="claude_code",
             )
 
-            if agent_enabled and agent_cfg.get("api_key"):
-                if ticket_agent:
-                    # Use the TicketAgent that watched the session — it has full context
-                    await _run_contextual_review(ticket_id, ticket_agent, agent_cfg)
-                else:
-                    # Fallback: cold review (e.g. respawn after rejection)
-                    await _run_agent_review(ticket_id, agent_cfg)
+            if agent_enabled and agent_cfg.get("api_key") and ticket_agent:
+                # Use the TicketAgent that watched the session — it has full context
+                await _run_contextual_review(ticket_id, ticket_agent, agent_cfg)
             else:
                 updated = await transition(ticket_id, TicketStatus.AWAITING_MERGE,
                                            pr_url=result.pr_url,

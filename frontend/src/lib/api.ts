@@ -255,6 +255,7 @@ export interface GlobalSettings {
 
 // Per-project agent settings
 export interface ProjectAgentSettings {
+  // TicketAgent
   enabled: boolean
   provider: AgentProvider
   api_key: string
@@ -267,6 +268,11 @@ export interface ProjectAgentSettings {
   budget_per_ticket_usd: number
   budget_daily_usd: number
   budget_monthly_usd: number
+  // PilotAgent (empty = inherit from TicketAgent)
+  pilot_provider: AgentProvider | null
+  pilot_api_key: string
+  pilot_endpoint_url: string
+  pilot_model: string
 }
 
 // Legacy alias for compatibility

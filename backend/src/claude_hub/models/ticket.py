@@ -41,6 +41,7 @@ class ProjectUpdate(BaseModel):
 # ─── Agent Settings (per-project) ────────────────────────────────────────────
 
 class AgentSettings(BaseModel):
+    # ── TicketAgent settings ──
     enabled: bool = True
     provider: Literal["anthropic", "openai", "openai_compatible"] = "anthropic"
     api_key: str = ""
@@ -53,6 +54,12 @@ class AgentSettings(BaseModel):
     budget_per_ticket_usd: float = 2.00
     budget_daily_usd: float = 50.00
     budget_monthly_usd: float = 500.00
+
+    # ── PilotAgent settings (empty = inherit from TicketAgent) ──
+    pilot_provider: Literal["anthropic", "openai", "openai_compatible"] | None = None
+    pilot_api_key: str = ""
+    pilot_endpoint_url: str = ""
+    pilot_model: str = ""
 
 
 # ─── Ticket ──────────────────────────────────────────────────────────────────

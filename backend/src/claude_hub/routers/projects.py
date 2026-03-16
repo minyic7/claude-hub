@@ -251,6 +251,7 @@ async def get_project_agent_settings(project_id: str):
         cfg = {}
     result = AgentSettings(**cfg).model_dump()
     result["api_key"] = _mask_key(result.get("api_key", ""))
+    result["pilot_api_key"] = _mask_key(result.get("pilot_api_key", ""))
     return result
 
 
@@ -260,14 +261,16 @@ async def update_project_agent_settings(project_id: str, body: AgentSettings):
     if not project:
         raise HTTPException(404, "Project not found")
 
-    # Don't overwrite api_key with masked value
+    # Don't overwrite api keys with masked values
+    raw = project.get("agent_settings", "")
+    try:
+        old = json.loads(raw) if isinstance(raw, str) and raw else {}
+    except (json.JSONDecodeError, TypeError):
+        old = {}
     if body.api_key and "..." in body.api_key:
-        raw = project.get("agent_settings", "")
-        try:
-            old = json.loads(raw) if isinstance(raw, str) and raw else {}
-        except (json.JSONDecodeError, TypeError):
-            old = {}
         body.api_key = old.get("api_key", "")
+    if body.pilot_api_key and "..." in body.pilot_api_key:
+        body.pilot_api_key = old.get("pilot_api_key", "")
 
     await redis_client.update_project_fields(project_id, {
         "agent_settings": json.dumps(body.model_dump()),
@@ -275,6 +278,7 @@ async def update_project_agent_settings(project_id: str, body: AgentSettings):
 
     result = body.model_dump()
     result["api_key"] = _mask_key(result.get("api_key", ""))
+    result["pilot_api_key"] = _mask_key(result.get("pilot_api_key", ""))
     return result
 
 

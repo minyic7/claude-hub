@@ -48,6 +48,10 @@ const DEFAULT_AGENT: ProjectAgentSettings = {
   budget_per_ticket_usd: 2.00,
   budget_daily_usd: 50.00,
   budget_monthly_usd: 500.00,
+  pilot_provider: null,
+  pilot_api_key: '',
+  pilot_endpoint_url: '',
+  pilot_model: '',
 }
 
 interface Props {
@@ -117,7 +121,9 @@ export function AgentSettingsModal({ open, onClose, initialTab, activeProjectId,
           const updated = await api.settings.updateProjectAgent(activeProjectId, agentSettings)
           setAgentSettings(updated)
         } else {
-          // Save pilot config to project
+          // Save pilot LLM config (part of agent_settings) + project fields
+          const updated = await api.settings.updateProjectAgent(activeProjectId, agentSettings)
+          setAgentSettings(updated)
           await api.projects.update(activeProjectId, {
             max_board_tickets: maxBoardTickets,
             max_tickets_per_cycle: maxTicketsPerCycle,
@@ -487,8 +493,139 @@ export function AgentSettingsModal({ open, onClose, initialTab, activeProjectId,
             )}
 
             {/* ── Agent Tab: Pilot Mode subtab ── */}
-            {activeTab === 'agent' && activeProjectId && agentLoaded && agentSubtab === 'pilot' && (
+            {activeTab === 'agent' && activeProjectId && agentLoaded && agentSubtab === 'pilot' && (() => {
+              const pilotProvider = agentSettings.pilot_provider || agentSettings.provider
+              const pilotModels = pilotProvider === 'anthropic' ? ANTHROPIC_MODELS
+                : pilotProvider === 'openai' ? OPENAI_MODELS : []
+              const pilotModel = agentSettings.pilot_model || ''
+              const inheritLabel = (field: string) =>
+                !agentSettings[`pilot_${field}` as keyof ProjectAgentSettings]
+                  ? ' (inherited from TicketAgent)' : ''
+
+              return (
               <>
+                {/* LLM Provider */}
+                <div>
+                  <label className="mb-1 block text-sm text-[var(--color-text-primary)]">
+                    Provider{inheritLabel('provider')}
+                  </label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {PROVIDERS.map((p) => (
+                      <button
+                        key={p.id}
+                        onClick={() => setAgentSettings({ ...agentSettings, pilot_provider: p.id })}
+                        className={`rounded-md border px-3 py-2 text-xs transition-colors ${
+                          pilotProvider === p.id
+                            ? 'border-purple-500 bg-purple-500/10 text-purple-400'
+                            : 'border-[var(--color-border)] text-[var(--color-text-muted)] hover:border-[var(--color-text-muted)]'
+                        }`}
+                      >
+                        <div className="font-medium">{p.label}</div>
+                        <div className="mt-0.5 text-[10px] leading-tight">{p.description}</div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* API Key */}
+                <div>
+                  <label className="mb-1 block text-sm text-[var(--color-text-primary)]">
+                    API Key{inheritLabel('api_key')}
+                  </label>
+                  <input
+                    type="password"
+                    value={agentSettings.pilot_api_key}
+                    onChange={(e) => setAgentSettings({ ...agentSettings, pilot_api_key: e.target.value })}
+                    placeholder={agentSettings.pilot_api_key ? 'sk-...' : '(using TicketAgent key)'}
+                    className="w-full rounded border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2 py-1.5 text-xs text-[var(--color-text-primary)] font-mono"
+                  />
+                  <p className="mt-0.5 text-[10px] text-[var(--color-text-muted)]">
+                    Leave empty to use TicketAgent's API key.
+                  </p>
+                </div>
+
+                {/* Endpoint URL */}
+                {pilotProvider === 'openai_compatible' && (
+                  <div>
+                    <label className="mb-1 block text-sm text-[var(--color-text-primary)]">Endpoint URL</label>
+                    <input
+                      type="url"
+                      value={agentSettings.pilot_endpoint_url}
+                      onChange={(e) => setAgentSettings({ ...agentSettings, pilot_endpoint_url: e.target.value })}
+                      placeholder={agentSettings.pilot_endpoint_url ? '' : '(using TicketAgent endpoint)'}
+                      className="w-full rounded border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2 py-1.5 text-xs text-[var(--color-text-primary)] font-mono"
+                    />
+                  </div>
+                )}
+
+                {/* Model */}
+                <div>
+                  <label className="mb-1 block text-sm text-[var(--color-text-primary)]">Model</label>
+                  {pilotModels.length > 0 ? (
+                    <div className="grid grid-cols-3 gap-2">
+                      {pilotModels.map((m) => (
+                        <button
+                          key={m.id}
+                          onClick={() => setAgentSettings({ ...agentSettings, pilot_model: m.id })}
+                          className={`rounded-md border px-3 py-2 text-xs transition-colors ${
+                            pilotModel === m.id
+                              ? 'border-purple-500 bg-purple-500/10 text-purple-400'
+                              : 'border-[var(--color-border)] text-[var(--color-text-muted)] hover:border-[var(--color-text-muted)]'
+                          }`}
+                        >
+                          <div className="font-medium">{m.label}</div>
+                          <div className="mt-0.5 text-[10px]">{m.cost}</div>
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <input
+                      type="text"
+                      value={agentSettings.pilot_model}
+                      onChange={(e) => setAgentSettings({ ...agentSettings, pilot_model: e.target.value })}
+                      placeholder="model-name"
+                      className="w-full rounded border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2 py-1.5 text-xs text-[var(--color-text-primary)] font-mono"
+                    />
+                  )}
+                  <p className="mt-0.5 text-[10px] text-[var(--color-text-muted)]">
+                    Default: Sonnet 4.6 (good balance of speed and quality for supervision).
+                  </p>
+                </div>
+
+                <hr className="border-[var(--color-border)]" />
+
+                {/* Vision Mode */}
+                <div>
+                  <label className="mb-1 block text-sm text-[var(--color-text-primary)]">Vision Mode</label>
+                  <p className="mb-2 text-[10px] text-[var(--color-text-muted)]">
+                    Controls whether Kanban CC can modify VISION.md during Pilot Mode.
+                  </p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      onClick={() => setVisionMode('readonly')}
+                      className={`rounded-md border px-3 py-2 text-xs transition-colors ${
+                        visionMode === 'readonly'
+                          ? 'border-purple-500 bg-purple-500/10 text-purple-400'
+                          : 'border-[var(--color-border)] text-[var(--color-text-muted)] hover:border-[var(--color-text-muted)]'
+                      }`}
+                    >
+                      <div className="font-medium">Read Only</div>
+                      <div className="mt-0.5 text-[10px] leading-tight">CC proposes changes in report</div>
+                    </button>
+                    <button
+                      onClick={() => setVisionMode('writable')}
+                      className={`rounded-md border px-3 py-2 text-xs transition-colors ${
+                        visionMode === 'writable'
+                          ? 'border-purple-500 bg-purple-500/10 text-purple-400'
+                          : 'border-[var(--color-border)] text-[var(--color-text-muted)] hover:border-[var(--color-text-muted)]'
+                      }`}
+                    >
+                      <div className="font-medium">Writable</div>
+                      <div className="mt-0.5 text-[10px] leading-tight">CC can extend Goal & Scope</div>
+                    </button>
+                  </div>
+                </div>
+
                 {/* Ticket Limits */}
                 <div>
                   <label className="mb-1 block text-sm text-[var(--color-text-primary)]">Ticket Limits</label>
@@ -526,40 +663,9 @@ export function AgentSettingsModal({ open, onClose, initialTab, activeProjectId,
                     </div>
                   </div>
                 </div>
-
-                {/* Vision Mode */}
-                <div>
-                  <label className="mb-1 block text-sm text-[var(--color-text-primary)]">Vision Mode</label>
-                  <p className="mb-2 text-[10px] text-[var(--color-text-muted)]">
-                    Controls whether Kanban CC can modify VISION.md during Pilot Mode cycles.
-                  </p>
-                  <div className="grid grid-cols-2 gap-2">
-                    <button
-                      onClick={() => setVisionMode('readonly')}
-                      className={`rounded-md border px-3 py-2 text-xs transition-colors ${
-                        visionMode === 'readonly'
-                          ? 'border-purple-500 bg-purple-500/10 text-purple-400'
-                          : 'border-[var(--color-border)] text-[var(--color-text-muted)] hover:border-[var(--color-text-muted)]'
-                      }`}
-                    >
-                      <div className="font-medium">Read Only</div>
-                      <div className="mt-0.5 text-[10px] leading-tight">CC proposes changes in report</div>
-                    </button>
-                    <button
-                      onClick={() => setVisionMode('writable')}
-                      className={`rounded-md border px-3 py-2 text-xs transition-colors ${
-                        visionMode === 'writable'
-                          ? 'border-purple-500 bg-purple-500/10 text-purple-400'
-                          : 'border-[var(--color-border)] text-[var(--color-text-muted)] hover:border-[var(--color-text-muted)]'
-                      }`}
-                    >
-                      <div className="font-medium">Writable</div>
-                      <div className="mt-0.5 text-[10px] leading-tight">CC can extend Goal & Scope</div>
-                    </button>
-                  </div>
-                </div>
               </>
-            )}
+              )
+            })()}
 
             {/* ── Account Tab ── */}
             {activeTab === 'account' && (

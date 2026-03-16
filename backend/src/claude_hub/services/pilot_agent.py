@@ -93,9 +93,13 @@ After sending a message, set `wait_seconds` to give CC time to process and respo
 **When CC is idle at the `>` prompt:**
 - Look at the board state and VISION.md
 - Ask CC what it thinks we should do next, or suggest a direction
-- **If the board is empty or all tickets are done**, ask CC to re-read VISION.md and plan next work:
-  - "All tickets are done! Can you re-read VISION.md and see what we should tackle next?"
-  - "The board is empty — let's check VISION.md and plan the next set of tickets."
+- **If TODO=0 and IN_PROGRESS < 3**, it's time to plan — ask CC to re-read VISION.md and create the next batch:
+  - "We're running low on tickets — can you re-read VISION.md and plan the next set?"
+  - "Only one ticket in progress and nothing queued. Let's plan ahead — check VISION.md?"
+  - Encourage CC to create small, parallelizable tickets with proper priority
+- **If a ticket was recently merged**, remind CC to verify CI/CD:
+  - "#3 just merged — can you run /ci-status to make sure the deployment looks good?"
+  - "Nice, #6 is merged! Let's double-check CI passed before moving on."
 - **If multiple independent tickets exist**, suggest starting them in parallel:
   - "I see #1 and #2 have no shared dependencies — could we start both at once using /start-bulk?"
   - "Now that #1 is merged, #2 and #3 are both unblocked. Let's get them both going!"
@@ -173,18 +177,22 @@ class PilotAgent(BaseAgent):
         kanban_dir = os.path.join(settings.data_dir, "kanbans", project_id)
         tmux_session = _session_name(project_id)
 
+        # Build pilot-specific settings: use pilot_* fields if set, fallback to main
+        pilot_settings = dict(agent_settings) if agent_settings else {}
+        cfg = agent_settings or {}
+        pilot_settings["provider"] = cfg.get("pilot_provider") or cfg.get("provider", "anthropic")
+        pilot_settings["api_key"] = cfg.get("pilot_api_key") or cfg.get("api_key", "")
+        pilot_settings["endpoint_url"] = cfg.get("pilot_endpoint_url") or cfg.get("endpoint_url", "")
+        pilot_settings["model"] = cfg.get("pilot_model") or "claude-sonnet-4-6"
+
         # Use a placeholder system prompt — rebuilt each tick with fresh context
         super().__init__(
             agent_id=f"pilot:{project_id}",
             working_dir=kanban_dir,
             system_prompt="",
             tmux_session=tmux_session,
-            agent_settings=agent_settings,
+            agent_settings=pilot_settings,
         )
-
-        # Override model — pilot uses Sonnet for speed + cost efficiency
-        if not agent_settings or not agent_settings.get("model"):
-            self.model = "claude-sonnet-4-6"
 
     # ── Extra tools (none — pilot uses structured output, not tool use) ──
 
