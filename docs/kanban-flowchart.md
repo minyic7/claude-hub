@@ -259,7 +259,7 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    A["_pr_poll_loop()\nbackend background task\nevery 10 seconds"] --> B["sync_review_status()"]
+    A["_pr_poll_loop()\nbackend background task\nevery 10 seconds"] --> B["Step 1: sync_review_status()"]
     B --> C["List all AWAITING_MERGE tickets"]
 
     C --> D["For each ticket with PR"]
@@ -274,13 +274,13 @@ flowchart TD
     J -- Yes --> K["Update has_conflicts\nbroadcast notification\nauto resolve_conflicts()"]
     I -- MERGEABLE --> L["No action"]
 
-    A --> M["_check_session_timeouts()"]
+    B --> M["Step 2: _check_session_timeouts()"]
     M --> N{timeout_minutes > 0?}
     N -- No --> O["Skip"]
     N -- Yes --> P["For each IN_PROGRESS/BLOCKED\nticket"]
-    P --> Q{started_at >\ncutoff?}
-    Q -- Yes --> R["OK, still within limit"]
-    Q -- No --> S["stop_session()\ntransition → FAILED\nbroadcast notification:\nSession timed out"]
+    P --> Q{started_at <\ncutoff?}
+    Q -- No --> R["OK, still within limit"]
+    Q -- Yes --> S["stop_session()\ntransition → FAILED\nbroadcast notification:\nSession timed out"]
 ```
 
 ## 10. Server Startup Recovery
