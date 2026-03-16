@@ -195,22 +195,21 @@ class PilotAgent(BaseAgent):
 
         if action == "wait":
             self._idle_ticks = 0
-            return None
-
-        if action == "trigger":
+        elif action == "trigger":
             self._idle_ticks += 1
             if self._idle_ticks < IDLE_TICKS_BEFORE_TRIGGER:
-                # Not enough idle ticks yet — record as wait
-                return None
-            send_pilot_trigger(self.project_id, "supervisor")
-            self._idle_ticks = 0
+                # Not enough idle ticks yet — record as wait instead
+                action = "wait"
+            else:
+                send_pilot_trigger(self.project_id, "supervisor")
+                self._idle_ticks = 0
         elif action == "send":
             message = decision.get("message", "")
             if message:
                 self._send_to_cc(message)
             self._idle_ticks = 0
 
-        # 8. Record and broadcast supervisor event
+        # 8. Always record and broadcast supervisor event (including wait)
         event = SupervisorEvent(
             cc_summary=decision.get("cc_summary", ""),
             cc_asked_for=decision.get("cc_asked_for"),
