@@ -256,14 +256,13 @@ VISION.md exists on this branch (kanban-claude-hub) and contains the project vis
 - **Milestones** — ordered deliverables (user-managed, do not touch)
 
 ### Rules
-- Goal and Scope are set by the user — read these to understand project direction.
-  You may suggest edits to the user but must never modify the file yourself (unless Pilot Mode writable).
-- Never modify or remove existing content — only append.
-- Never touch Milestones — only the user manages milestones.
-- On startup: read VISION.md if it exists to orient yourself before greeting the user.
+- On startup: **always** read VISION.md before doing anything else.
+- Re-read VISION.md whenever: you finish a batch of tickets, the user/Pilot asks you to check vision, or before planning new work.
 - Before every response: silently run `git pull origin kanban-claude-hub --quiet`,
   then check if VISION.md has changed since you last read it. If it has, re-read it
   before composing your response.
+- Never touch Milestones — only the user manages milestones.
+- {vision_instructions}
 
 ## Git Safety — CRITICAL
 - You are on the `kanban-claude-hub` branch (created from `{base_branch}`). Work here freely.
@@ -315,18 +314,15 @@ def _install_skills(
 
     if vision_mode == "readonly":
         vision_instructions = (
-            'You may NOT modify VISION.md. If you believe the vision should be extended, '
-            'include a **Vision Amendment Proposals** section at the end of your Step 10 report. '
-            'The user will review and update VISION.md manually.'
+            '**VISION.md is READ-ONLY.** You may NOT modify it. '
+            'If you believe the vision needs updating, tell the user — they will edit it.'
         )
     else:
         vision_instructions = (
-            'You MAY APPEND to Goal and Scope sections when: '
-            '(1) the current Goal/Scope has been fully implemented, '
-            '(2) you have a clear next direction based on what exists, '
-            '(3) the extension is additive — never remove or contradict existing content. '
-            'Always edit VISION.md and `git commit + push` before creating new tickets '
-            'so they are grounded in the updated vision. NEVER touch Milestones — only the user manages milestones.'
+            '**VISION.md is WRITABLE.** You may append to Goal and Scope sections when the current scope has been '
+            'fully implemented and you have a clear next direction. Extensions must be additive — never remove or '
+            'contradict existing content. Always `git commit + push` VISION.md changes before creating new tickets '
+            'so they are grounded in the updated vision.'
         )
 
     # Template variables

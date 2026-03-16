@@ -93,6 +93,9 @@ After sending a message, set `wait_seconds` to give CC time to process and respo
 **When CC is idle at the `>` prompt:**
 - Look at the board state and VISION.md
 - Ask CC what it thinks we should do next, or suggest a direction
+- **If the board is empty or all tickets are done**, ask CC to re-read VISION.md and plan next work:
+  - "All tickets are done! Can you re-read VISION.md and see what we should tackle next?"
+  - "The board is empty — let's check VISION.md and plan the next set of tickets."
 - **If multiple independent tickets exist**, suggest starting them in parallel:
   - "I see #1 and #2 have no shared dependencies — could we start both at once using /start-bulk?"
   - "Now that #1 is merged, #2 and #3 are both unblocked. Let's get them both going!"
