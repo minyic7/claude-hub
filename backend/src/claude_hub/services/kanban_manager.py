@@ -8,8 +8,10 @@ These sessions do NOT count toward max_sessions.
 import logging
 import os
 import shlex
+import shutil
 import subprocess
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import jwt
 
@@ -132,7 +134,7 @@ You work directly on this repository and help users with coding, refining requir
 
 ## On Startup
 When you first start, do the following:
-1. Run `get_kanban_state` (see API Tools below) to load the current board state
+1. Run `/board` to load the current board state
 2. Read VISION.md if it exists to orient yourself
 3. Greet the user with a brief summary of the board (e.g., how many tickets, what's in progress)
 4. Let them know you're ready to help — coding, creating tickets, or anything else
@@ -147,7 +149,7 @@ When you first start, do the following:
 ## Your Capabilities
 You are a full Claude Code instance with access to the repository. You can:
 1. **Read and modify code** — explore the codebase, write features, fix bugs, refactor
-2. **Manage tickets** — create, update, and organize kanban tickets via the API tools below
+2. **Manage tickets** — create, update, and organize kanban tickets via skills (see below)
 3. **Help with requirements** — refine vague ideas into structured, actionable tickets
 4. **Break down work** — split large features into smaller tickets with dependencies
 5. **Suggest branch types** (feature, bugfix, hotfix, chore, refactor, docs, test)
@@ -186,134 +188,36 @@ When reviewing the board or creating new tickets:
 - Suggest `depends_on` relationships when creating or updating tickets
 - When asked about priority or ordering, analyze the dependency graph and suggest an execution order
 
-## API Tools
+## Kanban Skills (Slash Commands)
 
-You communicate with the Kanban system via these curl commands.
-Always use the exact format shown. Replace UPPERCASE placeholders with actual values.
+You have kanban skills installed as slash commands. Use these instead of raw curl:
 
-### get_kanban_state
-Fetch all active (non-archived) tickets for this project.
-Run this before every response to ensure your mental model is current.
-```bash
-curl -s {auth} {api_base_url}/api/projects/{project_id}/tickets | python3 -m json.tool
-```
+| Command | Purpose |
+|---------|---------|
+| `/board` | Fetch board state — **run before every response** |
+| `/project-info` | Read project settings (pilot mode, limits) |
+| `/start-ticket TICKET_ID` | Start a TODO ticket (spawn Claude Code session) |
+| `/start-bulk` | Start multiple tickets at once (auto-queues overflow) |
+| `/create-ticket` | Create a new ticket |
+| `/update-ticket TICKET_ID` | Edit a TODO ticket's title/description/priority/deps |
+| `/archive-ticket TICKET_ID` | Archive a ticket (toggle — verify archived=false first) |
+| `/reorder-tickets` | Set priority order for TODO tickets |
+| `/queue` | Check execution queue and session capacity |
+| `/answer-ticket TICKET_ID` | Unblock a BLOCKED ticket |
+| `/message-ticket TICKET_ID` | Send message to an active session |
+| `/retry-ticket TICKET_ID` | Retry a FAILED ticket (with optional guidance) |
+| `/request-changes TICKET_ID` | Send AWAITING_MERGE back for revision |
+| `/resolve-conflicts TICKET_ID` | Auto-resolve merge conflicts |
+| `/ticket-diff TICKET_ID` | Read PR diff |
+| `/ci-status TICKET_ID` | Check CI pass/fail |
+| `/unresolved-threads TICKET_ID` | Check open PR review threads |
+| `/add-note TICKET_ID` | Append a note to any ticket |
+| `/merge-ticket TICKET_ID` | Merge a ticket's PR |
+| `/revert-ticket TICKET_ID` | Revert FAILED/AWAITING_MERGE → TODO |
+| `/duplicate-ticket TICKET_ID` | Clone a ticket as new TODO |
 
-### get_project_info
-Read project settings including pilot mode and ticket limits.
-```bash
-curl -s {auth} {api_base_url}/api/projects/{project_id} | python3 -m json.tool
-```
-
-### get_ticket
-Read full detail for a single ticket.
-```bash
-curl -s {auth} {api_base_url}/api/tickets/TICKET_ID | python3 -m json.tool
-```
-
-### create_ticket
-Create a new ticket. All fields required unless marked optional.
-```bash
-curl -s -X POST {auth} {api_base_url}/api/tickets \\
-  -H "Content-Type: application/json" \\
-  -d '{{"project_id": "{project_id}", "title": "TICKET_TITLE", "description": "TICKET_DESCRIPTION", "branch_type": "feature", "depends_on": [], "priority": 0, "pilot": {"true" if pilot_mode else "false"}}}'
-```
-Valid branch_type values: feature, bugfix, hotfix, chore, refactor, docs, test
-
-### update_ticket
-Update a ticket. Only works on TODO tickets. Include only fields to change.
-```bash
-curl -s -X PATCH {auth} {api_base_url}/api/tickets/TICKET_ID \\
-  -H "Content-Type: application/json" \\
-  -d '{{"title": "NEW_TITLE", "priority": 0, "depends_on": []}}'
-```
-
-### archive_ticket
-Archive a ticket. WARNING: this is a toggle — calling it on an already-archived ticket will unarchive it.
-Always verify ticket.archived == false before calling.
-```bash
-curl -s -X POST {auth} {api_base_url}/api/tickets/TICKET_ID/archive
-```
-
-### reorder_tickets
-Set priority order for TODO tickets. First ID = highest priority.
-```bash
-curl -s -X POST {auth} {api_base_url}/api/tickets/reorder \\
-  -H "Content-Type: application/json" \\
-  -d '{{"project_id": "{project_id}", "ticket_ids": ["ID_1", "ID_2", "ID_3"]}}'
-```
-
-### get_queue
-Check current execution queue and session capacity.
-```bash
-curl -s {auth} {api_base_url}/api/tickets/queue | python3 -m json.tool
-```
-
-### answer_ticket
-Unblock a BLOCKED ticket and send the answer to its tmux session.
-```bash
-curl -s -X POST {auth} {api_base_url}/api/tickets/TICKET_ID/answer \\
-  -H "Content-Type: application/json" \\
-  -d '{{"answer": "YOUR_ANSWER_HERE"}}'
-```
-
-### message_ticket
-Send a message to an IN_PROGRESS or BLOCKED session. Also unblocks if ticket is BLOCKED.
-```bash
-curl -s -X POST {auth} {api_base_url}/api/tickets/TICKET_ID/message \\
-  -H "Content-Type: application/json" \\
-  -d '{{"message": "YOUR_MESSAGE_HERE"}}'
-```
-
-### retry_ticket
-Restart a FAILED ticket. Optionally include guidance to avoid repeating the same mistake.
-```bash
-curl -s -X POST {auth} {api_base_url}/api/tickets/TICKET_ID/retry \\
-  -H "Content-Type: application/json" \\
-  -d '{{"guidance": "OPTIONAL_GUIDANCE"}}'
-```
-
-### request_changes
-Flag wrong or incomplete implementation on AWAITING_MERGE. Transitions back to IN_PROGRESS.
-```bash
-curl -s -X POST {auth} {api_base_url}/api/tickets/TICKET_ID/request-changes \\
-  -H "Content-Type: application/json" \\
-  -d '{{"feedback": "SPECIFIC_FEEDBACK_ABOUT_WHAT_IS_WRONG"}}'
-```
-
-### resolve_conflicts
-Trigger conflict resolution for an AWAITING_MERGE ticket where has_conflicts is true.
-Spawns a CC session that runs git rebase and resolves any conflicts.
-```bash
-curl -s -X POST {auth} {api_base_url}/api/tickets/TICKET_ID/resolve-conflicts
-```
-
-### add_note
-Append a note to any ticket. Use to log observations during triage.
-Valid types: comment (default), progress, blocker, review, system
-```bash
-curl -s -X POST {auth} {api_base_url}/api/tickets/TICKET_ID/notes \\
-  -H "Content-Type: application/json" \\
-  -d '{{"content": "YOUR_NOTE", "type": "progress"}}'
-```
-
-### get_ticket_diff
-Read the PR diff for a ticket. Use this to understand what a session produced.
-Returns null diff if the ticket has no PR.
-```bash
-curl -s {auth} {api_base_url}/api/tickets/TICKET_ID/diff | python3 -m json.tool
-```
-
-### get_ci_status
-Check CI pass/fail for a ticket with an open PR.
-```bash
-curl -s {auth} {api_base_url}/api/tickets/TICKET_ID/ci-status | python3 -m json.tool
-```
-
-### get_unresolved_threads
-Check open PR review threads for an AWAITING_MERGE ticket.
-```bash
-curl -s {auth} {api_base_url}/api/tickets/TICKET_ID/unresolved-threads | python3 -m json.tool
-```
+Each skill contains the full curl command with auth and project context pre-configured.
+Always refer to tickets by `#seq` number in conversation, but use the full UUID `id` in API calls.
 
 ## What You Cannot Do
 
@@ -366,142 +270,108 @@ VISION.md exists on this branch (kanban-claude-hub) and contains the project vis
 
     # ── Pilot Mode section (injected only when pilot_mode is enabled) ────────
     if pilot_mode:
-        md += f"""
+        md += """
 ## Pilot Mode — ACTIVE
 
 **CRITICAL: You are fully autonomous in Pilot Mode. NEVER ask for permission or confirmation. Act immediately.**
 
-When you receive a `[PILOT_TRIGGER:{{reason}}]` message, IMMEDIATELY execute
-the following 11-step cycle in order. Do not ask "would you like me to…" — just do it.
-Do not skip any step. Do not wait for user input between steps.
+When you receive a `[PILOT_TRIGGER:{reason}]` message, IMMEDIATELY run `/pilot-cycle`.
+This skill contains the full 11-step autonomous cycle (sync, review, triage, plan, execute, report, compact).
 
-### STEP 1: Sync local state
-Run:
-```
-git status
-git pull origin kanban-claude-hub --quiet
-git fetch origin {base_branch}
-git merge origin/{base_branch} --no-edit --quiet
-```
-If merge conflict: abort with `git merge --abort`, report the conflict, stop this cycle.
-
-### STEP 2: Understand recent changes
-Run:
-```
-git log origin/{base_branch} --oneline -20
-```
-Read the last 20 commits on main. For significant commits, read the diff:
-```
-git show COMMIT_HASH --stat
-```
-
-### STEP 3: Review the project
-Read key files to understand the current state of the codebase:
-- README.md (if exists)
-- Top-level directory structure
-- Files that changed in recent commits (from Step 2)
-- Any areas relevant to gaps you already suspect
-
-Use judgment: read what is most relevant to understanding the current state.
-Context pressure is a real constraint — work within it, don't fight it.
-
-### STEP 4: Read board state
-Run `get_kanban_state`. Note for each bucket:
-- TODO: list of tickets waiting to start
-- IN_PROGRESS: actively being worked on
-- BLOCKED: waiting for human input
-- FAILED: session ended with error
-- AWAITING_MERGE: PR open, waiting for merge
-- MERGED: completed but not yet archived
-
-### STEP 5: Triage existing tickets
-Review every non-archived ticket. For each one, decide its fate:
-
-**TODO tickets:**
-- Still needed? → keep, possibly update description if stale
-- Already implemented or no longer relevant? → archive it
-- Ready to start (no unmet dependencies, no other ticket in progress)? → POST /tickets/{{id}}/start to begin a Claude Code session for it
-- **IMPORTANT:** Always start the highest-priority unblocked TODO ticket if nothing is currently IN_PROGRESS. The board won't make progress unless you start tickets!
-
-**IN_PROGRESS tickets:**
-- Leave them alone — a session is active, don't interrupt.
-
-**BLOCKED tickets:**
-- Read the blocked_question. Can you answer it? → POST /tickets/{{id}}/answer
-- Cannot answer? → leave it, note in report as needing human attention
-
-**FAILED tickets:**
-- Conflict → POST /tickets/{{id}}/retry directly, no guidance needed
-- Transient error → POST /tickets/{{id}}/retry directly
-- Code problem → read the PR diff (use get_ticket_diff), update description with better guidance, then retry
-- Blocked on human decision → leave it, note in report
-
-**AWAITING_MERGE tickets:**
-- has_conflicts: true → POST /tickets/{{id}}/resolve-conflicts
-- has_conflicts: false → check the PR diff: correct implementation? No action needed.
-  Wrong implementation? → POST /tickets/{{id}}/request-changes with specific feedback
-
-**MERGED tickets:**
-- Skip. Trust that Claude Code completed the work.
-
-### STEP 6: Read VISION.md
-Read VISION.md from this branch.
-
-VISION.md has three sections:
-- **Goal** — what the project exists to achieve
-- **Scope** — In Scope / Out of Scope subsections
-- **Milestones** — ordered deliverables (user-managed, NEVER touch)
-
-Focus on Goal and Scope — these are the source of truth for all ticket planning.
-
-Vision mode is: **{vision_mode}**
-
-{"You may NOT modify VISION.md. If you believe the vision should be extended, include a **Vision Amendment Proposals** section at the end of your Step 10 report. The user will review and update VISION.md manually." if vision_mode == "readonly" else "You MAY APPEND to Goal and Scope sections when: (1) the current Goal/Scope has been fully implemented, (2) you have a clear next direction based on what exists, (3) the extension is additive — never remove or contradict existing content. Always edit VISION.md and `git commit + push` before creating new tickets so they are grounded in the updated vision. NEVER touch Milestones — only the user manages milestones."}
-
-### STEP 7: Identify gaps
-Cross-reference:
-- What VISION.md says should exist
-- What you saw in code (Step 3)
-- What tickets are active after triage (Step 5)
-
-List the gaps explicitly before moving to planning.
-
-### STEP 8: Plan & Sanity Check
-Count active tickets after triage (TODO + IN_PROGRESS + AWAITING_MERGE).
-
-- IF active_count >= {max_board_tickets}: Do NOT create tickets. Focus on triage. Report board state.
-- IF active_count < {max_board_tickets}: Pick the most important gap. Draft at most {max_tickets_per_cycle} ticket(s).
-  You can create up to ({max_board_tickets} - active_count) tickets, but never more than {max_tickets_per_cycle} per cycle.
-
-Sanity check:
-- Does each ticket address a real gap (not just nice-to-have)?
-- Is the description specific enough for Claude Code to act on?
-- Are dependencies set correctly?
-- Would a senior engineer agree this is the right next step?
-
-### STEP 9: Execute
-Execute the plan using the API tools:
-- **Start tickets**: If you identified TODO tickets to start in Step 5, POST /tickets/{{id}}/start NOW
-- **Create tickets**: Set `"pilot": true` on every ticket you create
-- **Other actions**: retry, answer, resolve-conflicts, request-changes as decided in triage
-
-**The most important action is starting work.** If nothing is IN_PROGRESS and there are startable TODO tickets, you MUST start one.
-
-### STEP 10: Report
-Post a brief summary:
-- What you found in the review
-- Triage actions taken (archived, unblocked, retried, request-changes)
-- What gaps you identified
-- What you created/updated and why
-- Or why you decided not to act this cycle
-
-### STEP 11: Compact
-Run `/compact` now. This is mandatory — even if the cycle seemed short.
-This ensures the next trigger starts with a clean context.
-After /compact completes, the cycle is done. Wait for the next trigger.
+Do not ask "would you like me to…" — just run the skill. Do not skip steps. Do not wait for user input.
 """
 
     return md
+
+
+# ── Skill installation ─────────────────────────────────────────────────────
+
+# Directory containing skill templates (relative to this file)
+_SKILLS_DIR = Path(__file__).parent.parent / "docs" / "kanban-skills"
+
+# Skills that are only installed when pilot mode is enabled
+_PILOT_ONLY_SKILLS = {"pilot-cycle"}
+
+
+def _install_skills(
+    kanban_dir: str,
+    project: dict,
+    api_base_url: str,
+    auth_token: str = "",
+) -> None:
+    """Copy skill templates to kanban_dir/.claude/skills/ with variable substitution."""
+    project_id = project["id"]
+    base_branch = project.get("base_branch", "main")
+    pilot_mode = project.get("pilot_mode", False)
+    max_board_tickets = project.get("max_board_tickets", 10)
+    max_tickets_per_cycle = project.get("max_tickets_per_cycle", 2)
+    vision_mode = project.get("vision_mode", "readonly")
+    auth = f'-H "Authorization: Bearer {auth_token}"' if auth_token else ""
+
+    if vision_mode == "readonly":
+        vision_instructions = (
+            'You may NOT modify VISION.md. If you believe the vision should be extended, '
+            'include a **Vision Amendment Proposals** section at the end of your Step 10 report. '
+            'The user will review and update VISION.md manually.'
+        )
+    else:
+        vision_instructions = (
+            'You MAY APPEND to Goal and Scope sections when: '
+            '(1) the current Goal/Scope has been fully implemented, '
+            '(2) you have a clear next direction based on what exists, '
+            '(3) the extension is additive — never remove or contradict existing content. '
+            'Always edit VISION.md and `git commit + push` before creating new tickets '
+            'so they are grounded in the updated vision. NEVER touch Milestones — only the user manages milestones.'
+        )
+
+    # Template variables
+    replacements = {
+        "{api_base_url}": api_base_url,
+        "{project_id}": project_id,
+        "{auth}": auth,
+        "{base_branch}": base_branch,
+        "{pilot_mode}": "true" if pilot_mode else "false",
+        "{max_board_tickets}": str(max_board_tickets),
+        "{max_tickets_per_cycle}": str(max_tickets_per_cycle),
+        "{vision_mode}": vision_mode,
+        "{vision_instructions}": vision_instructions,
+    }
+
+    skills_dest = os.path.join(kanban_dir, ".claude", "skills")
+
+    # Clean existing skills and reinstall fresh
+    if os.path.exists(skills_dest):
+        shutil.rmtree(skills_dest)
+
+    if not _SKILLS_DIR.exists():
+        logger.warning("Kanban skills directory not found: %s", _SKILLS_DIR)
+        return
+
+    for skill_dir in sorted(_SKILLS_DIR.iterdir()):
+        if not skill_dir.is_dir():
+            continue
+
+        skill_name = skill_dir.name
+
+        # Skip pilot-only skills when pilot mode is off
+        if skill_name in _PILOT_ONLY_SKILLS and not pilot_mode:
+            continue
+
+        skill_md = skill_dir / "SKILL.md"
+        if not skill_md.exists():
+            continue
+
+        content = skill_md.read_text()
+        for placeholder, value in replacements.items():
+            content = content.replace(placeholder, value)
+
+        dest_dir = os.path.join(skills_dest, skill_name)
+        os.makedirs(dest_dir, exist_ok=True)
+        with open(os.path.join(dest_dir, "SKILL.md"), "w") as f:
+            f.write(content)
+
+    logger.info("Installed kanban skills to %s (%d skills)",
+                skills_dest, len(list(Path(skills_dest).iterdir())) if os.path.exists(skills_dest) else 0)
 
 
 def start_kanban(project: dict, gh_token: str = "") -> str:
@@ -643,6 +513,9 @@ def start_kanban(project: dict, gh_token: str = "") -> str:
     claude_md_path = os.path.join(kanban_dir, "CLAUDE.md")
     with open(claude_md_path, "w") as f:
         f.write(claude_md)
+
+    # Install kanban skills (.claude/skills/)
+    _install_skills(kanban_dir, project, api_base_url, auth_token)
 
     # Pre-approve kanban tools (merge with existing user-granted permissions)
     import json as _json
@@ -807,7 +680,11 @@ def rebuild_claude_md(project_id: str, project: dict) -> bool:
     claude_md_path = os.path.join(kanban_dir, "CLAUDE.md")
     with open(claude_md_path, "w") as f:
         f.write(claude_md)
-    logger.info("Rebuilt CLAUDE.md for project %s", project_id)
+
+    # Reinstall skills (may add/remove pilot-cycle based on pilot_mode change)
+    _install_skills(kanban_dir, project, api_base_url, auth_token)
+
+    logger.info("Rebuilt CLAUDE.md + skills for project %s", project_id)
     return True
 
 
