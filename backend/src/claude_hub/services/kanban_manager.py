@@ -241,7 +241,6 @@ Always refer to tickets by `#seq` number in conversation, but use the full UUID 
 
 These operations are outside your scope. Do not attempt them:
 
-- **Merge tickets or PRs** — humans decide when to merge
 - **Stop tickets** — humans manage running sessions
 - **Revert tickets** — humans make this call
 - **Hard delete tickets** — use archive instead
