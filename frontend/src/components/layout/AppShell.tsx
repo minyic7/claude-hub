@@ -357,8 +357,8 @@ export function AppShell({
                     onClick={() => setPanelTab(tab)}
                     className={`px-3 py-1.5 text-[11px] font-medium transition-colors ${
                       panelTab === tab
-                        ? 'text-[var(--color-text-primary)] border-b-2 border-[var(--color-accent-blue)]'
-                        : 'text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]'
+                        ? 'text-[#a9b1d6] border-b-2 border-[var(--color-accent-blue)]'
+                        : 'text-[#565f89] hover:text-[#a9b1d6]'
                     }`}
                   >
                     {tab === 'terminal' ? 'Terminal' : tab === 'qa' ? 'QA Agent' : 'Pilot Agent'}
