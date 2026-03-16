@@ -1,12 +1,11 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { Bot, ArrowUpCircle, MessageSquare, Clock, Eye, EyeOff } from 'lucide-react'
+import { Bot, MessageSquare, Clock, Eye, EyeOff } from 'lucide-react'
 import { api } from '../../lib/api'
 
 export interface SupervisorEvent {
   timestamp: string
   cc_summary: string
-  cc_asked_for: string | null
-  action: 'wait' | 'send' | 'trigger'
+  action: 'wait' | 'message'
   message: string | null
   reason: string
 }
@@ -17,8 +16,7 @@ interface PilotAgentPanelProps {
 }
 
 const ACTION_CONFIG = {
-  trigger: { label: 'TRIGGERED', color: 'text-purple-400', bg: 'bg-purple-500/15', icon: ArrowUpCircle },
-  send: { label: 'RESPONDED', color: 'text-blue-400', bg: 'bg-blue-500/15', icon: MessageSquare },
+  message: { label: 'MESSAGED', color: 'text-blue-400', bg: 'bg-blue-500/15', icon: MessageSquare },
   wait: { label: 'WAITING', color: 'text-[var(--color-text-muted)]', bg: 'bg-[var(--color-bg-secondary)]', icon: Clock },
 }
 
@@ -48,13 +46,7 @@ function SupervisorEventCard({ event }: { event: SupervisorEvent }) {
         {event.cc_summary}
       </p>
 
-      {event.cc_asked_for && (
-        <p className="mt-1 text-xs text-[var(--color-accent-yellow)]">
-          CC asked for: {event.cc_asked_for}
-        </p>
-      )}
-
-      {event.action === 'send' && event.message && (
+      {event.action === 'message' && event.message && (
         <div className="mt-1.5 rounded bg-blue-500/10 px-2 py-1 text-xs text-blue-300 font-mono">
           → {event.message}
         </div>

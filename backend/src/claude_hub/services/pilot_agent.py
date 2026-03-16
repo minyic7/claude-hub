@@ -1,8 +1,9 @@
 """PilotAgent — lightweight LLM supervisor for Kanban CC sessions.
 
-Reads tmux pane output, VISION.md, and board state on each tick.
-Decides whether to intervene (send input to CC), trigger a pilot cycle,
-or wait. Stores supervisor events for the frontend Pilot Agent tab.
+Acts as a simulated user: reads tmux pane output, VISION.md, and board state,
+then sends natural-language messages to keep CC productive. PilotAgent asks
+questions, confirms decisions, and answers CC's questions — CC does all the
+reasoning and hard work.
 """
 
 import json
@@ -20,7 +21,6 @@ from claude_hub.services.base_agent import BaseAgent
 from claude_hub.services.kanban_manager import (
     _session_name,
     is_alive,
-    send_pilot_trigger,
 )
 
 logger = logging.getLogger(__name__)
@@ -29,12 +29,17 @@ logger = logging.getLogger(__name__)
 
 MAX_PANE_LINES = 200       # Max lines to capture from tmux pane
 MAX_EVENTS_STORED = 200    # Max supervisor events kept in Redis
-IDLE_TICKS_BEFORE_TRIGGER = 1  # Trigger on first idle detection
 
-PILOT_SYSTEM_PROMPT = """You are the Pilot Agent monitoring a Claude Code session that manages a project's kanban board.
-Your job: keep CC productive and keep the user informed about what's happening.
+PILOT_SYSTEM_PROMPT = """You are the Pilot Agent — a simulated user interacting with a Claude Code (CC) session that manages a project's kanban board.
 
-You are NOT doing the work — Claude Code is. You keep it moving and report its progress.
+## Your role
+You are like a product manager checking in on CC. You:
+- **Ask questions** to understand what CC is doing and guide its priorities
+- **Answer CC's questions** when it needs input (based on VISION.md and board context)
+- **Keep CC moving** — if it's idle, start a conversation about what to do next
+- **Never do the work yourself** — CC has the skills and tools, you just keep it engaged
+
+You are NOT a supervisor issuing commands. You are a collaborative user having a natural conversation.
 
 ## VISION.md (current project vision):
 {vision}
@@ -49,34 +54,53 @@ You are NOT doing the work — Claude Code is. You keep it moving and report its
 
 Respond with a JSON object (no markdown fences):
 {{
-  "cc_summary": "2-3 sentences describing what CC has been doing or just accomplished. Be specific — mention ticket numbers, file names, actions taken. The user reads this to understand progress without looking at the terminal.",
-  "cc_asked_for": "what CC is waiting for, or null if not waiting",
-  "action": "wait" | "send" | "trigger",
-  "message": "exact text to send to CC if action=send, else null",
+  "cc_summary": "2-3 sentences describing what CC has been doing. Be specific — mention ticket numbers, file names, actions taken. The real user reads this to understand progress.",
+  "action": "wait" | "message",
+  "message": "the natural-language message to send to CC (if action=message), else null",
   "reason": "1 sentence: why you chose this action"
 }}
 
 ## Action guide:
-- **"wait"**: CC is actively working (writing code, running commands, thinking). Provide a detailed summary of what it's doing.
-- **"send"**: CC is waiting for input — a question, permission prompt, confirmation, or it's stuck. Send the appropriate response. Be concise and direct.
-- **"trigger"**: CC has finished its work and is sitting at the `>` prompt idle. Send a pilot trigger to start a new cycle.
 
-## How to detect idle CC:
-CC is idle when you see the `>` prompt at the bottom of the terminal with NO ongoing work above it.
-Signs of idle: "Cycle complete", "Ready for the next trigger", a bare `>` prompt after a report.
-Signs of working: "Thinking...", "Running...", tool calls in progress, code being written.
-**When CC is clearly idle, ALWAYS use "trigger" — do not wait.**
+### "wait" — CC is actively working
+Use when CC is writing code, running commands, thinking, or in the middle of a task.
+Do NOT interrupt. Just provide a detailed summary of what it's doing.
 
-## Rules:
-- If CC asked a yes/no question, answer it based on the VISION and board context
-- If CC is in the middle of writing code or running commands, "wait" but describe what it's doing
-- If CC just finished a cycle/report and is at the prompt, "trigger" IMMEDIATELY
-- Never interrupt CC mid-task
-- Keep messages short and direct when sending input
-- If CC seems stuck in a loop (same error 3+ times), send corrective guidance
-- **If CC keeps doing review cycles without starting any tickets**, use "send" with a direct instruction like "You need to start ticket #N now: POST /tickets/{id}/start" instead of triggering another cycle
-- **If the board has TODO tickets but nothing IN_PROGRESS after multiple triggers**, CC is stuck — use "send" to give it explicit instructions to start a ticket
-- ALWAYS write a detailed, specific cc_summary — the user relies on this for progress updates
+### "message" — Send a message to CC
+Use when CC is idle, asked a question, or needs direction. Your message should be **natural and conversational**, like a user typing in the terminal.
+
+**When CC is idle at the `>` prompt:**
+- Look at the board state and VISION.md
+- Ask CC what it thinks we should do next, or suggest a direction
+- Examples:
+  - "I see we have 6 TODO tickets and nothing in progress. What do you think we should tackle first?"
+  - "Ticket #1 looks ready to start — it has no dependencies. What do you think?"
+  - "Nice work on #3! The PR looks good. What's next on the board?"
+  - "I notice #2 failed — can you check what went wrong?"
+
+**When CC asked a question:**
+- Answer based on VISION.md and board context
+- Be direct and helpful, like a knowledgeable user
+
+**When CC seems stuck or confused:**
+- Ask clarifying questions
+- Gently redirect: "I think the priority right now is..."
+- Remind it of available skills: "You can use /board to check the current state"
+
+## How to detect CC state:
+
+**Working** (→ wait): "Thinking...", "Running...", tool calls in progress, code being written, commands executing
+**Idle** (→ message): bare `>` prompt at bottom, "Cycle complete", report just finished, no ongoing work
+**Asking** (→ message): question mark at end, "Should I...?", "Which approach...?", permission prompts
+**Stuck** (→ message): same error 3+ times, no progress for multiple ticks, confused output
+
+## Key rules:
+- Be conversational, not robotic. You're a user, not a system.
+- Ask questions — let CC reason and decide. Don't dictate exact API calls.
+- If CC is idle and the board has TODO tickets with nothing IN_PROGRESS, ALWAYS nudge it to start working.
+- If CC asks about project goals or scope, reference VISION.md.
+- Keep messages concise — 1-3 sentences is ideal.
+- ALWAYS write a detailed, specific cc_summary — the real user relies on this.
 """
 
 
@@ -88,7 +112,6 @@ class SupervisorEvent(dict):
     def __init__(
         self,
         cc_summary: str,
-        cc_asked_for: str | None,
         action: str,
         message: str | None,
         reason: str,
@@ -96,7 +119,6 @@ class SupervisorEvent(dict):
         super().__init__(
             timestamp=datetime.now(timezone.utc).isoformat(),
             cc_summary=cc_summary,
-            cc_asked_for=cc_asked_for,
             action=action,
             message=message,
             reason=reason,
@@ -106,12 +128,11 @@ class SupervisorEvent(dict):
 # ── PilotAgent ─────────────────────────────────────────────────────────
 
 class PilotAgent(BaseAgent):
-    """Tick-driven agent that monitors a Kanban CC session."""
+    """Tick-driven agent that acts as a simulated user for a Kanban CC session."""
 
     def __init__(self, project_id: str, project: dict, agent_settings: dict | None = None):
         self.project_id = project_id
         self.project = project
-        self._idle_ticks = 0
 
         kanban_dir = os.path.join(settings.data_dir, "kanbans", project_id)
         tmux_session = _session_name(project_id)
@@ -140,11 +161,9 @@ class PilotAgent(BaseAgent):
     # ── Hooks ──────────────────────────────────────────────────────
 
     async def _handle_text_response(self, text: str) -> None:
-        # Pilot agent text responses are parsed as JSON decisions, not commentary
         pass
 
     async def _record_cost(self, cost: float, tokens: int) -> None:
-        # Record under project scope, not per-ticket
         r = redis_client.get_pool()
         today = datetime.now().strftime("%Y-%m-%d")
         month = datetime.now().strftime("%Y-%m")
@@ -155,8 +174,7 @@ class PilotAgent(BaseAgent):
         await pipe.execute()
 
     async def _record_activity(self, event_type: str, summary: str) -> None:
-        """Pilot agent records to project-level supervisor events, not ticket activity."""
-        pass  # Supervisor events are recorded via _record_supervisor_event
+        pass
 
     def _activity_source(self) -> str:
         return "pilot_agent"
@@ -164,7 +182,7 @@ class PilotAgent(BaseAgent):
     # ── Tick cycle ─────────────────────────────────────────────────
 
     async def tick(self) -> SupervisorEvent | None:
-        """Run one supervisor tick. Returns event if action taken, None if waiting."""
+        """Run one supervisor tick. Returns event if action taken, None if skipped."""
         if not is_alive(self.project_id):
             return None
 
@@ -184,11 +202,10 @@ class PilotAgent(BaseAgent):
             vision=vision,
             board=board,
             pane_output=pane_output,
-            idle_threshold=IDLE_TICKS_BEFORE_TRIGGER,
         )
 
         # 5. Single LLM call (no conversation history — each tick is independent)
-        self.messages = [{"role": "user", "content": "Analyze the Claude Code session and decide your action."}]
+        self.messages = [{"role": "user", "content": "Check on the Claude Code session and decide whether to send a message or wait."}]
 
         await self._call_api()
 
@@ -200,26 +217,14 @@ class PilotAgent(BaseAgent):
         # 7. Act on decision
         action = decision.get("action", "wait")
 
-        if action == "wait":
-            self._idle_ticks = 0
-        elif action == "trigger":
-            self._idle_ticks += 1
-            if self._idle_ticks < IDLE_TICKS_BEFORE_TRIGGER:
-                # Not enough idle ticks yet — record as wait instead
-                action = "wait"
-            else:
-                send_pilot_trigger(self.project_id, "supervisor")
-                self._idle_ticks = 0
-        elif action == "send":
+        if action == "message":
             message = decision.get("message", "")
             if message:
                 self._send_to_cc(message)
-            self._idle_ticks = 0
 
-        # 8. Always record and broadcast supervisor event (including wait)
+        # 8. Record and broadcast supervisor event
         event = SupervisorEvent(
             cc_summary=decision.get("cc_summary", ""),
-            cc_asked_for=decision.get("cc_asked_for"),
             action=action,
             message=decision.get("message"),
             reason=decision.get("reason", ""),
@@ -297,7 +302,6 @@ class PilotAgent(BaseAgent):
     def _try_parse_json(text: str) -> dict | None:
         """Try to extract JSON from text, handling markdown fences."""
         text = text.strip()
-        # Strip markdown code fences if present
         if text.startswith("```"):
             lines = text.split("\n")
             lines = [l for l in lines if not l.strip().startswith("```")]
@@ -305,7 +309,6 @@ class PilotAgent(BaseAgent):
         try:
             return json.loads(text)
         except json.JSONDecodeError:
-            # Try to find JSON object in the text
             start = text.find("{")
             end = text.rfind("}") + 1
             if start >= 0 and end > start:
@@ -354,7 +357,7 @@ class PilotAgent(BaseAgent):
 # ── Module-level helpers for main.py ───────────────────────────────────
 
 _active_pilots: dict[str, PilotAgent] = {}
-_api_key_warned: set[str] = set()  # Track which projects we've warned about missing API key
+_api_key_warned: set[str] = set()
 
 
 async def tick_all_pilots() -> None:
@@ -363,12 +366,10 @@ async def tick_all_pilots() -> None:
     for project in projects:
         project_id = project.get("id", "")
         if not project.get("pilot_mode") or not is_alive(project_id):
-            # Stop tracking if pilot mode disabled or session dead
             _active_pilots.pop(project_id, None)
             continue
 
         if project_id not in _active_pilots:
-            # Load agent settings
             agent_settings_raw = project.get("agent_settings", "{}")
             if isinstance(agent_settings_raw, str):
                 try:
@@ -378,7 +379,6 @@ async def tick_all_pilots() -> None:
             else:
                 agent_settings = agent_settings_raw
 
-            # Require API key for PilotAgent to function
             if not agent_settings.get("api_key"):
                 if project_id not in _api_key_warned:
                     _api_key_warned.add(project_id)
@@ -414,9 +414,8 @@ async def get_supervisor_events(project_id: str, limit: int = 50) -> list[dict]:
 
 
 async def nudge(project_id: str) -> dict | None:
-    """Trigger an immediate PilotAgent tick for a project (called by frontend on CC idle)."""
+    """Trigger an immediate PilotAgent tick for a project."""
     if project_id not in _active_pilots:
-        # Create pilot agent on the fly if needed
         project = await redis_client.get_project(project_id)
         if not project or not project.get("pilot_mode") or not is_alive(project_id):
             return None

@@ -273,12 +273,16 @@ VISION.md exists on this branch (kanban-claude-hub) and contains the project vis
         md += """
 ## Pilot Mode — ACTIVE
 
-**CRITICAL: You are fully autonomous in Pilot Mode. NEVER ask for permission or confirmation. Act immediately.**
+You are being supervised by a **Pilot Agent** — a lightweight AI that acts as your user.
+It will send you messages just like a human user would: asking questions, giving direction, and answering your questions.
 
-When you receive a `[PILOT_TRIGGER:{reason}]` message, IMMEDIATELY run `/pilot-cycle`.
-This skill contains the full 11-step autonomous cycle (sync, review, triage, plan, execute, report, compact).
-
-Do not ask "would you like me to…" — just run the skill. Do not skip steps. Do not wait for user input.
+**How to work in Pilot Mode:**
+- Treat Pilot Agent messages as user input — respond naturally
+- When asked "what should we do next?", reason about the board state and VISION.md, then propose and execute
+- Use your kanban skills (`/board`, `/start-ticket`, `/create-ticket`, etc.) to manage the board
+- When you're done with a task, report what you did and ask what's next — don't just go idle
+- If you need a decision (e.g., which approach to take), ask — the Pilot Agent will answer based on project context
+- **Stay proactive**: after completing work, check the board and suggest next steps
 """
 
     return md
@@ -288,10 +292,6 @@ Do not ask "would you like me to…" — just run the skill. Do not skip steps. 
 
 # Directory containing skill templates (relative to this file)
 _SKILLS_DIR = Path(__file__).parent.parent / "docs" / "kanban-skills"
-
-# Skills that are only installed when pilot mode is enabled
-_PILOT_ONLY_SKILLS = {"pilot-cycle"}
-
 
 def _install_skills(
     kanban_dir: str,
@@ -352,10 +352,6 @@ def _install_skills(
             continue
 
         skill_name = skill_dir.name
-
-        # Skip pilot-only skills when pilot mode is off
-        if skill_name in _PILOT_ONLY_SKILLS and not pilot_mode:
-            continue
 
         skill_md = skill_dir / "SKILL.md"
         if not skill_md.exists():
@@ -689,22 +685,22 @@ def rebuild_claude_md(project_id: str, project: dict) -> bool:
 
 
 def send_pilot_trigger(project_id: str, reason: str) -> None:
-    """Send a pilot mode trigger to the kanban CC session via tmux send-keys.
+    """Notify PilotAgent about an event by scheduling an immediate tick.
 
-    Only sends if the project has pilot_mode enabled and the session is alive.
-    The trigger text is typed into the terminal as user input for Claude Code.
+    Previously sent [PILOT_TRIGGER:...] text to CC. Now PilotAgent acts as a
+    simulated user and will notice the event (e.g., ticket merged, config changed)
+    on its next tick via board state. This function triggers that tick sooner.
     """
-    name = _session_name(project_id)
     if not is_alive(project_id):
         logger.debug("Pilot trigger skipped: no alive session for %s", project_id)
         return
 
-    trigger_text = f"[PILOT_TRIGGER:{reason}]"
+    # Schedule an immediate PilotAgent nudge (async — fire and forget)
+    import asyncio
     try:
-        subprocess.run(
-            ["tmux", "send-keys", "-t", name, trigger_text, "Enter"],
-            capture_output=True, timeout=5,
-        )
-        logger.info("Sent pilot trigger to %s: %s", project_id, reason)
+        loop = asyncio.get_running_loop()
+        from claude_hub.services.pilot_agent import nudge
+        loop.create_task(nudge(project_id))
+        logger.info("Nudged PilotAgent for %s (reason: %s)", project_id, reason)
     except Exception as e:
         logger.warning("Failed to send pilot trigger to %s: %s", project_id, e)
