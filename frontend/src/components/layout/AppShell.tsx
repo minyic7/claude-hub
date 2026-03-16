@@ -170,6 +170,26 @@ export function AppShell({
             )}
           </span>
 
+          {!isMobile && activeProject && (
+            <button
+              onClick={async () => {
+                const newVal = !activeProject.pilot_mode
+                try {
+                  await api.projects.update(activeProject.id, { pilot_mode: newVal })
+                } catch { /* ignore */ }
+              }}
+              className={`flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium transition-colors ${
+                activeProject.pilot_mode
+                  ? 'border-purple-500/40 bg-purple-500/10 text-purple-400'
+                  : 'border-[var(--color-border)] text-[var(--color-text-muted)] hover:border-purple-500/40'
+              }`}
+              title={activeProject.pilot_mode ? 'Pilot Mode active — click to disable' : 'Enable Pilot Mode'}
+            >
+              <span className={`inline-block h-1.5 w-1.5 rounded-full ${activeProject.pilot_mode ? 'bg-purple-400 animate-pulse' : 'bg-[var(--color-text-muted)]'}`} />
+              Pilot
+            </button>
+          )}
+
           {!isMobile && <DeployStatusWidget state={deployState} runs={deployRuns} />}
 
           {/* Stats (hidden on mobile) */}

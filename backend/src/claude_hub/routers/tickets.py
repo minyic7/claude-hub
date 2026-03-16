@@ -12,10 +12,28 @@ from claude_hub import redis_client
 from claude_hub.config import settings
 from claude_hub.models.ticket import Ticket, TicketCreate, TicketStatus, TicketUpdate
 from claude_hub.routers.ws import broadcast
-from claude_hub.services.kanban_manager import send_kanban_update
+from claude_hub.services.kanban_manager import send_kanban_update, send_pilot_trigger
 from claude_hub.services.ticket_service import append_ticket_note
 
 router = APIRouter(prefix="/api/tickets", tags=["tickets"])
+
+
+def _fire_pilot_trigger(project_id: str, ticket_id: str) -> None:
+    """Fire pilot trigger if project has pilot_mode enabled. Non-blocking."""
+    if not project_id:
+        return
+    import asyncio
+
+    async def _check_and_fire():
+        project = await redis_client.get_project(project_id)
+        if project and project.get("pilot_mode"):
+            send_pilot_trigger(project_id, f"ticket_merged:{ticket_id}")
+
+    try:
+        loop = asyncio.get_running_loop()
+        loop.create_task(_check_and_fire())
+    except RuntimeError:
+        pass
 
 
 def _is_conflicted(ticket: dict) -> bool:
@@ -93,6 +111,7 @@ async def create_ticket(body: TicketCreate):
         external_id=body.external_id,
         metadata=body.metadata,
         depends_on=body.depends_on,
+        pilot=body.pilot,
         created_at=datetime.now(timezone.utc),
         status_changed_at=datetime.now(timezone.utc),
     )
@@ -1040,8 +1059,13 @@ async def process_queue() -> str | None:
 @router.get("/queue")
 async def get_queue():
     """Get the current queue of tickets waiting to start."""
+    from claude_hub.services import session_manager
     queue_ids = await redis_client.get_queue()
-    return {"queue": queue_ids}
+    return {
+        "queue": queue_ids,
+        "active_sessions": session_manager.active_session_count(),
+        "max_sessions": settings.max_sessions,
+    }
 
 
 @router.delete("/queue/{ticket_id}")
@@ -1172,6 +1196,7 @@ async def sync_review_status():
                     "data": updated,
                 })
                 synced.append(ticket["id"])
+                _fire_pilot_trigger(ticket.get("project_id", ""), ticket["id"])
             except Exception:
                 pass
         else:
@@ -1474,6 +1499,65 @@ async def get_ticket_ci_status(ticket_id: str):
     return get_ci_status(clone_path, branch, gh_token, pr_number=pr_number)
 
 
+@router.get("/{ticket_id}/diff")
+async def get_ticket_diff(ticket_id: str):
+    """Get PR diff for a ticket via gh pr diff."""
+    import subprocess
+
+    ticket = await redis_client.get_ticket(ticket_id)
+    if not ticket:
+        raise HTTPException(404, "Ticket not found")
+
+    pr_number = ticket.get("pr_number")
+    if not pr_number:
+        return {"diff": None, "stats": None}
+
+    project = await _get_project_for_ticket(ticket)
+    gh_token = project.get("gh_token", "") or settings.gh_token
+    clone_path = ticket.get("clone_path", "")
+
+    if not clone_path:
+        return {"diff": None, "stats": None}
+
+    import os
+    env = {**os.environ, "GH_TOKEN": gh_token} if gh_token else None
+
+    # Get diff
+    result = subprocess.run(
+        ["gh", "pr", "diff", str(pr_number)],
+        cwd=clone_path, capture_output=True, text=True, env=env, timeout=30,
+    )
+    if result.returncode != 0:
+        return {"diff": None, "stats": None}
+
+    diff = result.stdout
+    # Truncate large diffs (50KB limit)
+    if len(diff) > 50_000:
+        diff = diff[:50_000] + "\n... (truncated, diff too large)"
+
+    # Get stats
+    stat_result = subprocess.run(
+        ["gh", "pr", "diff", str(pr_number), "--stat"],
+        cwd=clone_path, capture_output=True, text=True, env=env, timeout=30,
+    )
+    stats = None
+    if stat_result.returncode == 0 and stat_result.stdout.strip():
+        lines = stat_result.stdout.strip().split("\n")
+        # Last line is summary like " 3 files changed, 45 insertions(+), 12 deletions(-)"
+        summary_line = lines[-1].strip() if lines else ""
+        import re
+        files_match = re.search(r"(\d+) files? changed", summary_line)
+        ins_match = re.search(r"(\d+) insertions?", summary_line)
+        del_match = re.search(r"(\d+) deletions?", summary_line)
+        stats = {
+            "files_changed": int(files_match.group(1)) if files_match else 0,
+            "insertions": int(ins_match.group(1)) if ins_match else 0,
+            "deletions": int(del_match.group(1)) if del_match else 0,
+        }
+
+    return {"diff": diff, "stats": stats}
+
+
 @router.post("/{ticket_id}/merge")
 async def merge_ticket(ticket_id: str):
     import asyncio
@@ -1497,6 +1581,7 @@ async def merge_ticket(ticket_id: str):
         except InvalidTransition as e:
             raise HTTPException(409, str(e))
         await broadcast({"type": "ticket_updated", "ticket_id": ticket_id, "data": updated})
+        _fire_pilot_trigger(ticket.get("project_id", ""), ticket_id)
         return updated
 
     project = await _get_project_for_ticket(ticket)
@@ -1564,6 +1649,8 @@ async def merge_ticket(ticket_id: str):
 
     # Merged — session slot freed, process queue
     await process_queue()
+
+    _fire_pilot_trigger(ticket.get("project_id", ""), ticket_id)
 
     return updated
 

@@ -25,6 +25,9 @@ export interface Project {
   repo_url: string
   gh_token: string  // masked in API responses
   base_branch: string
+  pilot_mode: boolean
+  max_board_tickets: number
+  max_tickets_per_cycle: number
   created_at: string
 }
 
@@ -33,6 +36,9 @@ export interface ProjectCreate {
   repo_url: string
   gh_token?: string
   base_branch?: string
+  pilot_mode?: boolean
+  max_board_tickets?: number
+  max_tickets_per_cycle?: number
 }
 
 export interface Ticket {
@@ -58,6 +64,7 @@ export interface Ticket {
   has_conflicts?: boolean
   priority: number
   archived: boolean
+  pilot: boolean
   tmux_session: string | null
   agent_cost_usd: number
   agent_tokens: number
@@ -78,4 +85,5 @@ export interface TicketCreate {
   description?: string
   branch_type?: BranchType
   depends_on?: string[]
+  pilot?: boolean
 }

@@ -287,6 +287,7 @@ export function TicketCard({ ticket, latestActivity, activityEvents, onClick, on
 
           <div className="mb-2 flex items-center gap-1.5">
             <Badge color="blue">{ticket.branch_type}</Badge>
+            {ticket.pilot && <Badge color="purple">PILOT</Badge>}
             {ticket.status === 'queued' && <Badge color="yellow">QUEUED</Badge>}
             {(ticket.status === 'queued' || ticket.status === 'awaiting_merge') && ticket.priority >= 0 && (
               <span className="inline-flex items-center rounded bg-[var(--color-bg-secondary)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--color-text-muted)]" title={`Merge priority ${ticket.priority} (lower = first)`}>

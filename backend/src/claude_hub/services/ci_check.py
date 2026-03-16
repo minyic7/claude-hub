@@ -261,6 +261,15 @@ async def wait_for_ci_and_merge(
                 await broadcast({"type": "ticket_updated", "ticket_id": ticket_id, "data": updated})
                 logger.info("CI passed, merged ticket %s", ticket_id)
                 await process_queue()
+                # Fire pilot trigger
+                ticket = await redis_client.get_ticket(ticket_id)
+                if ticket:
+                    project_id = ticket.get("project_id", "")
+                    if project_id:
+                        project = await redis_client.get_project(project_id)
+                        if project and project.get("pilot_mode"):
+                            from claude_hub.services.kanban_manager import send_pilot_trigger
+                            send_pilot_trigger(project_id, f"ticket_merged:{ticket_id}")
             except Exception as e:
                 logger.error("Merge failed for %s: %s", ticket_id, e)
                 updated = await transition(ticket_id, TicketStatus.FAILED, failed_reason=str(e))

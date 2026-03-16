@@ -13,6 +13,9 @@ class Project(BaseModel):
     repo_url: str
     gh_token: str = ""
     base_branch: str = "main"
+    pilot_mode: bool = False
+    max_board_tickets: int = 10
+    max_tickets_per_cycle: int = 2
     created_at: datetime
 
 
@@ -28,6 +31,9 @@ class ProjectUpdate(BaseModel):
     repo_url: str | None = None
     gh_token: str | None = None
     base_branch: str | None = None
+    pilot_mode: bool | None = None
+    max_board_tickets: int | None = None
+    max_tickets_per_cycle: int | None = None
 
 
 # ─── Agent Settings (per-project) ────────────────────────────────────────────
@@ -108,6 +114,7 @@ class Ticket(BaseModel):
     # Priority (lower = higher priority)
     priority: int = 0
     archived: bool = False
+    pilot: bool = False
 
     # Cost
     agent_cost_usd: float = 0.0
@@ -131,6 +138,7 @@ class TicketCreate(BaseModel):
     external_id: str | None = None
     metadata: dict = Field(default_factory=dict)
     depends_on: list[str] = Field(default_factory=list)
+    pilot: bool = False
 
 
 class TicketUpdate(BaseModel):

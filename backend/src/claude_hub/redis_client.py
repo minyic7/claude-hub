@@ -47,12 +47,38 @@ async def save_project(project_dict: dict) -> None:
     await r.sadd("projects:all", pid)
 
 
+_PROJECT_BOOL_FIELDS = {"pilot_mode"}
+_PROJECT_INT_FIELDS = {"max_board_tickets", "max_tickets_per_cycle"}
+_PROJECT_INT_DEFAULTS = {"max_board_tickets": 10, "max_tickets_per_cycle": 2}
+
+
+def _deserialize_project(data: dict) -> dict:
+    result = {}
+    for k, v in data.items():
+        if k in _PROJECT_BOOL_FIELDS:
+            result[k] = v.lower() in ("true", "1") if v else False
+        elif k in _PROJECT_INT_FIELDS:
+            try:
+                result[k] = int(v) if v and v != "" else _PROJECT_INT_DEFAULTS.get(k, 0)
+            except (ValueError, TypeError):
+                result[k] = _PROJECT_INT_DEFAULTS.get(k, 0)
+        else:
+            result[k] = v
+    # Ensure defaults for missing fields
+    for field, default in _PROJECT_INT_DEFAULTS.items():
+        if field not in result:
+            result[field] = default
+    if "pilot_mode" not in result:
+        result["pilot_mode"] = False
+    return result
+
+
 async def get_project(project_id: str) -> dict | None:
     r = _r()
     data = await r.hgetall(f"project:{project_id}")
     if not data:
         return None
-    return data
+    return _deserialize_project(data)
 
 
 async def list_projects() -> list[dict]:
@@ -325,7 +351,7 @@ _JSON_FIELDS = {"metadata", "depends_on", "agent_review"}
 _FLOAT_FIELDS = {"agent_cost_usd"}
 _INT_FIELDS = {"pr_number"}
 _INT_FIELDS_DEFAULT_ZERO = {"priority", "agent_tokens", "seq"}
-_BOOL_FIELDS = {"has_conflicts", "archived"}
+_BOOL_FIELDS = {"has_conflicts", "archived", "pilot"}
 _NULLABLE_FIELDS = {
     "blocked_question", "failed_reason", "clone_path", "pr_url",
     "pr_number", "tmux_session", "started_at", "completed_at", "status_changed_at", "external_id",

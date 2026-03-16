@@ -67,6 +67,11 @@ async def github_webhook(
                 })
                 merged_ticket_id = ticket["id"]
                 logger.info("Auto-merged ticket %s via webhook", ticket["id"])
+                # Fire pilot trigger for the project
+                from claude_hub.services.kanban_manager import send_pilot_trigger
+                project_id = ticket.get("project_id", "")
+                if project_id:
+                    send_pilot_trigger(project_id, f"ticket_merged:{ticket['id']}")
             except Exception as e:
                 logger.error("Failed to auto-merge ticket %s: %s", ticket["id"], e)
                 return {"status": "error", "message": str(e)}
