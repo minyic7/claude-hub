@@ -202,6 +202,14 @@ async def update_project(project_id: str, body: ProjectUpdate):
             if wh.get("webhook_id"):
                 await redis_client.update_project_fields(project_id, {"webhook_id": str(wh["webhook_id"])})
 
+    # Rebuild CLAUDE.md + notify session if pilot-related fields changed
+    pilot_fields = {"pilot_mode", "max_board_tickets", "max_tickets_per_cycle"}
+    if pilot_fields & updates.keys():
+        from claude_hub.services.kanban_manager import rebuild_claude_md, send_pilot_trigger, is_alive
+        full_project = await redis_client.get_project(project_id)
+        if full_project and rebuild_claude_md(project_id, full_project) and is_alive(project_id):
+            send_pilot_trigger(project_id, "config_changed")
+
     updated = await redis_client.get_project(project_id)
     updated["gh_token"] = _mask_token(updated.get("gh_token", ""))
     await broadcast({"type": "project_updated", "data": updated})

@@ -49,6 +49,7 @@ export function AppShell({
   const [showKanbanTerminal, setShowKanbanTerminal] = useState(true)
   const [showDocs, setShowDocs] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState<Project | null>(null)
+  const [pilotConfirm, setPilotConfirm] = useState(false)
 
   const activeProject = activeProjectId ? projects.get(activeProjectId) : null
 
@@ -172,12 +173,7 @@ export function AppShell({
 
           {!isMobile && activeProject && (
             <button
-              onClick={async () => {
-                const newVal = !activeProject.pilot_mode
-                try {
-                  await api.projects.update(activeProject.id, { pilot_mode: newVal })
-                } catch { /* ignore */ }
-              }}
+              onClick={() => setPilotConfirm(true)}
               className={`flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium transition-colors ${
                 activeProject.pilot_mode
                   ? 'border-purple-500/40 bg-purple-500/10 text-purple-400'
@@ -350,6 +346,7 @@ export function AppShell({
               projectName={activeProject?.name}
               visible={showKanbanTerminal}
               onClose={() => setShowKanbanTerminal(false)}
+              pilotMode={activeProject?.pilot_mode}
             />
           </>
         )}
@@ -364,7 +361,7 @@ export function AppShell({
         />
       )}
       <CreateProjectModal open={showCreateProject} onClose={() => setShowCreateProject(false)} />
-      <AgentSettingsModal open={showSettings} onClose={() => setShowSettings(false)} initialTab={openSettingsTab as 'system' | 'agent' | 'account'} activeProjectId={activeProjectId} />
+      <AgentSettingsModal open={showSettings} onClose={() => setShowSettings(false)} initialTab={openSettingsTab as 'system' | 'agent' | 'account'} activeProjectId={activeProjectId} activeProject={activeProject} />
 
       {/* Mobile FAB — hidden when any bottom sheet is open */}
       {isMobile && activeProjectId && !detailOpen && !showCreateTicket && (
@@ -377,6 +374,44 @@ export function AppShell({
       )}
 
       <DocsOverlay open={showDocs} onClose={() => setShowDocs(false)} />
+
+      {/* Pilot mode confirmation */}
+      {pilotConfirm && activeProject && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50">
+          <div className="w-80 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-panel)] p-5 shadow-xl">
+            <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">
+              {activeProject.pilot_mode ? 'Disable Pilot Mode' : 'Enable Pilot Mode'}
+            </h3>
+            <p className="mt-2 text-xs text-[var(--color-text-muted)]">
+              {activeProject.pilot_mode
+                ? 'Disabling Pilot Mode will restore manual terminal input. The kanban session will continue running.'
+                : 'Enabling Pilot Mode gives the kanban CC full autonomy to create and manage tickets. Terminal input will be disabled.'}
+            </p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                onClick={() => setPilotConfirm(false)}
+                className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-xs text-[var(--color-text-primary)] hover:bg-[var(--color-bg-secondary)]"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={async () => {
+                  const newVal = !activeProject.pilot_mode
+                  setPilotConfirm(false)
+                  try {
+                    await api.projects.update(activeProject.id, { pilot_mode: newVal })
+                  } catch { /* ignore */ }
+                }}
+                className={`rounded-md px-3 py-1.5 text-xs font-medium text-white hover:opacity-90 ${
+                  activeProject.pilot_mode ? 'bg-[var(--color-text-muted)]' : 'bg-purple-500'
+                }`}
+              >
+                {activeProject.pilot_mode ? 'Disable' : 'Enable'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Delete project confirmation */}
       {deleteConfirm && (

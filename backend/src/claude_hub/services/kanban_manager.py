@@ -751,6 +751,25 @@ def send_kanban_update(project_id: str) -> None:
     pass
 
 
+def rebuild_claude_md(project_id: str, project: dict) -> bool:
+    """Rewrite CLAUDE.md for an existing kanban session (e.g. after pilot config change).
+
+    Returns True if the file was written, False if the kanban dir doesn't exist.
+    """
+    kanban_dir = os.path.join(settings.data_dir, "kanbans", project_id)
+    if not os.path.exists(kanban_dir):
+        return False
+
+    api_base_url = f"http://localhost:{settings.port}"
+    auth_token = _generate_internal_token() if settings.auth_enabled else ""
+    claude_md = _build_kanban_claude_md(project, api_base_url, auth_token)
+    claude_md_path = os.path.join(kanban_dir, "CLAUDE.md")
+    with open(claude_md_path, "w") as f:
+        f.write(claude_md)
+    logger.info("Rebuilt CLAUDE.md for project %s", project_id)
+    return True
+
+
 def send_pilot_trigger(project_id: str, reason: str) -> None:
     """Send a pilot mode trigger to the kanban CC session via tmux send-keys.
 

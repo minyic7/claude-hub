@@ -49,9 +49,10 @@ interface Props {
   onClose: () => void
   initialTab?: Tab
   activeProjectId?: string | null
+  activeProject?: { max_board_tickets: number; max_tickets_per_cycle: number } | null
 }
 
-export function AgentSettingsModal({ open, onClose, initialTab, activeProjectId }: Props) {
+export function AgentSettingsModal({ open, onClose, initialTab, activeProjectId, activeProject }: Props) {
   const [globalSettings, setGlobalSettings] = useState<GlobalSettings | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -63,6 +64,10 @@ export function AgentSettingsModal({ open, onClose, initialTab, activeProjectId 
   // Per-project agent settings
   const [agentSettings, setAgentSettings] = useState<ProjectAgentSettings>(DEFAULT_AGENT)
   const [agentLoaded, setAgentLoaded] = useState(false)
+
+  // Pilot config (from project)
+  const [maxBoardTickets, setMaxBoardTickets] = useState(10)
+  const [maxTicketsPerCycle, setMaxTicketsPerCycle] = useState(2)
 
   // Sync initialTab when modal opens
   useEffect(() => {
@@ -82,8 +87,13 @@ export function AgentSettingsModal({ open, onClose, initialTab, activeProjectId 
           .then((s) => { setAgentSettings(s); setAgentLoaded(true) })
           .catch(() => { setAgentSettings(DEFAULT_AGENT); setAgentLoaded(true) })
       }
+      // Sync pilot config from project
+      if (activeProject) {
+        setMaxBoardTickets(activeProject.max_board_tickets)
+        setMaxTicketsPerCycle(activeProject.max_tickets_per_cycle)
+      }
     }
-  }, [open, activeProjectId])
+  }, [open, activeProjectId, activeProject])
 
   const handleSave = async () => {
     setSaving(true)
@@ -96,6 +106,11 @@ export function AgentSettingsModal({ open, onClose, initialTab, activeProjectId 
       } else if (activeTab === 'agent' && activeProjectId) {
         const updated = await api.settings.updateProjectAgent(activeProjectId, agentSettings)
         setAgentSettings(updated)
+        // Save pilot config to project
+        await api.projects.update(activeProjectId, {
+          max_board_tickets: maxBoardTickets,
+          max_tickets_per_cycle: maxTicketsPerCycle,
+        })
       }
       setSaved(true)
       setTimeout(() => setSaved(false), 2000)
@@ -430,6 +445,44 @@ export function AgentSettingsModal({ open, onClose, initialTab, activeProjectId 
                         value={agentSettings.budget_monthly_usd}
                         onChange={(e) => setAgentSettings({ ...agentSettings, budget_monthly_usd: Number(e.target.value) })}
                         className="w-full rounded border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2 py-1 text-xs text-[var(--color-text-primary)]"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Pilot Mode Limits */}
+                <div>
+                  <label className="mb-1 block text-sm text-[var(--color-text-primary)]">Pilot Mode Limits</label>
+                  <p className="mb-2 text-[10px] text-[var(--color-text-muted)]">
+                    Controls how many tickets the kanban CC can manage in Pilot Mode.
+                  </p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="mb-1 flex items-center justify-between text-xs text-[var(--color-text-muted)]">
+                        <span>Max Board Tickets</span>
+                        <span className="font-mono">{maxBoardTickets}</span>
+                      </label>
+                      <input
+                        type="range"
+                        min={1}
+                        max={30}
+                        value={maxBoardTickets}
+                        onChange={(e) => setMaxBoardTickets(Number(e.target.value))}
+                        className="w-full accent-purple-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1 flex items-center justify-between text-xs text-[var(--color-text-muted)]">
+                        <span>Max Per Cycle</span>
+                        <span className="font-mono">{maxTicketsPerCycle}</span>
+                      </label>
+                      <input
+                        type="range"
+                        min={1}
+                        max={10}
+                        value={maxTicketsPerCycle}
+                        onChange={(e) => setMaxTicketsPerCycle(Number(e.target.value))}
+                        className="w-full accent-purple-500"
                       />
                     </div>
                   </div>

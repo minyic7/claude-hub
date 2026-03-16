@@ -29,9 +29,10 @@ interface KanbanTerminalProps {
   visible: boolean
   onClose: () => void
   tabBar?: React.ReactNode
+  pilotMode?: boolean
 }
 
-export function KanbanTerminal({ projectId, projectName, visible, onClose, tabBar }: KanbanTerminalProps) {
+export function KanbanTerminal({ projectId, projectName, visible, onClose, tabBar, pilotMode }: KanbanTerminalProps) {
   const termRef = useRef<HTMLDivElement>(null)
   const terminalRef = useRef<Terminal | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
@@ -43,6 +44,10 @@ export function KanbanTerminal({ projectId, projectName, visible, onClose, tabBa
   const draggingRef = useRef(false)
   const [scrollMode, setScrollMode] = useState(false)
   const scrollModeRef = useRef(false)
+  const pilotModeRef = useRef(!!pilotMode)
+
+  // Keep pilotMode ref in sync for closures
+  useEffect(() => { pilotModeRef.current = !!pilotMode }, [pilotMode])
 
   const sendResize = useCallback((cols: number, rows: number) => {
     const ws = wsRef.current
@@ -111,6 +116,7 @@ export function KanbanTerminal({ projectId, projectName, visible, onClose, tabBa
     }
 
     terminal.onData((data) => {
+      if (pilotModeRef.current) return
       if (ws.readyState === WebSocket.OPEN) {
         ws.send(new TextEncoder().encode(data))
       }
@@ -155,6 +161,7 @@ export function KanbanTerminal({ projectId, projectName, visible, onClose, tabBa
     fitAddonRef.current = fitAddon
 
     terminal.attachCustomKeyEventHandler((e) => {
+      if (pilotModeRef.current) return false
       // Shift+Enter: send CSI u encoded sequence so Claude Code receives newline
       if (e.type === 'keydown' && e.key === 'Enter' && e.shiftKey) {
         const ws = wsRef.current
@@ -343,6 +350,11 @@ export function KanbanTerminal({ projectId, projectName, visible, onClose, tabBa
             <span className="font-mono text-[10px] text-[var(--color-text-muted)]/40 select-all shrink-0" title={projectId}>
               {projectId.slice(0, 8)}
             </span>
+            {pilotMode && (
+              <span className="rounded bg-purple-500/20 px-1.5 py-0.5 text-[10px] font-medium text-purple-400">
+                PILOT — input disabled
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
             <button
