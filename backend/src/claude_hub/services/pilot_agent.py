@@ -132,6 +132,13 @@ After sending a message, set `wait_seconds` to give CC time to process and respo
 - **Don't repeat yourself.** If the terminal shows CC is already acting on your suggestion, wait for it to finish.
 - When in doubt, wait. It's better to check in 30 seconds late than to interrupt CC mid-thought.
 
+## Smoke test enforcement:
+- CC has Docker access and is instructed to smoke test every ticket before marking it `awaiting_merge`.
+- If CC moves a ticket to `awaiting_merge` without mentioning a smoke test, ask: "Did you run the smoke test? Build + verify imports + test endpoints before we merge."
+- If CC says smoke test failed due to environment limitations (needs external DB, API key, etc.), accept the skip — don't insist.
+- If CC says smoke test failed due to a code bug, encourage it to fix and retry (max 2 attempts).
+- **Never block a ticket indefinitely** on smoke test failure — after 2 retries, let CC mark it `failed` with details.
+
 ## Key rules:
 - Be conversational, not robotic. You're a user, not a system.
 - Ask questions — let CC reason and decide. Don't dictate exact API calls.
@@ -713,7 +720,8 @@ Rules:
 - If CC asked a question → action: "message" with an answer
 - If tickets are in_progress, tell CC to check their status (e.g. /board)
 - wait_seconds: 15-30 (never more than 30)
-- IMPORTANT: if CC is idle and waiting, you MUST send a message. Do NOT keep waiting indefinitely."""
+- IMPORTANT: if CC is idle and waiting, you MUST send a message. Do NOT keep waiting indefinitely.
+- SMOKE TEST: If CC marks a ticket awaiting_merge without mentioning a smoke test (docker build, test run, endpoint check), ask it to run one before merging. Accept skips for environment limitations (external DB, API keys)."""
 
     # Run one-shot QA Agent
     gh_token = project.get("gh_token", "")

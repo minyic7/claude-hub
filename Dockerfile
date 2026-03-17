@@ -14,13 +14,19 @@ RUN pnpm run build
 # ─── Stage 2: Runtime ────────────────────────────────────
 FROM python:3.13-slim
 
-# System dependencies: tmux, git, curl
+# System dependencies: tmux, git, curl, docker CLI
 RUN apt-get update && apt-get install -y --no-install-recommends \
     tmux \
     git \
     curl \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
+
+# Docker CLI (for smoke testing via host docker.sock)
+ARG TARGETARCH
+RUN DOCKER_ARCH=$([ "$TARGETARCH" = "arm64" ] && echo "aarch64" || echo "x86_64") && \
+    curl -fsSL "https://download.docker.com/linux/static/stable/${DOCKER_ARCH}/docker-27.5.1.tgz" \
+    | tar xz --strip-components=1 -C /usr/local/bin docker/docker
 
 # Node.js 24 LTS (required for Claude Code CLI)
 RUN curl -fsSL https://deb.nodesource.com/setup_24.x | bash - \

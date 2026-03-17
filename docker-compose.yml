@@ -25,6 +25,7 @@ services:
     volumes:
       - clone-data:/data
       - claude-auth:/root/.claude
+      - /var/run/docker.sock:/var/run/docker.sock
     env_file:
       - .env
     environment:
