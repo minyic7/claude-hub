@@ -6,10 +6,12 @@ questions, confirms decisions, and answers CC's questions — CC does all the
 reasoning and hard work.
 """
 
+import hashlib
 import json
 import logging
 import os
 import subprocess
+import time
 from datetime import datetime, timedelta, timezone
 
 from claude_hub import redis_client
@@ -396,6 +398,7 @@ class PilotAgent(BaseAgent):
                 ["tmux", "send-keys", "-t", self.tmux_session, "-l", message],
                 capture_output=True, timeout=5,
             )
+            time.sleep(1)  # let CC process pasted text before pressing Enter
             subprocess.run(
                 ["tmux", "send-keys", "-t", self.tmux_session, "Enter"],
                 capture_output=True, timeout=5,
@@ -516,21 +519,39 @@ async def nudge(project_id: str) -> dict | None:
 _qa_next_tick_at: dict[str, datetime] = {}
 _qa_last_message: dict[str, str] = {}
 _qa_last_message_at: dict[str, datetime] = {}
+_qa_in_flight: set[str] = set()  # prevent concurrent QA ticks per project
+_qa_last_pane_hash: dict[str, str] = {}  # detect stale pane output
 
 
 async def _tick_via_qa_agent(
     project_id: str, project: dict, agent_settings: dict, force: bool = False,
 ) -> dict | None:
     """Run a PilotAgent tick using QA Agent CC (-p one-shot) instead of API call."""
-    from claude_hub.services.qa_session import ask_qa
-
     if not is_alive(project_id):
+        return None
+
+    # Prevent concurrent QA ticks for the same project
+    if project_id in _qa_in_flight:
+        logger.debug("QA Agent already in-flight for %s, skipping", project_id)
         return None
 
     # Respect wait timer (unless forced by nudge)
     now = datetime.now(timezone.utc)
     if not force and project_id in _qa_next_tick_at and now < _qa_next_tick_at[project_id]:
         return None
+
+    _qa_in_flight.add(project_id)
+    try:
+        return await _tick_via_qa_agent_inner(project_id, project, agent_settings, force)
+    finally:
+        _qa_in_flight.discard(project_id)
+
+
+async def _tick_via_qa_agent_inner(
+    project_id: str, project: dict, agent_settings: dict, force: bool = False,
+) -> dict | None:
+    from claude_hub.services.qa_session import ask_qa
+    now = datetime.now(timezone.utc)
 
     # Read context (same as PilotAgent.tick)
     kanban_dir = os.path.join(settings.data_dir, "kanbans", project_id)
@@ -570,14 +591,28 @@ async def _tick_via_qa_agent(
     else:
         board = "(empty board)"
 
-    # 4. Last message context
+    # 4. Last message context + staleness detection
     last_msg = _qa_last_message.get(project_id)
     last_msg_at = _qa_last_message_at.get(project_id)
     if last_msg and last_msg_at:
         ago = int((now - last_msg_at).total_seconds())
         last_message_context = f'You sent this {ago}s ago: "{last_msg}"'
     else:
+        ago = 0
         last_message_context = "(this is your first check-in — no prior messages sent)"
+
+    # Detect stale pane output (same content as last tick)
+    pane_hash = hashlib.md5(pane_output.encode()).hexdigest()
+    prev_hash = _qa_last_pane_hash.get(project_id)
+    _qa_last_pane_hash[project_id] = pane_hash
+    pane_unchanged = prev_hash == pane_hash
+
+    # Build staleness warning
+    staleness_warning = ""
+    if pane_unchanged and ago > 60:
+        staleness_warning = f"""
+⚠️ STALE WARNING: The terminal output has NOT changed since your last check, and you last sent a message {ago}s ago.
+CC is likely idle and waiting for you. You MUST send a message — do NOT return action "wait" again."""
 
     # Build prompt for QA Agent
     prompt = f"""You are acting as the Pilot Agent — a simulated user for a Claude Code kanban session.
@@ -590,6 +625,7 @@ Board state:
 
 Your last message to CC:
 {last_message_context}
+{staleness_warning}
 
 CC terminal output (newest at bottom):
 {pane_output[-3000:]}
@@ -598,10 +634,12 @@ Respond with ONLY a JSON object (no markdown, no commentary):
 {{"cc_summary": "what CC has been doing", "action": "wait" or "message", "wait_seconds": <number>, "message": "text to send (if action=message, else null)", "reason": "why"}}
 
 Rules:
-- If CC is actively working → action: "wait"
-- If CC is idle at '>' prompt → action: "message" with guidance
+- If CC is actively working (running commands, editing files) → action: "wait"
+- If CC is idle at '❯' or '>' prompt with no active task → action: "message" with guidance on what to do next
 - If CC asked a question → action: "message" with an answer
-- wait_seconds: 15-120 depending on task"""
+- If tickets are in_progress, tell CC to check their status (e.g. /board)
+- wait_seconds: 15-60 (never more than 60)
+- IMPORTANT: if CC is idle and waiting, you MUST send a message. Do NOT keep waiting indefinitely."""
 
     # Run one-shot QA Agent
     gh_token = project.get("gh_token", "")
@@ -615,10 +653,11 @@ Rules:
         logger.warning("QA Agent returned unparseable response for %s: %s", project_id, response[:200])
         return None
 
-    # Schedule next tick
+    # Schedule next tick (hard cap at 60s to prevent indefinite stalls)
+    MAX_WAIT = 60
     wait_seconds = decision.get("wait_seconds", DEFAULT_WAIT_SECONDS)
     try:
-        wait_seconds = max(0, int(wait_seconds))
+        wait_seconds = min(max(0, int(wait_seconds)), MAX_WAIT)
     except (TypeError, ValueError):
         wait_seconds = DEFAULT_WAIT_SECONDS
     _qa_next_tick_at[project_id] = now + timedelta(seconds=wait_seconds)
@@ -633,6 +672,7 @@ Rules:
                     ["tmux", "send-keys", "-t", tmux_session, "-l", message],
                     capture_output=True, timeout=5,
                 )
+                time.sleep(1)  # let CC process pasted text before pressing Enter
                 subprocess.run(
                     ["tmux", "send-keys", "-t", tmux_session, "Enter"],
                     capture_output=True, timeout=5,
