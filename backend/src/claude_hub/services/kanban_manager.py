@@ -276,6 +276,11 @@ VISION.md exists on this branch (kanban-claude-hub) and contains the project vis
 - Never touch Milestones — only the user manages milestones.
 - {vision_instructions}
 
+## CI Pipeline — Keep It Minimal
+Do NOT add linters (ruff, eslint, pylint, etc.) to CI pipelines unless the user explicitly asks for it.
+Linting blocks PRs over trivial style issues (line length, import order) and wastes time.
+Focus CI on things that actually catch bugs: **type-check, build, and tests**.
+
 ## Smoke Test — Definition of Done
 
 A ticket is NOT done until it passes a smoke test. Before marking any ticket as `awaiting_merge`:
