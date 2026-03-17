@@ -45,6 +45,7 @@ export function AppShell({
   const [showCreateProject, setShowCreateProject] = useState(false)
   const [showProjectMenu, setShowProjectMenu] = useState(false)
   const [showNotifications, setShowNotifications] = useState(false)
+  const [expandedNotifId, setExpandedNotifId] = useState<string | null>(null)
   const [showSettings, setShowSettings] = useState(false)
   const isMobile = useIsMobile()
   const [showKanbanTerminal, setShowKanbanTerminal] = useState(true)
@@ -252,36 +253,42 @@ export function AppShell({
                     {notifications.length === 0 ? (
                       <p className="px-3 py-4 text-center text-xs text-[var(--color-text-muted)]">No notifications</p>
                     ) : (
-                      notifications.slice().reverse().map((n) => (
-                        <div
-                          key={n.id}
-                          onClick={() => onMarkRead(n.id)}
-                          className={`flex w-full items-start gap-2 border-b border-[var(--color-border)]/50 px-3 py-2 text-left hover:bg-[var(--color-bg-secondary)] cursor-pointer ${n.read ? 'opacity-60' : ''}`}
-                        >
-                          <span className={`mt-0.5 inline-block h-2 w-2 shrink-0 rounded-full ${n.read ? 'opacity-30' : ''} ${
-                            n.type === 'error' ? 'bg-[var(--color-accent-red)]' :
-                            n.type === 'warning' ? 'bg-[var(--color-accent-yellow)]' :
-                            n.type === 'success' ? 'bg-[var(--color-accent-green)]' :
-                            'bg-[var(--color-accent-blue)]'
-                          }`} />
-                          <div className="min-w-0 flex-1">
-                            <p className="text-xs text-[var(--color-text-primary)] line-clamp-2">{n.message}</p>
-                            <div className="mt-0.5 flex items-center gap-2">
-                              <span className="text-[10px] text-[var(--color-text-muted)]">
-                                {new Date(n.timestamp).toLocaleTimeString()}
-                              </span>
-                              {n.action && (
-                                <button
-                                  onClick={(e) => { e.stopPropagation(); n.action!.callback(); setShowNotifications(false) }}
-                                  className="text-[10px] font-medium text-[var(--color-accent-blue)] hover:text-[var(--color-text-primary)] transition-colors"
-                                >
-                                  {n.action.label}
-                                </button>
-                              )}
+                      notifications.slice().reverse().map((n) => {
+                        const isExpanded = expandedNotifId === n.id
+                        return (
+                          <div
+                            key={n.id}
+                            onClick={() => {
+                              onMarkRead(n.id)
+                              setExpandedNotifId(isExpanded ? null : n.id)
+                            }}
+                            className={`flex w-full items-start gap-2 border-b border-[var(--color-border)]/50 px-3 py-2 text-left hover:bg-[var(--color-bg-secondary)] cursor-pointer ${n.read ? 'opacity-60' : ''}`}
+                          >
+                            <span className={`mt-0.5 inline-block h-2 w-2 shrink-0 rounded-full ${n.read ? 'opacity-30' : ''} ${
+                              n.type === 'error' ? 'bg-[var(--color-accent-red)]' :
+                              n.type === 'warning' ? 'bg-[var(--color-accent-yellow)]' :
+                              n.type === 'success' ? 'bg-[var(--color-accent-green)]' :
+                              'bg-[var(--color-accent-blue)]'
+                            }`} />
+                            <div className="min-w-0 flex-1">
+                              <p className={`text-xs text-[var(--color-text-primary)] ${isExpanded ? 'whitespace-pre-wrap break-words' : 'line-clamp-2'}`}>{n.message}</p>
+                              <div className="mt-0.5 flex items-center gap-2">
+                                <span className="text-[10px] text-[var(--color-text-muted)]">
+                                  {new Date(n.timestamp).toLocaleTimeString()}
+                                </span>
+                                {n.action && (
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); n.action!.callback(); setShowNotifications(false) }}
+                                    className="text-[10px] font-medium text-[var(--color-accent-blue)] hover:text-[var(--color-text-primary)] transition-colors"
+                                  >
+                                    {n.action.label}
+                                  </button>
+                                )}
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      ))
+                        )
+                      })
                     )}
                   </div>
                 </div>

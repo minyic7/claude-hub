@@ -25,18 +25,18 @@ export function NotificationToast({ notifications, onDismiss }: NotificationToas
   if (visible.length === 0) return null
 
   return (
-    <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2">
+    <div className="fixed bottom-8 left-8 z-50 flex flex-col gap-1.5 max-w-[260px]">
       {visible.map((n) => {
         const Icon = icons[n.type]
         return (
           <div
             key={n.id}
-            className={`flex items-start gap-2 rounded-lg border px-3 py-2 shadow-lg backdrop-blur-sm animate-in slide-in-from-right ${colors[n.type]}`}
+            className={`flex items-start gap-1.5 rounded-md border px-2 py-1.5 shadow-md backdrop-blur-md bg-[var(--color-bg-panel)]/70 animate-in slide-in-from-left ${colors[n.type]}`}
           >
-            <Icon size={16} className="mt-0.5 shrink-0" />
-            <p className="flex-1 text-sm">{n.message}</p>
-            <button onClick={() => onDismiss(n.id)} className="shrink-0 opacity-60 hover:opacity-100">
-              <X size={14} />
+            <Icon size={13} className="mt-0.5 shrink-0" />
+            <p className="flex-1 text-xs leading-snug">{n.message}</p>
+            <button onClick={() => onDismiss(n.id)} className="shrink-0 opacity-50 hover:opacity-100">
+              <X size={12} />
             </button>
           </div>
         )

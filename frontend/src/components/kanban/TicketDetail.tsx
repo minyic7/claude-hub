@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import { AlertCircle, ArrowDown, ArrowLeft, ArrowUp, Check, CircleDot, Copy, ExternalLink, GitBranch, GitMerge, Loader2, MessageSquareWarning, Pencil, RefreshCw, RotateCcw, Send, Square, StickyNote, Trash2, Undo2, X } from 'lucide-react'
 import { useIsMobile } from '../../hooks/useIsMobile'
 import { useVisualViewport } from '../../hooks/useVisualViewport'
@@ -73,6 +73,55 @@ export function TicketDetail({ ticket, activities, allTickets, onClose, onDelete
   const unresolvedCount = ticket.unresolved_thread_count ?? null
   const [noteText, setNoteText] = useState('')
   const [addingNote, setAddingNote] = useState(false)
+
+  // Resizable panel width (desktop only)
+  const MIN_WIDTH = 400
+  const MAX_WIDTH = 900
+  const DEFAULT_WIDTH = 520
+  const [panelWidth, setPanelWidth] = useState(() => {
+    try {
+      const saved = localStorage.getItem('ticketDetailWidth')
+      if (saved) {
+        const w = parseInt(saved, 10)
+        if (w >= MIN_WIDTH && w <= MAX_WIDTH) return w
+      }
+    } catch { /* ignore */ }
+    return DEFAULT_WIDTH
+  })
+  const resizing = useRef(false)
+  const resizeStartX = useRef(0)
+  const resizeStartWidth = useRef(0)
+
+  const handleResizeStart = useCallback((e: ReactMouseEvent) => {
+    e.preventDefault()
+    resizing.current = true
+    resizeStartX.current = e.clientX
+    resizeStartWidth.current = panelWidth
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+
+    const onMove = (ev: globalThis.MouseEvent) => {
+      if (!resizing.current) return
+      // Dragging left increases width (panel is on the right side)
+      const delta = resizeStartX.current - ev.clientX
+      const newWidth = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, resizeStartWidth.current + delta))
+      setPanelWidth(newWidth)
+    }
+    const onUp = () => {
+      resizing.current = false
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+      // Persist
+      setPanelWidth(w => {
+        try { localStorage.setItem('ticketDetailWidth', String(w)) } catch { /* ignore */ }
+        return w
+      })
+    }
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+  }, [panelWidth])
 
   // Scroll buttons for the scrollable content area
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -307,10 +356,20 @@ export function TicketDetail({ ticket, activities, allTickets, onClose, onDelete
       className={
         isMobile
           ? 'fixed inset-0 z-50 flex flex-col overflow-hidden bg-[var(--color-bg-panel)] animate-slide-up'
-          : 'detail-panel flex w-[420px] shrink-0 flex-col overflow-hidden border-l border-[var(--color-border)] bg-[var(--color-bg-panel)]'
+          : 'detail-panel flex shrink-0 flex-col overflow-hidden border-l border-[var(--color-border)] bg-[var(--color-bg-panel)] relative'
       }
-      style={isMobile && keyboardOffset > 0 ? { height: `calc(100% - ${keyboardOffset}px)`, top: 0 } : undefined}
+      style={isMobile
+        ? (keyboardOffset > 0 ? { height: `calc(100% - ${keyboardOffset}px)`, top: 0 } : undefined)
+        : { width: `${panelWidth}px` }
+      }
     >
+      {/* Desktop resize handle */}
+      {!isMobile && (
+        <div
+          onMouseDown={handleResizeStart}
+          className="absolute left-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-[var(--color-accent-blue)]/30 active:bg-[var(--color-accent-blue)]/50 z-10"
+        />
+      )}
       {/* Mobile drag handle */}
       {isMobile && (
         <div className="flex justify-center py-2 shrink-0">
