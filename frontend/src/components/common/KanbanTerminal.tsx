@@ -31,11 +31,9 @@ interface KanbanTerminalProps {
   tabBar?: React.ReactNode
   overlayContent?: React.ReactNode
   pilotMode?: boolean
-  /** Override the WebSocket path (default: /ws/kanban/{projectId}/terminal) */
-  wsPathOverride?: string
 }
 
-export function KanbanTerminal({ projectId, projectName, visible, onClose, tabBar, overlayContent, pilotMode, wsPathOverride }: KanbanTerminalProps) {
+export function KanbanTerminal({ projectId, projectName, visible, onClose, tabBar, overlayContent, pilotMode }: KanbanTerminalProps) {
   const termRef = useRef<HTMLDivElement>(null)
   const terminalRef = useRef<Terminal | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
@@ -82,7 +80,7 @@ export function KanbanTerminal({ projectId, projectName, visible, onClose, tabBa
     const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
     const token = getToken()
     const qs = token ? `?token=${encodeURIComponent(token)}` : ''
-    const wsPath = wsPathOverride || `/ws/kanban/${projectId}/terminal`
+    const wsPath = `/ws/kanban/${projectId}/terminal`
     const wsUrl = `${proto}//${window.location.host}${wsPath}${qs}`
 
     if (wsRef.current) {
@@ -141,7 +139,7 @@ export function KanbanTerminal({ projectId, projectName, visible, onClose, tabBa
     })
 
     return ws
-  }, [projectId, sendResize, wsPathOverride])
+  }, [projectId, sendResize])
 
   useEffect(() => {
     if (!termRef.current) return

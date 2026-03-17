@@ -9,7 +9,6 @@ import { CreateProjectModal } from '../projects/CreateProjectModal'
 import { AgentSettingsModal } from '../settings/AgentSettingsModal'
 import { KanbanTerminal } from '../common/KanbanTerminal'
 import { PilotAgentPanel } from '../common/PilotAgentPanel'
-import { QATerminal } from '../common/QATerminal'
 import { DocsOverlay } from '../common/DocsOverlay'
 import type { DeployState } from '../../hooks/useDeployStatus'
 import type { WorkflowRun } from '../../lib/api'
@@ -52,7 +51,7 @@ export function AppShell({
   const [showDocs, setShowDocs] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState<Project | null>(null)
   const [pilotConfirm, setPilotConfirm] = useState(false)
-  const [panelTab, setPanelTab] = useState<'terminal' | 'pilot' | 'qa'>('terminal')
+  const [panelTab, setPanelTab] = useState<'terminal' | 'pilot'>('terminal')
 
   const activeProject = activeProjectId ? projects.get(activeProjectId) : null
 
@@ -351,7 +350,7 @@ export function AppShell({
             pilotMode={activeProject?.pilot_mode}
             tabBar={
               <div className="flex border-b border-[var(--color-border)] bg-[#1a1b26] shrink-0">
-                {(['terminal', 'qa', 'pilot'] as const).map(tab => (
+                {(['terminal', 'pilot'] as const).map(tab => (
                   <button
                     key={tab}
                     onClick={() => setPanelTab(tab)}
@@ -361,15 +360,13 @@ export function AppShell({
                         : 'text-[#565f89] hover:text-[#a9b1d6]'
                     }`}
                   >
-                    {tab === 'terminal' ? 'Terminal' : tab === 'qa' ? 'QA Agent' : 'Pilot Agent'}
+                    {tab === 'terminal' ? 'Terminal' : 'Pilot Agent'}
                   </button>
                 ))}
               </div>
             }
             overlayContent={panelTab === 'pilot' ? (
               <PilotAgentPanel projectId={activeProjectId} visible />
-            ) : panelTab === 'qa' ? (
-              <QATerminal projectId={activeProjectId} visible />
             ) : undefined}
           />
         )}

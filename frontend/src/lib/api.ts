@@ -202,14 +202,6 @@ export const api = {
     status: (projectId: string) =>
       request<KanbanStatus>(`/projects/${projectId}/kanban/status`),
   },
-  qa: {
-    start: (projectId: string) =>
-      request<QAStatus>(`/projects/${projectId}/qa/start`, { method: 'POST' }),
-    restart: (projectId: string) =>
-      request<QAStatus>(`/projects/${projectId}/qa/restart`, { method: 'POST' }),
-    status: (projectId: string) =>
-      request<QAStatus>(`/projects/${projectId}/qa/status`),
-  },
   github: {
     actions: (projectId: string) =>
       request<{ runs: WorkflowRun[] }>(`/github/actions?project_id=${encodeURIComponent(projectId)}`),
@@ -217,11 +209,6 @@ export const api = {
   version: () => request<{ sha: string }>('/version'),
   health: () => request<{ status: string; redis: boolean }>('/health'),
   cost: () => request<{ daily: number; monthly: number }>('/cost'),
-}
-
-export interface QAStatus {
-  alive: boolean
-  session_name: string
 }
 
 export interface KanbanStatus {

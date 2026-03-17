@@ -521,12 +521,8 @@ _qa_last_message_at: dict[str, datetime] = {}
 async def _tick_via_qa_agent(
     project_id: str, project: dict, agent_settings: dict, force: bool = False,
 ) -> dict | None:
-    """Run a PilotAgent tick using the QA Agent CC session instead of API call."""
-    from claude_hub.services.qa_session import is_alive as qa_alive, ask_qa_agent
-
-    if not qa_alive(project_id):
-        logger.debug("QA Agent not running for %s, skipping tick", project_id)
-        return None
+    """Run a PilotAgent tick using QA Agent CC (-p one-shot) instead of API call."""
+    from claude_hub.services.qa_session import ask_qa
 
     if not is_alive(project_id):
         return None
@@ -607,8 +603,9 @@ Rules:
 - If CC asked a question → action: "message" with an answer
 - wait_seconds: 15-120 depending on task"""
 
-    # Send to QA Agent and wait for response
-    response = await ask_qa_agent(project_id, prompt, timeout=90)
+    # Run one-shot QA Agent
+    gh_token = project.get("gh_token", "")
+    response = await ask_qa(prompt, cwd=kanban_dir, gh_token=gh_token, timeout=90)
     if not response:
         return None
 

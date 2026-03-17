@@ -594,14 +594,6 @@ def start_kanban(project: dict, gh_token: str = "") -> str:
 
     logger.info("Started kanban session %s for project %s", name, project_id)
 
-    # Auto-start QA Agent session alongside kanban
-    try:
-        from claude_hub.services.qa_session import start_qa_session, is_alive as qa_alive
-        if not qa_alive(project_id):
-            start_qa_session(project, gh_token)
-    except Exception as e:
-        logger.warning("Failed to auto-start QA Agent for %s: %s", project_id, e)
-
     return name
 
 
@@ -622,18 +614,12 @@ def get_status(project_id: str) -> dict:
 
 
 def restart_kanban(project: dict, gh_token: str = "") -> str:
-    """Kill and recreate the kanban session (also restarts QA Agent)."""
+    """Kill and recreate the kanban session."""
     project_id = project["id"]
     name = _session_name(project_id)
     if _tmux_exists(name):
         subprocess.run(["tmux", "kill-session", "-t", name], capture_output=True)
         logger.info("Killed existing kanban session %s", name)
-    # QA Agent will be auto-restarted by start_kanban
-    try:
-        from claude_hub.services.qa_session import stop_qa_session
-        stop_qa_session(project_id)
-    except Exception:
-        pass
     return start_kanban(project, gh_token)
 
 

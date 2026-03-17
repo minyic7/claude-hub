@@ -632,14 +632,12 @@ async def _run_contextual_review(ticket_id: str, ticket_agent, agent_cfg: dict) 
 
 
 async def _try_qa_agent_review(ticket_id: str, ticket: dict, verify_result) -> bool:
-    """Try to review using QA Agent CC session. Returns True if review was performed."""
-    from claude_hub.services.qa_session import is_alive as qa_alive, ask_qa_agent
+    """Try to review using QA Agent CC (-p one-shot). Returns True if review was performed."""
+    from claude_hub.services.qa_session import ask_qa
     from claude_hub.services.ticket_service import transition
     from claude_hub.services.agent_review import _record_activity
 
     project_id = ticket.get("project_id", "")
-    if not qa_alive(project_id):
-        return False
 
     # Get diff for review
     clone_path = ticket.get("clone_path", "")
@@ -694,7 +692,10 @@ Rules:
 - reject only for critical issues (bugs, security, missing core functionality)
 - be pragmatic — minor style issues are not grounds for rejection"""
 
-    response = await ask_qa_agent(project_id, prompt, timeout=120)
+    # Run one-shot QA Agent review
+    project = await redis_client.get_project(project_id)
+    gh_token = project.get("gh_token", "") if project else ""
+    response = await ask_qa(prompt, cwd=clone_path, gh_token=gh_token, timeout=120)
     if not response:
         logger.warning("QA Agent review timeout for %s", ticket_id)
         # Timeout — approve to avoid blocking

@@ -166,7 +166,7 @@ async def test_connection(body: dict):
     except Exception as e:
         err = str(e)
         if "authentication" in err.lower() or "api key" in err.lower() or "unauthorized" in err.lower():
-            raise HTTPException(401, f"Authentication failed: {err[:200]}")
+            raise HTTPException(422, f"Authentication failed: {err[:200]}")
         if "not found" in err.lower() or "does not exist" in err.lower():
             raise HTTPException(404, f"Model not found: {err[:200]}")
         raise HTTPException(502, f"Connection failed: {err[:200]}")
