@@ -82,9 +82,9 @@ function EventRow({ event, collapsed }: { event: SupervisorEvent; collapsed?: nu
       )}
       <div className="min-w-0 flex-1">
         {isMessage && event.message ? (
-          <p className="text-xs text-blue-300 truncate">{event.message}</p>
+          <p className="text-xs text-blue-300 break-words whitespace-pre-wrap">{event.message}</p>
         ) : (
-          <p className="text-xs text-[var(--color-text-muted)]/70 truncate">
+          <p className="text-xs text-[var(--color-text-muted)]/70 break-words whitespace-pre-wrap">
             {event.cc_summary}
             {collapsed && collapsed > 1 && (
               <span className="ml-1 text-[10px] text-[var(--color-text-muted)]/40">({collapsed}x)</span>
