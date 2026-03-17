@@ -8,7 +8,7 @@ import { CreateTicketModal } from '../tickets/CreateTicketModal'
 import { CreateProjectModal } from '../projects/CreateProjectModal'
 import { AgentSettingsModal } from '../settings/AgentSettingsModal'
 import { KanbanTerminal } from '../common/KanbanTerminal'
-import { PilotAgentPanel } from '../common/PilotAgentPanel'
+import { PilotStatusBar } from '../common/PilotAgentPanel'
 import { DocsOverlay } from '../common/DocsOverlay'
 import type { DeployState } from '../../hooks/useDeployStatus'
 import type { WorkflowRun } from '../../lib/api'
@@ -51,8 +51,6 @@ export function AppShell({
   const [showDocs, setShowDocs] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState<Project | null>(null)
   const [pilotConfirm, setPilotConfirm] = useState(false)
-  const [panelTab, setPanelTab] = useState<'terminal' | 'pilot'>('terminal')
-
   const activeProject = activeProjectId ? projects.get(activeProjectId) : null
 
   // Open settings when requested externally (e.g. from notification action)
@@ -348,26 +346,13 @@ export function AppShell({
             visible={showKanbanTerminal}
             onClose={() => setShowKanbanTerminal(false)}
             pilotMode={activeProject?.pilot_mode}
-            tabBar={
-              <div className="flex border-b border-[var(--color-border)] bg-[#1a1b26] shrink-0">
-                {(['terminal', 'pilot'] as const).map(tab => (
-                  <button
-                    key={tab}
-                    onClick={() => setPanelTab(tab)}
-                    className={`px-3 py-1.5 text-[11px] font-medium transition-colors ${
-                      panelTab === tab
-                        ? 'text-[#a9b1d6] border-b-2 border-[var(--color-accent-blue)]'
-                        : 'text-[#565f89] hover:text-[#a9b1d6]'
-                    }`}
-                  >
-                    {tab === 'terminal' ? 'Terminal' : 'Pilot Agent'}
-                  </button>
-                ))}
-              </div>
+            bottomContent={
+              <PilotStatusBar
+                projectId={activeProjectId}
+                pilotMode={!!activeProject?.pilot_mode}
+                onNudge={() => api.projects.nudgeSupervisor(activeProjectId)}
+              />
             }
-            overlayContent={panelTab === 'pilot' ? (
-              <PilotAgentPanel projectId={activeProjectId} visible />
-            ) : undefined}
           />
         )}
       </main>

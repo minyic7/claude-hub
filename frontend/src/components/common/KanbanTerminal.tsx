@@ -30,10 +30,11 @@ interface KanbanTerminalProps {
   onClose: () => void
   tabBar?: React.ReactNode
   overlayContent?: React.ReactNode
+  bottomContent?: React.ReactNode
   pilotMode?: boolean
 }
 
-export function KanbanTerminal({ projectId, projectName, visible, onClose, tabBar, overlayContent, pilotMode }: KanbanTerminalProps) {
+export function KanbanTerminal({ projectId, projectName, visible, onClose, tabBar, overlayContent, bottomContent, pilotMode }: KanbanTerminalProps) {
   const termRef = useRef<HTMLDivElement>(null)
   const terminalRef = useRef<Terminal | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
@@ -412,6 +413,8 @@ export function KanbanTerminal({ projectId, projectName, visible, onClose, tabBa
             </div>
           )}
         </div>
+        {/* Bottom content (e.g. Pilot status bar) */}
+        {bottomContent}
       </div>
     </div>
   )

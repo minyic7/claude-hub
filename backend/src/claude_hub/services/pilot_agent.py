@@ -154,6 +154,7 @@ class SupervisorEvent(dict):
         action: str,
         message: str | None,
         reason: str,
+        wait_seconds: int = 0,
     ):
         super().__init__(
             timestamp=datetime.now(timezone.utc).isoformat(),
@@ -161,6 +162,7 @@ class SupervisorEvent(dict):
             action=action,
             message=message,
             reason=reason,
+            wait_seconds=wait_seconds,
         )
 
 
@@ -298,6 +300,7 @@ class PilotAgent(BaseAgent):
             action=action,
             message=decision.get("message"),
             reason=decision.get("reason", ""),
+            wait_seconds=wait_seconds,
         )
         await self._record_supervisor_event(event)
         return event
@@ -689,6 +692,7 @@ Rules:
         action=action,
         message=decision.get("message"),
         reason=decision.get("reason", ""),
+        wait_seconds=wait_seconds,
     )
 
     # Store in Redis and broadcast
