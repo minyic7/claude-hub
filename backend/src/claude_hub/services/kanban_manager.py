@@ -297,7 +297,12 @@ A ticket is NOT done until it passes a smoke test. Before marking any ticket as 
 2. **Verify imports/startup** — e.g. `docker run --rm <image> python -c "from app.main import app"`,
    or `uv run python -c "import ..."` — make sure the application can actually start.
 3. **Run existing tests** — `pytest`, `pnpm test`, `cargo test`, etc. if the project has tests.
-4. **Curl endpoints** (if applicable) — spin up a temporary container on a random port,
+4. **E2E tests for frontend** — if the project has a frontend and Playwright is configured,
+   run `pnpm exec playwright test`. If the project has a frontend but NO E2E tests yet,
+   add Playwright with a basic test covering the core user flow (page loads, nav works,
+   key buttons are clickable). This catches bugs that unit tests miss: broken routing,
+   unclickable buttons, missing components, etc.
+5. **Curl endpoints** (if applicable) — spin up a temporary container on a random port,
    hit key endpoints, verify they return expected responses, then stop the container.
 
 **Docker is available** — you have access to the host Docker daemon via `/var/run/docker.sock`.
