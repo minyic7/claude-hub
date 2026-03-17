@@ -281,6 +281,12 @@ Do NOT add linters (ruff, eslint, pylint, etc.) to CI pipelines unless the user 
 Linting blocks PRs over trivial style issues (line length, import order) and wastes time.
 Focus CI on things that actually catch bugs: **type-check, build, and tests**.
 
+## Post-Merge — Verify CI/CD
+After a ticket is merged, check that CI/CD succeeded:
+- Run `/ci-status` on the merged ticket to verify the deploy pipeline passed.
+- If CI/CD fails after merge, create a **hotfix ticket** immediately with the error details.
+- Do NOT move on to the next batch of tickets until the deploy is green.
+
 ## Smoke Test — Definition of Done
 
 A ticket is NOT done until it passes a smoke test. Before marking any ticket as `awaiting_merge`:

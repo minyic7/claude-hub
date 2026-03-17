@@ -721,7 +721,8 @@ Rules:
 - If tickets are in_progress, tell CC to check their status (e.g. /board)
 - wait_seconds: 15-30 (never more than 30)
 - IMPORTANT: if CC is idle and waiting, you MUST send a message. Do NOT keep waiting indefinitely.
-- SMOKE TEST: If CC marks a ticket awaiting_merge without mentioning a smoke test (docker build, test run, endpoint check), ask it to run one before merging. Accept skips for environment limitations (external DB, API keys)."""
+- SMOKE TEST: If CC marks a ticket awaiting_merge without mentioning a smoke test (docker build, test run, endpoint check), ask it to run one before merging. Accept skips for environment limitations (external DB, API keys).
+- POST-MERGE CI/CD: After a ticket is merged, remind CC to check CI/CD status. If deploy failed, CC should create a hotfix ticket immediately. Don't move on until deploy is green."""
 
     # Run one-shot QA Agent
     gh_token = project.get("gh_token", "")
