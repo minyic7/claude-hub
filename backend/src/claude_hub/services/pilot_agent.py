@@ -99,9 +99,9 @@ After sending a message, set `wait_seconds` to give CC time to process and respo
   - "We're running low on tickets — can you re-read VISION.md and plan the next set?"
   - "Only one ticket in progress and nothing queued. Let's plan ahead — check VISION.md?"
   - Encourage CC to create small, parallelizable tickets with proper priority
-- **If a ticket was recently merged**, remind CC to verify CI/CD:
-  - "#3 just merged — can you run /ci-status to make sure the deployment looks good?"
-  - "Nice, #6 is merged! Let's double-check CI passed before moving on."
+- **If a ticket was recently merged**, remind CC to verify deployment:
+  - "#3 just merged — can you run /cd-status to make sure the deploy succeeded?"
+  - "Nice, #6 is merged! Let's check /cd-status before moving on."
 - **If multiple independent tickets exist**, suggest starting them in parallel:
   - "I see #1 and #2 have no shared dependencies — could we start both at once using /start-bulk?"
   - "Now that #1 is merged, #2 and #3 are both unblocked. Let's get them both going!"
@@ -722,7 +722,7 @@ Rules:
 - wait_seconds: 15-30 (never more than 30)
 - IMPORTANT: if CC is idle and waiting, you MUST send a message. Do NOT keep waiting indefinitely.
 - SMOKE TEST: If CC marks a ticket awaiting_merge without mentioning a smoke test (docker build, test run, endpoint check), ask it to run one before merging. Accept skips for environment limitations (external DB, API keys).
-- POST-MERGE CI/CD: After a ticket is merged, remind CC to check CI/CD status. If deploy failed, CC should create a hotfix ticket immediately. Don't move on until deploy is green."""
+- POST-MERGE DEPLOY: After a ticket is merged, remind CC to run /cd-status. If deploy failed, CC should create a hotfix ticket immediately. Don't move on until deploy is green."""
 
     # Run one-shot QA Agent
     gh_token = project.get("gh_token", "")

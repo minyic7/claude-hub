@@ -227,7 +227,8 @@ You have kanban skills installed as slash commands. Use these instead of raw cur
 | `/request-changes TICKET_ID` | Send AWAITING_MERGE back for revision |
 | `/resolve-conflicts TICKET_ID` | Auto-resolve merge conflicts |
 | `/ticket-diff TICKET_ID` | Read PR diff |
-| `/ci-status TICKET_ID` | Check CI pass/fail |
+| `/ci-status TICKET_ID` | Check CI pass/fail (before merge) |
+| `/cd-status` | Check deploy workflow status (after merge) |
 | `/unresolved-threads TICKET_ID` | Check open PR review threads |
 | `/add-note TICKET_ID` | Append a note to any ticket |
 | `/merge-ticket TICKET_ID` | Merge a ticket's PR |
@@ -281,10 +282,10 @@ Do NOT add linters (ruff, eslint, pylint, etc.) to CI pipelines unless the user 
 Linting blocks PRs over trivial style issues (line length, import order) and wastes time.
 Focus CI on things that actually catch bugs: **type-check, build, and tests**.
 
-## Post-Merge — Verify CI/CD
-After a ticket is merged, check that CI/CD succeeded:
-- Run `/ci-status` on the merged ticket to verify the deploy pipeline passed.
-- If CI/CD fails after merge, create a **hotfix ticket** immediately with the error details.
+## Post-Merge — Verify Deployment
+After a ticket is merged, verify the deploy succeeded:
+- Run `/cd-status` to check the latest deploy workflow on main.
+- If deploy fails, create a **hotfix ticket** immediately with the error details.
 - Do NOT move on to the next batch of tickets until the deploy is green.
 
 ## Smoke Test — Definition of Done
