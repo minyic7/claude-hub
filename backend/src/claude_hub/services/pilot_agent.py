@@ -432,6 +432,73 @@ class PilotAgent(BaseAgent):
 
 _active_pilots: dict[str, PilotAgent] = {}
 _api_key_warned: set[str] = set()
+_board_complete_notified: set[str] = set()  # prevent repeated completion events
+
+_ACTIVE_STATUSES = {"todo", "queued", "in_progress", "blocked", "verifying",
+                     "reviewing", "awaiting_merge", "merging", "failed"}
+
+
+async def _check_board_complete(project_id: str, project: dict) -> bool:
+    """If all tickets are merged/archived (none active), disable pilot mode.
+
+    Returns True if board is complete and pilot was stopped.
+    """
+    tickets = await redis_client.list_tickets_by_project(project_id)
+
+    # No tickets yet — don't stop, pilot might be telling CC to create some
+    if not tickets:
+        _board_complete_notified.discard(project_id)
+        return False
+
+    # Any ticket in an active status → not complete
+    for t in tickets:
+        if t.get("status", "") in _ACTIVE_STATUSES and not t.get("archived"):
+            _board_complete_notified.discard(project_id)
+            return False
+
+    # Already notified for this project — just skip tick silently
+    if project_id in _board_complete_notified:
+        return True
+
+    # Board complete — record event, disable pilot mode
+    _board_complete_notified.add(project_id)
+
+    merged = sum(1 for t in tickets if t.get("status") == "merged" and not t.get("archived"))
+    archived = sum(1 for t in tickets if t.get("archived"))
+
+    event = SupervisorEvent(
+        cc_summary=f"All work complete. {merged} ticket(s) merged, {archived} archived.",
+        action="message",
+        message="All tickets are done! Pilot mode will now turn off. Great work!",
+        reason="Board is fully complete — no active tickets remain. Auto-disabling pilot mode.",
+    )
+
+    # Broadcast completion event
+    r = redis_client.get_pool()
+    key = f"pilot:{project_id}:supervisor_events"
+    await r.rpush(key, json.dumps(dict(event)))
+    await r.ltrim(key, -MAX_EVENTS_STORED, -1)
+    await broadcast({
+        "type": "supervisor_event",
+        "data": {"project_id": project_id, **event},
+    })
+
+    # Disable pilot mode
+    await redis_client.update_project_fields(project_id, {"pilot_mode": False})
+    await broadcast({
+        "type": "project_updated",
+        "data": {**project, "pilot_mode": False},
+    })
+
+    # Clean up
+    _active_pilots.pop(project_id, None)
+    _qa_in_flight.discard(project_id)
+    _qa_next_tick_at.pop(project_id, None)
+    _qa_last_pane_hash.pop(project_id, None)
+
+    logger.info("Board complete for %s — pilot mode auto-disabled (%d merged, %d archived)",
+                project_id, merged, archived)
+    return True
 
 
 async def tick_all_pilots() -> None:
@@ -441,6 +508,10 @@ async def tick_all_pilots() -> None:
         project_id = project.get("id", "")
         if not project.get("pilot_mode") or not is_alive(project_id):
             _active_pilots.pop(project_id, None)
+            continue
+
+        # Check if board is complete — all tickets merged/archived, none active
+        if await _check_board_complete(project_id, project):
             continue
 
         if project_id not in _active_pilots:
