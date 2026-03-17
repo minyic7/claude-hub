@@ -609,7 +609,7 @@ async def _tick_via_qa_agent_inner(
 
     # Build staleness warning
     staleness_warning = ""
-    if pane_unchanged and ago > 60:
+    if pane_unchanged and ago > 30:
         staleness_warning = f"""
 ⚠️ STALE WARNING: The terminal output has NOT changed since your last check, and you last sent a message {ago}s ago.
 CC is likely idle and waiting for you. You MUST send a message — do NOT return action "wait" again."""
@@ -638,7 +638,7 @@ Rules:
 - If CC is idle at '❯' or '>' prompt with no active task → action: "message" with guidance on what to do next
 - If CC asked a question → action: "message" with an answer
 - If tickets are in_progress, tell CC to check their status (e.g. /board)
-- wait_seconds: 15-60 (never more than 60)
+- wait_seconds: 15-30 (never more than 30)
 - IMPORTANT: if CC is idle and waiting, you MUST send a message. Do NOT keep waiting indefinitely."""
 
     # Run one-shot QA Agent
@@ -653,8 +653,8 @@ Rules:
         logger.warning("QA Agent returned unparseable response for %s: %s", project_id, response[:200])
         return None
 
-    # Schedule next tick (hard cap at 60s to prevent indefinite stalls)
-    MAX_WAIT = 60
+    # Schedule next tick (hard cap at 30s to prevent indefinite stalls)
+    MAX_WAIT = 30
     wait_seconds = decision.get("wait_seconds", DEFAULT_WAIT_SECONDS)
     try:
         wait_seconds = min(max(0, int(wait_seconds)), MAX_WAIT)
