@@ -260,6 +260,17 @@ async def wait_for_ci_and_merge(
                 updated = await redis_client.get_ticket(ticket_id)
                 await broadcast({"type": "ticket_updated", "ticket_id": ticket_id, "data": updated})
                 logger.info("CI passed, merged ticket %s", ticket_id)
+
+                # Immediately check other tickets for merge conflicts
+                from claude_hub.routers.webhooks import _update_review_branches, _sync_kanban_branch_for_project
+                ticket_data = await redis_client.get_ticket(ticket_id)
+                if ticket_data:
+                    base = ticket_data.get("base_branch", "main")
+                    asyncio.create_task(_update_review_branches(pr_number, base))
+                    pid = ticket_data.get("project_id", "")
+                    if pid:
+                        asyncio.create_task(_sync_kanban_branch_for_project(pid))
+
                 await process_queue()
                 # Fire pilot trigger
                 ticket = await redis_client.get_ticket(ticket_id)

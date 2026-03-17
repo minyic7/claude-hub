@@ -1893,6 +1893,18 @@ async def merge_ticket(ticket_id: str):
 
     await broadcast({"type": "ticket_updated", "ticket_id": ticket_id, "data": updated})
 
+    # Immediately check other tickets for merge conflicts (don't wait for webhook)
+    import asyncio
+    from claude_hub.routers.webhooks import _update_review_branches
+    base_branch = ticket.get("base_branch", project.get("base_branch", "main"))
+    asyncio.create_task(_update_review_branches(pr_number, base_branch))
+
+    # Sync kanban branch with latest base
+    from claude_hub.routers.webhooks import _sync_kanban_branch_for_project
+    project_id = ticket.get("project_id", "")
+    if project_id:
+        asyncio.create_task(_sync_kanban_branch_for_project(project_id))
+
     # Merged — session slot freed, process queue
     await process_queue()
 
