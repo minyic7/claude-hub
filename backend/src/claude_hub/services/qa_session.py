@@ -189,37 +189,16 @@ def restart_qa_session(project: dict, gh_token: str = "") -> str:
 
 
 def send_message(project_id: str, message: str) -> None:
-    """Send a message to the QA Agent session via tmux send-keys.
-
-    For short messages, sends directly. For long messages (>500 chars),
-    writes to a temp file and sends a 'read and respond' instruction instead,
-    to avoid tmux paste issues with Claude Code.
-    """
+    """Send a message to the QA Agent session via tmux send-keys."""
     name = _session_name(project_id)
     if not _tmux_exists(name):
         raise RuntimeError(f"QA Agent session {name} does not exist")
-
-    if len(message) > 500:
-        # Write prompt to file, send short instruction to read it
-        kanban_dir = _qa_sessions.get(project_id, {}).get("kanban_dir", "")
-        if not kanban_dir:
-            kanban_dir = os.path.join(settings.data_dir, "kanbans", project_id)
-        prompt_path = os.path.join(kanban_dir, ".qa-agent", "prompt.md")
-        os.makedirs(os.path.dirname(prompt_path), exist_ok=True)
-        with open(prompt_path, "w") as f:
-            f.write(message)
-        short_msg = f"Read the prompt in {prompt_path} and respond to it exactly as instructed."
-        subprocess.run(
-            ["tmux", "send-keys", "-t", name, "-l", short_msg],
-            check=True, timeout=5,
-        )
-    else:
-        subprocess.run(
-            ["tmux", "send-keys", "-t", name, "-l", message],
-            check=True, timeout=5,
-        )
-
-    time.sleep(0.3)
+    subprocess.run(
+        ["tmux", "send-keys", "-t", name, "-l", message],
+        check=True, timeout=10,
+    )
+    # Wait for CC to process the paste before pressing Enter
+    time.sleep(1)
     subprocess.run(
         ["tmux", "send-keys", "-t", name, "Enter"],
         check=True, timeout=5,
