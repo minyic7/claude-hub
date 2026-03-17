@@ -104,10 +104,11 @@ def start_qa_session(project: dict, gh_token: str = "") -> str:
     with open(claude_md_path, "w") as f:
         f.write(_build_qa_claude_md(project))
 
-    # Build claude command — interactive mode with disallowed tools
+    # Build claude command — interactive mode, skip permissions, disallow file writes
     parts = [
         settings.claude_bin,
         "--verbose",
+        "--dangerously-skip-permissions",
         "--disallowedTools", shlex.quote(DISALLOWED_TOOLS),
     ]
     inner_cmd = " ".join(parts)
