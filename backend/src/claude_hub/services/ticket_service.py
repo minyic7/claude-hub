@@ -14,7 +14,7 @@ _transition_locks: dict[str, asyncio.Lock] = {}
 VALID_TRANSITIONS: dict[TicketStatus, list[TicketStatus]] = {
     TicketStatus.TODO: [TicketStatus.IN_PROGRESS, TicketStatus.QUEUED],
     TicketStatus.QUEUED: [TicketStatus.IN_PROGRESS, TicketStatus.TODO],
-    TicketStatus.IN_PROGRESS: [TicketStatus.TODO, TicketStatus.BLOCKED, TicketStatus.VERIFYING, TicketStatus.FAILED],
+    TicketStatus.IN_PROGRESS: [TicketStatus.TODO, TicketStatus.BLOCKED, TicketStatus.VERIFYING, TicketStatus.FAILED, TicketStatus.MERGED],
     TicketStatus.BLOCKED: [TicketStatus.IN_PROGRESS, TicketStatus.FAILED],
     TicketStatus.VERIFYING: [TicketStatus.REVIEWING, TicketStatus.AWAITING_MERGE, TicketStatus.FAILED],
     TicketStatus.REVIEWING: [TicketStatus.AWAITING_MERGE, TicketStatus.IN_PROGRESS, TicketStatus.FAILED],

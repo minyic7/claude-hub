@@ -501,6 +501,12 @@ export function TicketCard({ ticket, latestActivity, activityEvents, onClick, on
         </div>
       )}
 
+      {ticket.status === 'merged' && !ticket.pr_url && (
+        <div className="flex items-center gap-1.5 text-xs">
+          <span className="text-[var(--color-text-muted)] italic">No changes required</span>
+        </div>
+      )}
+
       {ticket.status === 'merged' && deploying !== undefined && (
         <div className="flex items-center gap-1.5 text-xs">
           {deploying ? (
