@@ -10,6 +10,7 @@ logger = logging.getLogger(__name__)
 
 from claude_hub import redis_client
 from claude_hub.config import settings
+from claude_hub.routers.settings_router import get_max_sessions, get_max_total_sessions
 from claude_hub.models.ticket import Ticket, TicketCreate, TicketStatus, TicketUpdate
 from claude_hub.routers.ws import broadcast
 from claude_hub.services.kanban_manager import send_kanban_update, send_pilot_trigger
@@ -241,13 +242,15 @@ async def start_ticket(ticket_id: str):
             session_manager.cleanup_session(ticket_id)
         else:
             raise HTTPException(409, "Ticket already has an active session")
-    if session_manager.active_session_count() >= settings.max_sessions:
+    max_sess = await get_max_sessions()
+    if session_manager.active_session_count() >= max_sess:
         raise HTTPException(
-            429, f"Max concurrent sessions ({settings.max_sessions}) reached. Wait for a session to finish."
+            429, f"Max concurrent sessions ({max_sess}) reached. Wait for a session to finish."
         )
 
     # Evict oldest idle sessions if total exceeds limit
-    evicted = session_manager.evict_idle_sessions(settings.max_total_sessions)
+    max_total = await get_max_total_sessions()
+    evicted = session_manager.evict_idle_sessions(max_total)
     if evicted:
         logger.info("Evicted %d idle session(s) to stay under total limit", len(evicted))
 
@@ -436,9 +439,10 @@ async def retry_ticket(ticket_id: str, body: dict | None = None):
             session_manager.cleanup_session(ticket_id)
         else:
             raise HTTPException(409, "Ticket already has an active session")
-    if session_manager.active_session_count() >= settings.max_sessions:
+    max_sess = await get_max_sessions()
+    if session_manager.active_session_count() >= max_sess:
         raise HTTPException(
-            429, f"Max concurrent sessions ({settings.max_sessions}) reached. Wait for a session to finish."
+            429, f"Max concurrent sessions ({max_sess}) reached. Wait for a session to finish."
         )
 
     try:
@@ -853,7 +857,8 @@ async def _respawn_with_feedback(ticket_id: str, feedback: str) -> None:
     from pathlib import Path
 
     # Guard: enforce max sessions
-    if session_manager.active_session_count() >= settings.max_sessions:
+    max_sess = await get_max_sessions()
+    if session_manager.active_session_count() >= max_sess:
         logger.warning("Cannot respawn %s: max sessions reached", ticket_id)
         updated = await transition(ticket_id, TicketStatus.FAILED,
                                    failed_reason="Review rejected but max sessions reached. Retry manually.")
@@ -1114,9 +1119,10 @@ async def request_changes(ticket_id: str, body: dict):
         raise HTTPException(400, "feedback required")
 
     # Guard: enforce max sessions
-    if session_manager.active_session_count() >= settings.max_sessions:
+    max_sess = await get_max_sessions()
+    if session_manager.active_session_count() >= max_sess:
         raise HTTPException(
-            429, f"Max concurrent sessions ({settings.max_sessions}) reached."
+            429, f"Max concurrent sessions ({max_sess}) reached."
         )
 
     try:
@@ -1216,6 +1222,7 @@ async def bulk_start_tickets(body: dict):
 
     started = []
     queued = []
+    max_sess = await get_max_sessions()
 
     for tid in ticket_ids:
         ticket = await redis_client.get_ticket(tid)
@@ -1238,7 +1245,7 @@ async def bulk_start_tickets(body: dict):
 
         # Try to start immediately if under limit
         priority = ticket.get("priority", 0)
-        if (session_manager.active_session_count() < settings.max_sessions
+        if (session_manager.active_session_count() < max_sess
                 and not session_manager.has_active_session(tid)):
             try:
                 result = await start_ticket(tid)
@@ -1276,8 +1283,9 @@ async def process_queue() -> str | None:
     from claude_hub.services.ticket_service import transition
 
     # Iterative loop instead of recursion to avoid stack overflow
+    max_sess = await get_max_sessions()
     for _ in range(50):  # Safety limit
-        if session_manager.active_session_count() >= settings.max_sessions:
+        if session_manager.active_session_count() >= max_sess:
             return None
 
         ticket_id = await redis_client.dequeue_ticket()
@@ -1310,7 +1318,7 @@ async def get_queue():
     return {
         "queue": queue_ids,
         "active_sessions": session_manager.active_session_count(),
-        "max_sessions": settings.max_sessions,
+        "max_sessions": await get_max_sessions(),
     }
 
 

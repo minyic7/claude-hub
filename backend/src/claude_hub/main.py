@@ -160,13 +160,15 @@ async def _recover_orphaned_tickets() -> None:
             logger.error("Failed to recover MERGING ticket %s: %s", tid[:8], e)
 
     # Recover session-based tickets
+    from claude_hub.routers.settings_router import get_max_sessions
+    max_sess = await get_max_sessions()
     for status in ("in_progress", "blocked", "verifying"):
         tickets_list = await redis_client.list_tickets(status)
         for ticket in tickets_list:
             tid = ticket["id"]
             if session_manager.is_alive(tid):
                 continue
-            if session_manager.active_session_count() >= settings.max_sessions:
+            if session_manager.active_session_count() >= max_sess:
                 logger.warning("Max sessions reached, skipping recovery for %s", tid[:8])
                 break
 

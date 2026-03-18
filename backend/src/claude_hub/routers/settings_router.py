@@ -57,6 +57,11 @@ async def get_max_sessions() -> int:
     return cfg.get("max_sessions", 4)
 
 
+async def get_max_total_sessions() -> int:
+    cfg = await get_global_settings()
+    return cfg.get("max_total_sessions", 12)
+
+
 async def get_agent_settings_for_project(project_id: str) -> dict:
     """Load per-project agent settings, returning defaults if not configured."""
     from claude_hub.models.ticket import AgentSettings
