@@ -1,5 +1,7 @@
 import logging
+import os
 import re
+import subprocess
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -37,6 +39,38 @@ def _fire_pilot_trigger(project_id: str, ticket_id: str) -> None:
         pass
 
 
+def _extract_repo_nwo(repo_url: str) -> str | None:
+    """Extract 'owner/repo' from a GitHub repo URL."""
+    m = re.search(r"github\.com[:/](.+?)(?:\.git)?$", repo_url)
+    return m.group(1) if m else None
+
+
+def _cleanup_remote_branch(ticket: dict) -> None:
+    """Delete the remote branch for a ticket. Best-effort, never raises."""
+    branch = ticket.get("branch", "")
+    repo_url = ticket.get("repo_url", "")
+    if not branch or not repo_url:
+        return
+
+    nwo = _extract_repo_nwo(repo_url)
+    if not nwo:
+        return
+
+    try:
+        result = subprocess.run(
+            ["gh", "api", "-X", "DELETE", f"/repos/{nwo}/git/refs/heads/{branch}"],
+            capture_output=True, text=True, timeout=15,
+        )
+        if result.returncode == 0:
+            logger.info("Deleted remote branch %s on %s", branch, nwo)
+        else:
+            # 422 = branch doesn't exist (already deleted), that's fine
+            if "Reference does not exist" not in result.stderr:
+                logger.warning("Failed to delete remote branch %s: %s", branch, result.stderr.strip())
+    except Exception:
+        logger.warning("Exception deleting remote branch %s", branch, exc_info=True)
+
+
 def _is_conflicted(ticket: dict) -> bool:
     """Check if a ticket has merge conflicts. Handles Redis string values."""
     val = ticket.get("has_conflicts", False)
@@ -55,6 +89,34 @@ _PUSH_VERIFICATION_INSTRUCTION = (
     "   - A PR exists (create one if missing)\n"
     "If anything is missing, fix it before exiting."
 )
+
+
+def _read_vision_for_ticket(project_id: str) -> str:
+    """Read VISION.md from the kanban directory to inject into ticket CC context.
+
+    This gives ticket CC sessions the full project vision so they make
+    architecture decisions consistent with the overall plan.
+    """
+    vision_path = os.path.join(settings.data_dir, "kanbans", project_id, "VISION.md")
+    try:
+        with open(vision_path) as f:
+            return f.read()
+    except FileNotFoundError:
+        return ""
+
+
+def _build_vision_context(project_id: str) -> str:
+    """Build the VISION.md context section for a ticket CC prompt."""
+    vision = _read_vision_for_ticket(project_id)
+    if not vision:
+        return ""
+    return (
+        "\n\n## Project Vision (from VISION.md — READ THIS CAREFULLY)\n"
+        "This is the project's architecture and design plan. Your implementation MUST be consistent with it.\n"
+        "Pay special attention to: API contracts, data flow design, file structure, and UI design system.\n"
+        "If the vision specifies how something should be done, follow that approach — do not invent alternatives.\n\n"
+        f"{vision}\n"
+    )
 
 
 def _slugify(text: str, max_len: int = 60) -> str:
@@ -167,6 +229,8 @@ async def toggle_archive(ticket_id: str):
         raise HTTPException(404, "Ticket not found")
 
     new_val = not ticket.get("archived", False)
+    if new_val:
+        _cleanup_remote_branch(ticket)
     await redis_client.update_ticket_fields(ticket_id, {"archived": new_val})
     updated = await redis_client.get_ticket(ticket_id)
     await broadcast({
@@ -187,6 +251,7 @@ async def delete_ticket(ticket_id: str):
 
     session_manager.stop_session(ticket_id)
     clone_manager.cleanup_clone(ticket_id)
+    _cleanup_remote_branch(ticket)
 
     await redis_client.delete_ticket(ticket_id)
     await broadcast({
@@ -282,10 +347,13 @@ async def start_ticket(ticket_id: str):
         description = ticket.get("description") or ticket["title"]
         branch = ticket["branch"]
         base_branch = ticket.get("base_branch", "main")
+        project_id = ticket.get("project_id", "")
+        vision_context = _build_vision_context(project_id)
         task = (
             f"{description}\n\n"
             f"You are working on branch '{branch}' (based on '{base_branch}').\n"
             f"When done, commit your changes, push the branch, and create a draft PR against '{base_branch}'."
+            + vision_context
             + _PUSH_VERIFICATION_INSTRUCTION
         )
         session_name, log_path = session_manager.start_session(
@@ -487,6 +555,8 @@ async def retry_ticket(ticket_id: str, body: dict | None = None):
     description = ticket.get("description") or ticket["title"]
     branch = ticket["branch"]
     base_branch = ticket.get("base_branch", "main")
+    project_id = ticket.get("project_id", "")
+    vision_context = _build_vision_context(project_id)
 
     has_pr = bool(ticket.get("pr_url"))
     pr_instruction = (
@@ -498,6 +568,7 @@ async def retry_ticket(ticket_id: str, body: dict | None = None):
         f"{description}\n\n"
         f"You are working on branch '{branch}' (based on '{base_branch}').\n"
         f"{pr_instruction}"
+        + vision_context
         + _PUSH_VERIFICATION_INSTRUCTION
     )
 
@@ -885,6 +956,8 @@ async def _respawn_with_feedback(ticket_id: str, feedback: str) -> None:
 
     original_task = ticket.get("description") or ticket["title"]
     pr_number = ticket.get("pr_number", "")
+    project_id = ticket.get("project_id", "")
+    vision_context = _build_vision_context(project_id)
     task = (
         f"{original_task}\n\n"
         f"## Agent Review Feedback — Address These Issues:\n{feedback}\n\n"
@@ -894,6 +967,7 @@ async def _respawn_with_feedback(ticket_id: str, feedback: str) -> None:
     )
     if pr_number:
         task += f"\nDo NOT create a new PR — push to the same branch so the existing PR #{pr_number} is updated."
+    task += vision_context
     task += _PUSH_VERIFICATION_INSTRUCTION
 
     session_name, log_path = session_manager.start_session(
@@ -1150,6 +1224,8 @@ async def request_changes(ticket_id: str, body: dict):
     # Build task with original description + review feedback
     original_task = ticket.get("description") or ticket["title"]
     pr_number = ticket.get("pr_number", "")
+    project_id = ticket.get("project_id", "")
+    vision_context = _build_vision_context(project_id)
     task = (
         f"{original_task}\n\n"
         f"## Review Feedback — Address These Issues:\n{feedback}\n\n"
@@ -1184,6 +1260,7 @@ async def request_changes(ticket_id: str, body: dict):
                     resolve_section += f"- Thread `{t['thread_id']}` — {t['author']} on `{t['path']}`: {t['body'][:100]}\n"
                 task += resolve_section
 
+    task += vision_context
     task += _PUSH_VERIFICATION_INSTRUCTION
 
     try:
@@ -1892,10 +1969,11 @@ async def merge_ticket(ticket_id: str):
     except InvalidTransition as e:
         raise HTTPException(409, str(e))
 
-    # Cleanup session and clone directory after merge
+    # Cleanup session, clone directory, and remote branch after merge
     from claude_hub.services import clone_manager
     session_manager.cleanup_session(ticket_id)
     clone_manager.cleanup_clone(ticket_id)
+    _cleanup_remote_branch(ticket)  # fallback in case --delete-branch didn't work
     await redis_client.update_ticket_fields(ticket_id, {"clone_path": "", "tmux_session": ""})
     updated = await redis_client.get_ticket(ticket_id)
 

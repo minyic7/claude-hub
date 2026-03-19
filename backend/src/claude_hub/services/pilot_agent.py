@@ -139,6 +139,14 @@ After sending a message, set `wait_seconds` to give CC time to process and respo
 - If CC says smoke test failed due to a code bug, encourage it to fix and retry (max 2 attempts).
 - **Never block a ticket indefinitely** on smoke test failure — after 2 retries, let CC mark it `failed` with details.
 
+## Verification-first mindset:
+- After a ticket merges, ALWAYS ask CC to run `/cd-status` before moving on to the next task.
+- After a batch completes, ask CC to re-read VISION.md and report what percentage of the plan is done.
+- Do NOT assume work is complete just because the board is empty — ask CC to verify against VISION.md.
+- Be skeptical of optimistic self-reports — ask CC to show evidence (test output, deploy status, actual behavior).
+- If CC says "everything looks good" without showing proof, ask "can you verify by running X?"
+- **Never suggest stopping pilot mode yourself.** Only CC should decide when the vision is fully implemented.
+
 ## Key rules:
 - Be conversational, not robotic. You're a user, not a system.
 - Ask questions — let CC reason and decide. Don't dictate exact API calls.
@@ -446,9 +454,13 @@ _ACTIVE_STATUSES = {"todo", "queued", "in_progress", "blocked", "verifying",
 
 
 async def _check_board_complete(project_id: str, project: dict) -> bool:
-    """If all tickets are merged/archived (none active), disable pilot mode.
+    """If all tickets are merged/archived (none active), ask Kanban CC whether to stop pilot.
 
-    Returns True if board is complete and pilot was stopped.
+    Instead of auto-disabling pilot mode, sends a message to Kanban CC asking it
+    to decide whether to create more tickets or stop. This prevents premature
+    completion when there's still work to be done per VISION.md.
+
+    Returns True if board appears complete (notification sent), False otherwise.
     """
     tickets = await redis_client.list_tickets_by_project(project_id)
 
@@ -467,20 +479,45 @@ async def _check_board_complete(project_id: str, project: dict) -> bool:
     if project_id in _board_complete_notified:
         return True
 
-    # Board complete — record event, disable pilot mode
+    # Board complete — ask Kanban CC to decide, do NOT auto-disable pilot
     _board_complete_notified.add(project_id)
 
     merged = sum(1 for t in tickets if t.get("status") == "merged" and not t.get("archived"))
     archived = sum(1 for t in tickets if t.get("archived"))
 
-    event = SupervisorEvent(
-        cc_summary=f"All work complete. {merged} ticket(s) merged, {archived} archived.",
-        action="message",
-        message="All tickets are done! Pilot mode will now turn off. Great work!",
-        reason="Board is fully complete — no active tickets remain. Auto-disabling pilot mode.",
+    # Ask Kanban CC to verify against VISION.md before stopping
+    message = (
+        f"All {merged} ticket(s) are merged. Before we stop, please:\n"
+        f"1. Re-read VISION.md and check if there's remaining work in the plan\n"
+        f"2. Run /cd-status to verify the latest deploy is green\n"
+        f"3. If there's more work to do, create the next batch of tickets\n"
+        f"4. If VISION.md goals are truly complete, tell me 'pilot mode can stop' and I'll disable it\n"
+        f"Don't stop prematurely — verify first."
     )
 
-    # Broadcast completion event
+    event = SupervisorEvent(
+        cc_summary=f"All current tickets complete. {merged} merged, {archived} archived. Asking CC to verify against VISION.md before stopping.",
+        action="message",
+        message=message,
+        reason="Board appears complete — asking Kanban CC to verify against VISION.md before disabling pilot mode.",
+    )
+
+    # Send message to CC
+    tmux_session = _session_name(project_id)
+    try:
+        subprocess.run(
+            ["tmux", "send-keys", "-t", tmux_session, "-l", message],
+            capture_output=True, timeout=5,
+        )
+        time.sleep(1)
+        subprocess.run(
+            ["tmux", "send-keys", "-t", tmux_session, "Enter"],
+            capture_output=True, timeout=5,
+        )
+    except Exception as e:
+        logger.warning("Failed to send board-complete message to CC for %s: %s", project_id, e)
+
+    # Broadcast event
     r = redis_client.get_pool()
     key = f"pilot:{project_id}:supervisor_events"
     await r.rpush(key, json.dumps(dict(event)))
@@ -490,20 +527,7 @@ async def _check_board_complete(project_id: str, project: dict) -> bool:
         "data": {"project_id": project_id, **event},
     })
 
-    # Disable pilot mode
-    await redis_client.update_project_fields(project_id, {"pilot_mode": False})
-    await broadcast({
-        "type": "project_updated",
-        "data": {**project, "pilot_mode": False},
-    })
-
-    # Clean up
-    _active_pilots.pop(project_id, None)
-    _qa_in_flight.discard(project_id)
-    _qa_next_tick_at.pop(project_id, None)
-    _qa_last_pane_hash.pop(project_id, None)
-
-    logger.info("Board complete for %s — pilot mode auto-disabled (%d merged, %d archived)",
+    logger.info("Board complete for %s — asking CC to verify before stopping pilot (%d merged, %d archived)",
                 project_id, merged, archived)
     return True
 
@@ -722,7 +746,9 @@ Rules:
 - wait_seconds: 15-30 (never more than 30)
 - IMPORTANT: if CC is idle and waiting, you MUST send a message. Do NOT keep waiting indefinitely.
 - SMOKE TEST: If CC marks a ticket awaiting_merge without mentioning a smoke test (docker build, test run, endpoint check), ask it to run one before merging. Accept skips for environment limitations (external DB, API keys).
-- POST-MERGE DEPLOY: After a ticket is merged, remind CC to run /cd-status. If deploy failed, CC should create a hotfix ticket immediately. Don't move on until deploy is green."""
+- POST-MERGE DEPLOY: After a ticket is merged, remind CC to run /cd-status. If deploy failed, CC should create a hotfix ticket immediately. Don't move on until deploy is green.
+- VERIFICATION FIRST: After a batch of tickets is done, ask CC to re-read VISION.md and check if there's more work. Never suggest stopping pilot mode — only CC decides when the vision is fully implemented.
+- BE SKEPTICAL: If CC says "done" without proof, ask for evidence (test output, deploy status). Don't take self-reports at face value."""
 
     # Run one-shot QA Agent
     gh_token = project.get("gh_token", "")
