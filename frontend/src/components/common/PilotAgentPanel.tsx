@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { Bot, MessageSquare, Clock, ChevronUp, ChevronDown, Zap, AlertTriangle } from 'lucide-react'
+import { Bot, MessageSquare, Clock, ChevronUp, ChevronDown, Zap, AlertTriangle, Send, User } from 'lucide-react'
 import { api } from '../../lib/api'
 
 export interface SupervisorEvent {
   timestamp: string
   cc_summary: string
-  action: 'wait' | 'message'
+  action: 'wait' | 'message' | 'user_message' | 'user_relay'
   message: string | null
   reason: string
   wait_seconds?: number
@@ -69,19 +69,34 @@ function deriveCC(event: SupervisorEvent | null): { label: string; color: string
 
 function EventRow({ event, collapsed }: { event: SupervisorEvent; collapsed?: number }) {
   const isMessage = event.action === 'message'
+  const isUserMessage = event.action === 'user_message'
+  const isUserRelay = event.action === 'user_relay'
+  const isHighlighted = isMessage || isUserMessage || isUserRelay
 
   return (
-    <div className={`flex items-start gap-2 px-3 py-1.5 ${isMessage ? 'bg-blue-500/5' : ''}`}>
+    <div className={`flex items-start gap-2 px-3 py-1.5 ${isUserMessage || isUserRelay ? 'bg-emerald-500/8' : isMessage ? 'bg-blue-500/5' : ''}`}>
       <span className="shrink-0 mt-0.5 text-[10px] font-mono text-[var(--color-text-muted)]/60 w-[60px]">
         {formatTime(event.timestamp)}
       </span>
-      {isMessage ? (
+      {isUserMessage ? (
+        <User size={11} className="shrink-0 mt-0.5 text-emerald-400" />
+      ) : isUserRelay ? (
+        <Send size={11} className="shrink-0 mt-0.5 text-emerald-400" />
+      ) : isMessage ? (
         <MessageSquare size={11} className="shrink-0 mt-0.5 text-blue-400" />
       ) : (
         <Clock size={11} className="shrink-0 mt-0.5 text-[var(--color-text-muted)]/40" />
       )}
       <div className="min-w-0 flex-1">
-        {isMessage && event.message ? (
+        {isUserMessage && event.message ? (
+          <p className="text-xs text-emerald-300 break-words whitespace-pre-wrap">
+            <span className="text-emerald-400/60 text-[10px]">you → pilot: </span>{event.message}
+          </p>
+        ) : isUserRelay && event.message ? (
+          <p className="text-xs text-emerald-300 break-words whitespace-pre-wrap">
+            <span className="text-emerald-400/60 text-[10px]">pilot → CC: </span>{event.message}
+          </p>
+        ) : isHighlighted && event.message ? (
           <p className="text-xs text-blue-300 break-words whitespace-pre-wrap">{event.message}</p>
         ) : (
           <p className="text-xs text-[var(--color-text-muted)]/70 break-words whitespace-pre-wrap">
@@ -103,8 +118,11 @@ export function PilotStatusBar({ projectId, pilotMode, onNudge }: PilotStatusBar
   const [expanded, setExpanded] = useState(false)
   const [loading, setLoading] = useState(false)
   const [nudging, setNudging] = useState(false)
+  const [messageText, setMessageText] = useState('')
+  const [sending, setSending] = useState(false)
   const [, setTick] = useState(0) // force re-render for "ago" timer
   const scrollRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
   const autoScroll = useRef(true)
 
   // Load initial events
@@ -158,6 +176,21 @@ export function PilotStatusBar({ projectId, pilotMode, onNudge }: PilotStatusBar
       setTimeout(() => setNudging(false), 2000)
     }
   }, [onNudge])
+
+  const handleSendMessage = useCallback(async () => {
+    const text = messageText.trim()
+    if (!text || sending) return
+    setSending(true)
+    try {
+      await api.projects.sendPilotMessage(projectId, text)
+      setMessageText('')
+    } catch {
+      // Error will show via supervisor event
+    } finally {
+      setSending(false)
+      inputRef.current?.focus()
+    }
+  }, [messageText, sending, projectId])
 
   if (!pilotMode) return null
 
@@ -276,6 +309,29 @@ export function PilotStatusBar({ projectId, pilotMode, onNudge }: PilotStatusBar
                 <EventRow key={`${item.event.timestamp}-${i}`} event={item.event} collapsed={item.count} />
               ))
             )}
+          </div>
+
+          {/* Message input */}
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-[#1a1b26] border-t border-[var(--color-border)]/50 shrink-0">
+            <input
+              ref={inputRef}
+              type="text"
+              value={messageText}
+              onChange={(e) => setMessageText(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage() } }}
+              placeholder="Message pilot..."
+              disabled={sending}
+              className="flex-1 bg-[#252638] text-xs text-[var(--color-text-primary)] placeholder-[var(--color-text-muted)]/40 rounded px-2 py-1 outline-none focus:ring-1 focus:ring-emerald-500/50 disabled:opacity-50"
+            />
+            <button
+              onClick={handleSendMessage}
+              disabled={sending || !messageText.trim()}
+              className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-emerald-400 hover:bg-emerald-500/10 transition-colors disabled:opacity-30"
+              title="Send message to pilot"
+            >
+              <Send size={10} className={sending ? 'animate-pulse' : ''} />
+              Send
+            </button>
           </div>
         </div>
       )}

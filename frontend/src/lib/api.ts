@@ -85,6 +85,11 @@ export const api = {
       request<SupervisorEvent[]>(`/projects/${id}/supervisor/events?limit=${limit}`),
     nudgeSupervisor: (id: string) =>
       request<{ status: string }>(`/projects/${id}/supervisor/nudge`, { method: 'POST' }),
+    sendPilotMessage: (id: string, message: string) =>
+      request<{ status: string }>(`/projects/${id}/pilot/message`, {
+        method: 'POST',
+        body: JSON.stringify({ message }),
+      }),
   },
   tickets: {
     list: (projectId?: string, status?: string) => {

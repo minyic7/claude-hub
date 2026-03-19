@@ -32,6 +32,34 @@ logger = logging.getLogger(__name__)
 MAX_PANE_LINES = 200       # Max lines to capture from tmux pane
 MAX_EVENTS_STORED = 200    # Max supervisor events kept in Redis
 DEFAULT_WAIT_SECONDS = 30  # Fallback if LLM doesn't specify wait_seconds
+MAX_USER_MESSAGES = 20     # Max queued user messages
+
+
+# ── User → Pilot message queue ────────────────────────────────────────
+
+async def queue_user_message(project_id: str, message: str) -> None:
+    """Queue a message from the real user for the pilot to relay to CC."""
+    r = redis_client.get_pool()
+    key = f"pilot:{project_id}:user_messages"
+    entry = json.dumps({"message": message, "timestamp": datetime.now(timezone.utc).isoformat()})
+    await r.rpush(key, entry)
+    await r.ltrim(key, -MAX_USER_MESSAGES, -1)
+
+
+async def pop_user_messages(project_id: str) -> list[dict]:
+    """Pop all queued user messages (FIFO). Returns list of {message, timestamp}."""
+    r = redis_client.get_pool()
+    key = f"pilot:{project_id}:user_messages"
+    messages = []
+    while True:
+        raw = await r.lpop(key)
+        if raw is None:
+            break
+        try:
+            messages.append(json.loads(raw))
+        except json.JSONDecodeError:
+            pass
+    return messages
 
 PILOT_SYSTEM_PROMPT = """You are the Pilot Agent — a simulated user interacting with a Claude Code (CC) session that manages a project's kanban board.
 
@@ -266,14 +294,35 @@ class PilotAgent(BaseAgent):
         # 3. Read board state
         board = await self._read_board()
 
-        # 4. Build last_message_context for the prompt
+        # 4. Check for queued user messages (highest priority)
+        user_messages = await pop_user_messages(self.project_id)
+
+        if user_messages:
+            # User sent messages — relay them directly to CC, no LLM call needed
+            combined = "\n".join(m["message"] for m in user_messages)
+            self._send_to_cc(combined)
+            self._last_message = combined
+            self._last_message_at = now
+            self._next_tick_at = now + timedelta(seconds=45)  # give CC time to process
+
+            event = SupervisorEvent(
+                cc_summary=f"Relaying {len(user_messages)} message(s) from user to CC.",
+                action="user_relay",
+                message=combined,
+                reason="User sent a direct message via pilot",
+                wait_seconds=45,
+            )
+            await self._record_supervisor_event(event)
+            return event
+
+        # 5. Build last_message_context for the prompt
         if self._last_message and self._last_message_at:
             ago = int((now - self._last_message_at).total_seconds())
             last_message_context = f'You sent this {ago}s ago: "{self._last_message}"'
         else:
             last_message_context = "(this is your first check-in — no prior messages sent)"
 
-        # 5. Build system prompt with fresh context
+        # 6. Build system prompt with fresh context
         self.system_prompt = PILOT_SYSTEM_PROMPT.format(
             vision=vision,
             board=board,
@@ -281,17 +330,17 @@ class PilotAgent(BaseAgent):
             last_message_context=last_message_context,
         )
 
-        # 6. Single LLM call (no conversation history — each tick is independent)
+        # 7. Single LLM call (no conversation history — each tick is independent)
         self.messages = [{"role": "user", "content": "Check on the Claude Code session and decide whether to send a message or wait."}]
 
         await self._call_api()
 
-        # 7. Parse LLM response
+        # 8. Parse LLM response
         decision = self._parse_decision()
         if not decision:
             return None
 
-        # 8. Schedule next tick based on LLM-decided wait_seconds
+        # 9. Schedule next tick based on LLM-decided wait_seconds
         wait_seconds = decision.get("wait_seconds", DEFAULT_WAIT_SECONDS)
         try:
             wait_seconds = max(0, int(wait_seconds))
@@ -299,7 +348,7 @@ class PilotAgent(BaseAgent):
             wait_seconds = DEFAULT_WAIT_SECONDS
         self._next_tick_at = now + timedelta(seconds=wait_seconds)
 
-        # 9. Act on decision
+        # 10. Act on decision
         action = decision.get("action", "wait")
 
         if action == "message":
@@ -309,7 +358,7 @@ class PilotAgent(BaseAgent):
                 self._last_message = message
                 self._last_message_at = now
 
-        # 10. Record and broadcast supervisor event
+        # 11. Record and broadcast supervisor event
         event = SupervisorEvent(
             cc_summary=decision.get("cc_summary", ""),
             action=action,

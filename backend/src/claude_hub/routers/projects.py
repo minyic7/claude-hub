@@ -311,3 +311,41 @@ async def nudge_supervisor(project_id: str):
     from claude_hub.services.pilot_agent import nudge
     event = await nudge(project_id)
     return {"status": "nudged", "event": event}
+
+
+@router.post("/{project_id}/pilot/message")
+async def send_pilot_message(project_id: str, body: dict):
+    """Send a message from the real user to the Pilot Agent.
+
+    The pilot will include this message in its next tick and relay it to CC
+    with highest priority.
+    """
+    project = await redis_client.get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    if not project.get("pilot_mode"):
+        raise HTTPException(409, "Pilot mode is not active")
+
+    message = body.get("message", "").strip()
+    if not message:
+        raise HTTPException(422, "Message cannot be empty")
+
+    from claude_hub.services.pilot_agent import queue_user_message, nudge
+    await queue_user_message(project_id, message)
+
+    # Also record as supervisor event so it shows in the UI log
+    await broadcast({
+        "type": "supervisor_event",
+        "data": {
+            "project_id": project_id,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "cc_summary": "",
+            "action": "user_message",
+            "message": message,
+            "reason": "Message from user to pilot",
+        },
+    })
+
+    # Nudge pilot to process immediately
+    event = await nudge(project_id)
+    return {"status": "queued", "event": event}
