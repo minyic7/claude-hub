@@ -175,6 +175,19 @@ After sending a message, set `wait_seconds` to give CC time to process and respo
 - If CC says "everything looks good" without showing proof, ask "can you verify by running X?"
 - **Never suggest stopping pilot mode yourself.** Only CC should decide when the vision is fully implemented.
 
+## Polish & iterate — don't settle for "done":
+- **A ticket is NOT done when it merely works.** After the initial implementation, push CC to do at least one round of polish:
+  - "Looks like it works — but before we mark it awaiting_merge, can you do a quick polish pass? Check edge cases, clean up any rough spots, and make sure the UI/UX feels solid."
+  - "Nice progress on #5! Before we move on, can you review your own code and see if there's anything you'd improve?"
+- **Iterate on quality, not just functionality.** Encourage CC to:
+  - Re-read the VISION.md spec for this area and compare against what was built
+  - Check for missing error handling, loading states, accessibility, or responsive issues
+  - Look for inconsistencies with the rest of the codebase
+  - Run the feature end-to-end and fix anything that feels off
+- **Don't rush through tickets.** It's better to have 3 polished tickets merged than 6 rough ones.
+- If CC says "done" too quickly (< 5 minutes for a non-trivial ticket), be skeptical: "That was fast — did you test it? Let's make sure it's solid before moving on."
+- After polish, THEN proceed to smoke test and awaiting_merge.
+
 ## Key rules:
 - Be conversational, not robotic. You're a user, not a system.
 - Ask questions — let CC reason and decide. Don't dictate exact API calls.
@@ -745,7 +758,46 @@ async def _tick_via_qa_agent_inner(
     else:
         board = "(empty board)"
 
-    # 4. Last message context + staleness detection
+    # 4. Check for queued user messages (highest priority — relay without LLM call)
+    user_messages = await pop_user_messages(project_id)
+    if user_messages:
+        combined = "\n".join(m["message"] for m in user_messages)
+        try:
+            subprocess.run(
+                ["tmux", "send-keys", "-t", tmux_session, "-l", combined],
+                capture_output=True, timeout=5,
+            )
+            time.sleep(1)
+            subprocess.run(
+                ["tmux", "send-keys", "-t", tmux_session, "Enter"],
+                capture_output=True, timeout=5,
+            )
+            _qa_last_message[project_id] = combined
+            _qa_last_message_at[project_id] = now
+            logger.info("QA PilotAgent relayed %d user message(s) to %s", len(user_messages), project_id)
+        except Exception as e:
+            logger.warning("QA PilotAgent relay failed for %s: %s", project_id, e)
+
+        _qa_next_tick_at[project_id] = now + timedelta(seconds=45)
+
+        event = SupervisorEvent(
+            cc_summary=f"Relaying {len(user_messages)} message(s) from user to CC.",
+            action="user_relay",
+            message=combined,
+            reason="User sent a direct message via pilot",
+            wait_seconds=45,
+        )
+        r = redis_client.get_pool()
+        key = f"pilot:{project_id}:supervisor_events"
+        await r.rpush(key, json.dumps(dict(event)))
+        await r.ltrim(key, -MAX_EVENTS_STORED, -1)
+        await broadcast({
+            "type": "supervisor_event",
+            "data": {"project_id": project_id, **event},
+        })
+        return dict(event)
+
+    # 5. Last message context + staleness detection
     last_msg = _qa_last_message.get(project_id)
     last_msg_at = _qa_last_message_at.get(project_id)
     if last_msg and last_msg_at:
@@ -797,7 +849,8 @@ Rules:
 - SMOKE TEST: If CC marks a ticket awaiting_merge without mentioning a smoke test (docker build, test run, endpoint check), ask it to run one before merging. Accept skips for environment limitations (external DB, API keys).
 - POST-MERGE DEPLOY: After a ticket is merged, remind CC to run /cd-status. If deploy failed, CC should create a hotfix ticket immediately. Don't move on until deploy is green.
 - VERIFICATION FIRST: After a batch of tickets is done, ask CC to re-read VISION.md and check if there's more work. Never suggest stopping pilot mode — only CC decides when the vision is fully implemented.
-- BE SKEPTICAL: If CC says "done" without proof, ask for evidence (test output, deploy status). Don't take self-reports at face value."""
+- BE SKEPTICAL: If CC says "done" without proof, ask for evidence (test output, deploy status). Don't take self-reports at face value.
+- POLISH BEFORE MERGE: A ticket is NOT done when it merely works. Before awaiting_merge, ask CC to do a polish pass — check edge cases, review its own code, compare against VISION.md spec, and fix anything rough. Don't rush tickets."""
 
     # Run one-shot QA Agent
     gh_token = project.get("gh_token", "")

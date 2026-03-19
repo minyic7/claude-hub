@@ -80,7 +80,14 @@ def _is_conflicted(ticket: dict) -> bool:
 
 # Appended to every task prompt to ensure Claude Code pushes all changes
 _PUSH_VERIFICATION_INSTRUCTION = (
-    "\n\n## IMPORTANT — Final Verification (do this LAST before exiting)\n"
+    "\n\n## IMPORTANT — Polish Pass (do this BEFORE final verification)\n"
+    "Before marking your work as done, do one round of self-review:\n"
+    "1. Re-read the ticket description and VISION.md spec for the area you changed.\n"
+    "2. Compare what you built against the spec — did you miss anything?\n"
+    "3. Check for edge cases, error handling, and UI/UX quality.\n"
+    "4. Run the feature end-to-end if possible. Fix anything that feels rough.\n"
+    "5. Review your own code — would you approve this PR? Clean up anything you wouldn't.\n"
+    "\n## IMPORTANT — Final Verification (do this LAST before exiting)\n"
     "Before you finish:\n"
     "1. If you modified frontend files, run `cd frontend && pnpm exec tsc -b` to check for TypeScript errors. Fix any errors before pushing.\n"
     "2. Run `git status` and `git log --oneline -5` to verify:\n"

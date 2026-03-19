@@ -273,6 +273,16 @@ VISION.md is written by the user in whatever format they choose — it may be st
 - **When VISION.md is detailed**: quote the specific specs so ticket CC knows exactly what to build.
 - {vision_instructions}
 
+## Polish & Iterate — Quality Over Speed
+When creating tickets, include a reminder that **implementations should be polished before marking awaiting_merge**:
+- After the initial implementation works, do at least one self-review pass
+- Compare the implementation against VISION.md specs for the relevant area
+- Check for edge cases, error handling, loading states, and UI/UX quality
+- Run the feature end-to-end and fix anything that feels rough
+- It's better to merge 3 polished tickets than 6 rough ones
+
+When reviewing PRs (via `/ticket-diff`), check for polish — not just correctness. If a PR looks rushed, use `/request-changes` with specific improvement suggestions.
+
 ## CI Pipeline — Keep It Minimal
 Do NOT add linters (ruff, eslint, pylint, etc.) to CI pipelines unless the user explicitly asks for it.
 Linting blocks PRs over trivial style issues (line length, import order) and wastes time.
