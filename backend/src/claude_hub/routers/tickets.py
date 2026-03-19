@@ -144,12 +144,18 @@ async def _get_project_for_ticket(ticket: dict) -> dict:
 
 
 @router.get("")
-async def list_tickets(status: str | None = Query(None), project_id: str | None = Query(None)):
+async def list_tickets(
+    status: str | None = Query(None),
+    project_id: str | None = Query(None),
+    include_archived: bool = Query(False),
+):
     if project_id:
         await redis_client.backfill_ticket_seqs(project_id)
         tickets = await redis_client.list_tickets_by_project(project_id, status)
     else:
         tickets = await redis_client.list_tickets(status)
+    if not include_archived:
+        tickets = [t for t in tickets if not t.get("archived")]
     return tickets
 
 
@@ -240,6 +246,47 @@ async def toggle_archive(ticket_id: str):
         "ticket_id": ticket_id,
         "data": updated,
     })
+    return updated
+
+
+@router.post("/{ticket_id}/force-status")
+async def force_status(ticket_id: str, body: dict):
+    """Admin endpoint: force ticket to any status, bypassing transition rules.
+
+    Use when system state is out of sync with reality (e.g., PR merged externally
+    but ticket stuck in failed).
+    """
+    from claude_hub.services import session_manager
+
+    target_status = body.get("status", "")
+    try:
+        target = TicketStatus(target_status)
+    except ValueError:
+        raise HTTPException(422, f"Invalid status: {target_status}. "
+                            f"Valid: {[s.value for s in TicketStatus]}")
+
+    ticket = await redis_client.get_ticket(ticket_id)
+    if not ticket:
+        raise HTTPException(404, "Ticket not found")
+
+    old_status = ticket.get("status")
+
+    # Stop any running session if moving to a terminal state
+    if target in (TicketStatus.MERGED, TicketStatus.FAILED):
+        session_manager.stop_session(ticket_id)
+
+    extra: dict = {"status_changed_at": datetime.now(timezone.utc).isoformat()}
+    if target == TicketStatus.MERGED:
+        extra["completed_at"] = datetime.now(timezone.utc).isoformat()
+
+    await redis_client.update_ticket_status(ticket_id, old_status, target.value)
+    await redis_client.update_ticket_fields(ticket_id, extra)
+    updated = await redis_client.get_ticket(ticket_id)
+    await broadcast({"type": "ticket_updated", "ticket_id": ticket_id, "data": updated})
+
+    send_kanban_update(ticket.get("project_id", ""))
+    _fire_pilot_trigger(ticket.get("project_id", ""), ticket_id)
+
     return updated
 
 
@@ -467,7 +514,14 @@ async def message_ticket(ticket_id: str, body: dict):
         raise HTTPException(409, f"Cannot send message to ticket in {status} status")
 
     if not session_manager.is_alive(ticket_id):
-        raise HTTPException(409, "No active session to send message to")
+        raise HTTPException(409, "No active session — tmux session does not exist")
+
+    if not session_manager.is_claude_running(ticket_id):
+        raise HTTPException(
+            409,
+            "Claude process has exited — session is at a shell prompt. "
+            "Use /request-changes or /retry-ticket to start a new session."
+        )
 
     # If BLOCKED, also unblock
     if status == "blocked":
@@ -1201,13 +1255,25 @@ async def request_changes(ticket_id: str, body: dict):
             429, f"Max concurrent sessions ({max_sess}) reached."
         )
 
-    try:
-        updated = await transition(ticket_id, TicketStatus.IN_PROGRESS,
-                                   started_at=datetime.now(timezone.utc).isoformat())
-    except ValueError:
+    ticket = await redis_client.get_ticket(ticket_id)
+    if not ticket:
         raise HTTPException(404, "Ticket not found")
-    except InvalidTransition as e:
-        raise HTTPException(409, str(e))
+
+    # Stop any existing session before starting a new one
+    session_manager.stop_session(ticket_id)
+
+    current_status = ticket.get("status")
+    if current_status != TicketStatus.IN_PROGRESS:
+        try:
+            updated = await transition(ticket_id, TicketStatus.IN_PROGRESS,
+                                       started_at=datetime.now(timezone.utc).isoformat())
+        except InvalidTransition as e:
+            raise HTTPException(409, str(e))
+    else:
+        # Already in_progress — just update started_at for the new session
+        await redis_client.update_ticket_fields(ticket_id, {
+            "started_at": datetime.now(timezone.utc).isoformat(),
+        })
 
     ticket = await redis_client.get_ticket(ticket_id)
     project = await _get_project_for_ticket(ticket)
@@ -1892,7 +1958,7 @@ async def get_ticket_diff(ticket_id: str):
 
 
 @router.post("/{ticket_id}/merge")
-async def merge_ticket(ticket_id: str):
+async def merge_ticket(ticket_id: str, force: bool = Query(False)):
     import asyncio
     from claude_hub.services import session_manager
     from claude_hub.services.ticket_service import InvalidTransition, transition
@@ -1920,34 +1986,35 @@ async def merge_ticket(ticket_id: str):
     project = await _get_project_for_ticket(ticket)
     gh_token = project.get("gh_token", "") or settings.gh_token
 
-    # Check PR review status before merging
-    from claude_hub.services.ci_check import get_pr_review_status
-    review = get_pr_review_status(clone_path, pr_number, gh_token)
-    if review["status"] == "changes_requested":
-        raise HTTPException(400, f"Cannot merge: {review['summary']}")
+    if not force:
+        # Check PR review status before merging
+        from claude_hub.services.ci_check import get_pr_review_status
+        review = get_pr_review_status(clone_path, pr_number, gh_token)
+        if review["status"] == "changes_requested":
+            raise HTTPException(400, f"Cannot merge: {review['summary']}")
 
-    # Check unresolved review threads before merging
-    repo_url = project.get("repo_url", "")
-    if repo_url:
-        from claude_hub.services.webhook_registration import _parse_owner_repo
-        parsed = _parse_owner_repo(repo_url)
-        if parsed:
-            threads = _get_unresolved_threads(parsed[0], parsed[1], pr_number, gh_token)
-            if threads:
-                count = len(threads)
-                raise HTTPException(
-                    400,
-                    f"Cannot merge: {count} unresolved conversation{'s' if count > 1 else ''}. "
-                    f"Resolve them on GitHub before merging."
-                )
+        # Check unresolved review threads before merging
+        repo_url = project.get("repo_url", "")
+        if repo_url:
+            from claude_hub.services.webhook_registration import _parse_owner_repo
+            parsed = _parse_owner_repo(repo_url)
+            if parsed:
+                threads = _get_unresolved_threads(parsed[0], parsed[1], pr_number, gh_token)
+                if threads:
+                    count = len(threads)
+                    raise HTTPException(
+                        400,
+                        f"Cannot merge: {count} unresolved conversation{'s' if count > 1 else ''}. "
+                        f"Resolve them on GitHub before merging."
+                    )
 
-    # Check CI status before merging
-    ci = get_ci_status(clone_path, branch, gh_token, pr_number=pr_number)
+        # Check CI status before merging
+        ci = get_ci_status(clone_path, branch, gh_token, pr_number=pr_number)
 
-    if ci["status"] == "failed":
-        raise HTTPException(400, f"CI check failed: {ci['summary']}")
+        if ci["status"] == "failed":
+            raise HTTPException(400, f"CI check failed: {ci['summary']}")
 
-    if ci["status"] == "pending":
+    if ci["status"] == "pending" and not force:
         # CI still running — transition to MERGING and poll in background
         try:
             updated = await transition(ticket_id, TicketStatus.MERGING)

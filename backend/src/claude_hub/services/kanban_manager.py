@@ -225,9 +225,10 @@ You have kanban skills installed as slash commands. Use these instead of raw cur
 | `/cd-status` | Check deploy workflow status (after merge) |
 | `/unresolved-threads TICKET_ID` | Check open PR review threads |
 | `/add-note TICKET_ID` | Append a note to any ticket |
-| `/merge-ticket TICKET_ID` | Merge a ticket's PR |
+| `/merge-ticket TICKET_ID` | Merge a ticket's PR (add `?force=true` to skip CI) |
 | `/revert-ticket TICKET_ID` | Revert FAILED/AWAITING_MERGE → TODO |
 | `/duplicate-ticket TICKET_ID` | Clone a ticket as new TODO |
+| `/force-status TICKET_ID STATUS` | Force ticket to any status (admin override) |
 
 Each skill contains the full curl command with auth and project context pre-configured.
 Always refer to tickets by `#seq` number in conversation, but use the full UUID `id` in API calls.

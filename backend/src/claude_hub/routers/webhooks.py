@@ -49,32 +49,44 @@ async def github_webhook(
     base_branch = payload.get("pull_request", {}).get("base", {}).get("ref", "main")
     logger.info("Received PR merge event: PR #%d", pr_number)
 
-    # Find ticket with this PR number
+    # Find ticket with this PR number across all non-terminal statuses.
+    # Users may merge PRs externally (gh pr merge) while ticket is in any state.
     merged_ticket_id = None
-    tickets = await redis_client.list_tickets("awaiting_merge")
-    for ticket in tickets:
-        if ticket.get("pr_number") == pr_number:
-            try:
-                from datetime import datetime, timezone
-                updated = await transition(
-                    ticket["id"], TicketStatus.MERGED,
-                    completed_at=datetime.now(timezone.utc).isoformat(),
-                )
-                await broadcast({
-                    "type": "ticket_updated",
-                    "ticket_id": ticket["id"],
-                    "data": updated,
-                })
-                merged_ticket_id = ticket["id"]
-                logger.info("Auto-merged ticket %s via webhook", ticket["id"])
-                # Fire pilot trigger for the project
-                from claude_hub.services.kanban_manager import send_pilot_trigger
-                project_id = ticket.get("project_id", "")
-                if project_id:
-                    send_pilot_trigger(project_id, f"ticket_merged:{ticket['id']}")
-            except Exception as e:
-                logger.error("Failed to auto-merge ticket %s: %s", ticket["id"], e)
-                return {"status": "error", "message": str(e)}
+    _NON_TERMINAL = ["in_progress", "blocked", "verifying", "reviewing",
+                     "awaiting_merge", "merging", "failed", "queued", "todo"]
+    for status in _NON_TERMINAL:
+        tickets = await redis_client.list_tickets(status)
+        for ticket in tickets:
+            if ticket.get("pr_number") == pr_number:
+                try:
+                    from datetime import datetime, timezone
+                    from claude_hub.services import session_manager, clone_manager
+                    # Stop any running session first
+                    session_manager.stop_session(ticket["id"])
+                    clone_manager.cleanup_clone(ticket["id"])
+                    # Force transition: add MERGED as valid target from any state
+                    updated = await transition(
+                        ticket["id"], TicketStatus.MERGED,
+                        completed_at=datetime.now(timezone.utc).isoformat(),
+                    )
+                    await broadcast({
+                        "type": "ticket_updated",
+                        "ticket_id": ticket["id"],
+                        "data": updated,
+                    })
+                    merged_ticket_id = ticket["id"]
+                    logger.info("Auto-merged ticket %s (was %s) via webhook", ticket["id"], status)
+                    # Fire pilot trigger for the project
+                    from claude_hub.services.kanban_manager import send_pilot_trigger
+                    project_id = ticket.get("project_id", "")
+                    if project_id:
+                        send_pilot_trigger(project_id, f"ticket_merged:{ticket['id']}")
+                except Exception as e:
+                    logger.error("Failed to auto-merge ticket %s: %s", ticket["id"], e)
+                    return {"status": "error", "message": str(e)}
+                break
+        if merged_ticket_id:
+            break
 
     # After a PR merges, update other review branches and sync kanban branch
     import asyncio

@@ -193,6 +193,29 @@ def is_alive(ticket_id: str) -> bool:
     return _tmux_exists(name) and not _tmux_is_dead(name)
 
 
+def is_claude_running(ticket_id: str) -> bool:
+    """Check if a Claude process is actually running in the tmux pane.
+
+    Returns False if the tmux session exists but Claude has exited
+    (leaving a bare shell prompt).
+    """
+    name = _session_name(ticket_id)
+    if not _tmux_exists(name):
+        return False
+    try:
+        result = subprocess.run(
+            ["tmux", "list-panes", "-t", name, "-F", "#{pane_current_command}"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if result.returncode != 0:
+            return False
+        cmd = result.stdout.strip().lower()
+        # If pane is running bash/zsh/sh, Claude has exited
+        return cmd not in ("bash", "zsh", "sh", "fish", "")
+    except Exception:
+        return False
+
+
 def update_session_status(ticket_id: str, status: str) -> None:
     """Update the status tracked for a session (used for active vs idle counting)."""
     if ticket_id in _active_sessions:

@@ -12,15 +12,15 @@ logger = logging.getLogger(__name__)
 _transition_locks: dict[str, asyncio.Lock] = {}
 
 VALID_TRANSITIONS: dict[TicketStatus, list[TicketStatus]] = {
-    TicketStatus.TODO: [TicketStatus.IN_PROGRESS, TicketStatus.QUEUED],
-    TicketStatus.QUEUED: [TicketStatus.IN_PROGRESS, TicketStatus.TODO],
+    TicketStatus.TODO: [TicketStatus.IN_PROGRESS, TicketStatus.QUEUED, TicketStatus.MERGED],
+    TicketStatus.QUEUED: [TicketStatus.IN_PROGRESS, TicketStatus.TODO, TicketStatus.MERGED],
     TicketStatus.IN_PROGRESS: [TicketStatus.TODO, TicketStatus.BLOCKED, TicketStatus.VERIFYING, TicketStatus.FAILED, TicketStatus.MERGED],
-    TicketStatus.BLOCKED: [TicketStatus.IN_PROGRESS, TicketStatus.FAILED],
-    TicketStatus.VERIFYING: [TicketStatus.REVIEWING, TicketStatus.AWAITING_MERGE, TicketStatus.FAILED],
-    TicketStatus.REVIEWING: [TicketStatus.AWAITING_MERGE, TicketStatus.IN_PROGRESS, TicketStatus.FAILED],
+    TicketStatus.BLOCKED: [TicketStatus.IN_PROGRESS, TicketStatus.FAILED, TicketStatus.MERGED],
+    TicketStatus.VERIFYING: [TicketStatus.REVIEWING, TicketStatus.AWAITING_MERGE, TicketStatus.FAILED, TicketStatus.MERGED],
+    TicketStatus.REVIEWING: [TicketStatus.AWAITING_MERGE, TicketStatus.IN_PROGRESS, TicketStatus.FAILED, TicketStatus.MERGED],
     TicketStatus.AWAITING_MERGE: [TicketStatus.MERGING, TicketStatus.MERGED, TicketStatus.IN_PROGRESS, TicketStatus.TODO],
     TicketStatus.MERGING: [TicketStatus.MERGED, TicketStatus.FAILED],
-    TicketStatus.FAILED: [TicketStatus.IN_PROGRESS, TicketStatus.AWAITING_MERGE, TicketStatus.TODO],
+    TicketStatus.FAILED: [TicketStatus.IN_PROGRESS, TicketStatus.AWAITING_MERGE, TicketStatus.TODO, TicketStatus.MERGED],
     TicketStatus.MERGED: [],
 }
 
