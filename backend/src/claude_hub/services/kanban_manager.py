@@ -134,7 +134,7 @@ def _build_kanban_claude_md(project: dict, api_base_url: str, auth_token: str = 
         )
     else:
         vision_instructions = (
-            '**VISION.md is WRITABLE.** You may append to Goal and Scope sections when the current scope has been '
+            '**VISION.md is WRITABLE.** You may extend it when the current scope has been '
             'fully implemented and you have a clear next direction. Extensions must be additive — never remove or '
             'contradict existing content. Always `git commit + push` VISION.md changes before creating new tickets '
             'so they are grounded in the updated vision.'
@@ -168,31 +168,14 @@ You are a full Claude Code instance with access to the repository. You can:
 5. **Suggest branch types** (feature, bugfix, hotfix, chore, refactor, docs, test)
 6. **Analyze dependencies** between tickets and suggest execution order
 
-## Ticket Format Conventions — VISION.md is the Source of Truth
+## Ticket Format Conventions
 - **Title**: Imperative mood, concise (e.g., "Add user authentication endpoint")
-- **Description**: MUST be structured with these sections:
-  ```
-  ## What
-  [What needs to be done — specific and actionable]
-
-  ## VISION.md Reference
-  [Which section(s) of VISION.md this ticket implements. Include specific quotes or section headers.
-   Example: "Implements 'Node Protocol → Port Types' — adds TENSOR type to the enum"]
-
-  ## Acceptance Criteria
-  [What done looks like — testable conditions. Must align with VISION.md specifications.]
-
-  ## Technical Notes
-  [Implementation approach. If VISION.md specifies HOW to do it (e.g., API contract, data flow,
-   UI design), reference that specification. Do NOT invent alternative approaches.]
-
-  ## Scope Boundary
-  [What files/modules this ticket should touch. What it should NOT touch.
-   Prevents scope creep and cascading changes.]
-  ```
+- **Description**: Should be clear and actionable. Include what needs to be done, what "done" looks like,
+  and any relevant technical context. No mandatory sections — use whatever structure fits the ticket.
+- **VISION.md alignment**: If a VISION.md exists, tickets should be consistent with it.
+  When VISION.md has specific specs (API contracts, data structures, UI design), quote or reference
+  them in the ticket so the implementing CC session knows exactly what to build.
 - **Branch type**: Choose the most appropriate type for the work
-- **CRITICAL**: Every ticket description MUST reference VISION.md. If a ticket has no clear
-  connection to VISION.md, either the ticket is out of scope or VISION.md needs updating first.
 
 ## Kanban State Awareness
 - **On startup**: Always run `get_kanban_state` to build your mental model of the current board.
@@ -270,32 +253,23 @@ These operations are outside your scope. Do not attempt them:
 - Your branch is auto-synced with `{base_branch}` every 30 seconds and after PR merges.
 - Before answering user questions about code, run `git log --oneline -1 origin/{base_branch}` to confirm you have the latest. If behind, run `git merge origin/{base_branch} --no-edit` first.
 
-## Vision — THE MOST IMPORTANT DOCUMENT
+## VISION.md — Ground Truth
 
-VISION.md exists on this branch (kanban-claude-hub) and is the **single source of truth** for ALL decisions.
+VISION.md is the **ground truth** for this project. It defines what to build, how to build it, and what's out of scope.
+VISION.md is written by the user in whatever format they choose — it may be structured with sections, or it may be freeform prose. Respect its format.
 
-### Why VISION.md Matters
-- It contains the architecture plan, API contracts, data flow design, and UI specifications
-- Every ticket you create MUST trace back to a specific part of VISION.md
-- Every implementation decision made by ticket CC sessions is guided by VISION.md
-- If something is not in VISION.md, it is out of scope until the user adds it
-- **VISION.md is injected into every ticket CC session** — inconsistencies between your tickets and VISION.md will cause implementation failures
-
-### Structure
-- **Goal** — what the project exists to achieve (source of truth for ticket planning)
-- **Scope** — what is in/out of scope (In Scope / Out of Scope subsections)
-- **Milestones** — ordered deliverables (user-managed, do not touch)
-- **Architecture / Design** — technical specifications that ticket CC must follow
+### Why It Matters
+- **VISION.md is injected into every ticket CC session.** What you write in tickets and what's in VISION.md must be consistent, or CC sessions will produce conflicting implementations.
+- If VISION.md specifies an approach (API design, data flow, UI pattern), that approach is authoritative — do not invent alternatives.
+- If something is not covered by VISION.md, ask the user before assuming it's in scope.
 
 ### Rules
 - On startup: **always** read VISION.md before doing anything else.
 - Re-read VISION.md whenever: you finish a batch of tickets, the user/Pilot asks you to check vision, or before planning new work.
 - Before every response: silently run `git pull origin kanban-claude-hub --quiet`,
-  then check if VISION.md has changed since you last read it. If it has, re-read it
-  before composing your response.
-- **Before creating tickets**: re-read the relevant VISION.md sections and include specific references in ticket descriptions.
-- **When VISION.md is detailed**: ticket descriptions should quote the specific specs (API endpoints, data structures, UI components) so ticket CC knows exactly what to build.
-- Never touch Milestones — only the user manages milestones.
+  then check if VISION.md has changed since you last read it. If it has, re-read it.
+- **Before creating tickets**: check VISION.md for relevant specs and include them in ticket descriptions.
+- **When VISION.md is detailed**: quote the specific specs so ticket CC knows exactly what to build.
 - {vision_instructions}
 
 ## CI Pipeline — Keep It Minimal
@@ -406,7 +380,7 @@ def _install_skills(
         )
     else:
         vision_instructions = (
-            '**VISION.md is WRITABLE.** You may append to Goal and Scope sections when the current scope has been '
+            '**VISION.md is WRITABLE.** You may extend it when the current scope has been '
             'fully implemented and you have a clear next direction. Extensions must be additive — never remove or '
             'contradict existing content. Always `git commit + push` VISION.md changes before creating new tickets '
             'so they are grounded in the updated vision.'
@@ -551,26 +525,12 @@ def start_kanban(project: dict, gh_token: str = "") -> str:
             project_name = project.get("name", "Project")
             with open(vision_path, "w") as f:
                 f.write(f"# {project_name} — Vision\n\n"
-                        "## Goal\n\n"
-                        "What this project exists to achieve.\n\n"
-                        "- (Add your project goals here)\n\n"
-                        "## Scope\n\n"
-                        "What is in scope and what is explicitly out of scope.\n\n"
-                        "### In Scope\n"
-                        "- (Define what is in scope)\n\n"
-                        "### Out of Scope\n"
-                        "- (Define what is out of scope)\n\n"
-                        "## Milestones\n\n"
-                        "Ordered list of deliverables. Check off as completed.\n\n"
-                        "- [ ] (First milestone)\n\n"
-                        "---\n\n"
-                        "<!-- KANBAN_CC_RULES:\n"
-                        "  - Goal and Scope are the source of truth for all ticket planning.\n"
-                        "  - In writable mode, CC may APPEND to Goal and Scope sections only.\n"
-                        "  - CC must NEVER modify or remove existing content in any section.\n"
-                        "  - CC must NEVER touch Milestones — only the user manages milestones.\n"
-                        "  - In readonly mode, CC proposes amendments in the Step 10 report.\n"
-                        "-->\n")
+                        "Write your project vision here in whatever format works best for you.\n\n"
+                        "This file is the ground truth for all ticket planning and implementation.\n"
+                        "Kanban CC and every ticket CC session will read this file to understand\n"
+                        "what to build and how to build it.\n\n"
+                        "Include anything relevant: goals, scope, architecture, API design,\n"
+                        "UI specifications, tech stack decisions, etc.\n")
             subprocess.run(
                 ["git", "add", "VISION.md"],
                 cwd=kanban_dir, capture_output=True,

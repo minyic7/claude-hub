@@ -111,10 +111,12 @@ def _build_vision_context(project_id: str) -> str:
     if not vision:
         return ""
     return (
-        "\n\n## Project Vision (from VISION.md — READ THIS CAREFULLY)\n"
-        "This is the project's architecture and design plan. Your implementation MUST be consistent with it.\n"
-        "Pay special attention to: API contracts, data flow design, file structure, and UI design system.\n"
-        "If the vision specifies how something should be done, follow that approach — do not invent alternatives.\n\n"
+        "\n\n## Project Vision (VISION.md — GROUND TRUTH)\n"
+        "This is the authoritative project specification. Your implementation MUST follow it.\n"
+        "- If the vision specifies an approach, use that approach — do not invent alternatives.\n"
+        "- If the vision specifies API contracts, data structures, or file layout, match them exactly.\n"
+        "- If your ticket description conflicts with the vision, the vision wins.\n"
+        "- If the vision doesn't cover something, use your best judgment but stay consistent with its style and patterns.\n\n"
         f"{vision}\n"
     )
 
