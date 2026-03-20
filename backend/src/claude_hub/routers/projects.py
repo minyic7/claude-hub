@@ -1,11 +1,13 @@
 import json
 import logging
+import os
 import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException
 
 from claude_hub import redis_client
+from claude_hub.config import settings
 from claude_hub.models.ticket import AgentSettings, Project, ProjectCreate, ProjectUpdate
 from claude_hub.routers.ws import broadcast
 from claude_hub.services.webhook_registration import delete_webhook, register_webhook
@@ -228,6 +230,16 @@ async def delete_project(project_id: str):
     wh_id = project.get("webhook_id")
     if wh_id and project.get("gh_token") and project.get("repo_url"):
         delete_webhook(project["repo_url"], project["gh_token"], int(wh_id))
+
+    # Clean up kanban tmux session and data directory
+    import shutil
+    import subprocess
+    from claude_hub.services.kanban_manager import _session_name
+    tmux_name = _session_name(project_id)
+    subprocess.run(["tmux", "kill-session", "-t", tmux_name], capture_output=True)
+    kanban_dir = os.path.join(settings.data_dir, "kanbans", project_id)
+    if os.path.isdir(kanban_dir):
+        shutil.rmtree(kanban_dir, ignore_errors=True)
 
     await redis_client.delete_project(project_id)
     await broadcast({"type": "project_deleted", "project_id": project_id})
