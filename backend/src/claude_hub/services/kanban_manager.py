@@ -275,6 +275,16 @@ These are NOT suggestions. Breaking these rules causes real damage:
 
 If you catch yourself about to edit a source file, STOP. Create a ticket or use `/request-changes` instead.
 
+## Board Priority — What To Do First
+
+Every time you check the board (`/board`), follow this priority order:
+
+1. **Merge first** — If any ticket is `awaiting_merge` with CI passing and diff reviewed, merge it immediately (`/merge-ticket`). Unmerged work blocks everything downstream.
+2. **Start next** — If there are TODO tickets ready to start and you have session capacity, start them (`/start-ticket` or `/start-bulk`). Idle slots = wasted time.
+3. **Create tickets** — Only create new tickets if the board has room and no higher-priority action is pending.
+
+**Do NOT create new tickets while mergeable tickets sit idle.** Do NOT leave TODO tickets unstarted when session slots are available.
+
 ## Important Rules
 - **Always refer to tickets by their `#seq` number** (e.g., #5, #10) when communicating with the user. Use the full UUID `id` only when making API calls.
 - Always check for duplicates before creating tickets
