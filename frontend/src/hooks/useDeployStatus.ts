@@ -25,7 +25,7 @@ export function useDeployStatus(
       const { runs: newRuns } = await api.github.actions(projectId)
       setRuns(newRuns)
 
-      const hasInProgress = newRuns.some((r) => r.status === 'in_progress' || r.status === 'queued')
+      // Track which branches have in-progress runs (for per-branch indicators)
       const deploying = new Set<string>()
       for (const r of newRuns) {
         if (r.status === 'in_progress' || r.status === 'queued') {
@@ -34,20 +34,35 @@ export function useDeployStatus(
       }
       setDeployingBranches(deploying)
 
-      const newState: DeployState = hasInProgress
+      // Deploy state: only consider CD workflows on main/master (push events).
+      // CI runs on feature branches should NOT block merges — CI is per-branch,
+      // only the merge endpoint checks per-PR CI status.
+      const CD_KEYWORDS = ['deploy', 'cd', 'release', 'publish', 'production']
+      const mainBranches = new Set(['main', 'master'])
+      const cdRuns = newRuns.filter(
+        (r) =>
+          mainBranches.has(r.head_branch) &&
+          CD_KEYWORDS.some((kw) => r.name.toLowerCase().includes(kw)),
+      )
+
+      const hasCdInProgress = cdRuns.some(
+        (r) => r.status === 'in_progress' || r.status === 'queued',
+      )
+
+      const newState: DeployState = hasCdInProgress
         ? 'deploying'
-        : newRuns.length > 0
-          ? newRuns[0].conclusion === 'success'
+        : cdRuns.length > 0
+          ? cdRuns[0].conclusion === 'success'
             ? 'success'
-            : newRuns[0].conclusion === 'failure'
+            : cdRuns[0].conclusion === 'failure'
               ? 'failure'
               : 'idle'
           : 'idle'
 
       // Detect transition from deploying -> completed
       if (prevStateRef.current === 'deploying' && newState !== 'deploying' && onDeployComplete) {
-        // Find runs that were in_progress but are now complete
-        for (const run of newRuns) {
+        // Find CD runs that were in_progress but are now complete
+        for (const run of cdRuns) {
           const prev = prevRunsRef.current.find((r) => r.id === run.id)
           if (prev && (prev.status === 'in_progress' || prev.status === 'queued') && run.status === 'completed') {
             onDeployComplete(run)

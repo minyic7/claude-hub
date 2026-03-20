@@ -111,6 +111,78 @@ def _evaluate_checks(checks: list[dict], key_status: str, key_conclusion: str) -
     return {"status": "passed", "checks": checks, "summary": summary}
 
 
+def get_cd_status(clone_path: str, gh_token: str = "", base_branch: str = "main") -> dict:
+    """Check deploy/CD workflow status on the base branch.
+
+    Looks for the most recent workflow run on the base branch that matches
+    common deploy/CD workflow names. If the latest deploy is failing,
+    ALL merges should be blocked (deploy failure is repo-wide).
+
+    Returns:
+        {
+            "status": "passed" | "failed" | "pending" | "no_cd",
+            "summary": "human readable summary",
+            "run_url": "link to the failing run" (if failed)
+        }
+    """
+    # Get the most recent workflow run on the base branch
+    # Filter for deploy/CD-related workflows by checking event=push on base branch
+    result = _run_gh(
+        ["gh", "run", "list",
+         "--branch", base_branch,
+         "--event", "push",
+         "--limit", "5",
+         "--json", "name,status,conclusion,url,headBranch,event,databaseId"],
+        cwd=clone_path, gh_token=gh_token,
+    )
+
+    if result.returncode != 0 or not result.stdout.strip():
+        return {"status": "no_cd", "summary": "No CD workflows found"}
+
+    try:
+        runs = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        return {"status": "no_cd", "summary": "Could not parse CD status"}
+
+    if not runs:
+        return {"status": "no_cd", "summary": "No CD workflows found"}
+
+    # Look for deploy/CD workflows (common naming patterns)
+    cd_keywords = {"deploy", "cd", "release", "publish", "production"}
+    cd_runs = [
+        r for r in runs
+        if any(kw in (r.get("name") or "").lower() for kw in cd_keywords)
+    ]
+
+    # If no deploy-specific workflows found, no CD blocking needed
+    if not cd_runs:
+        return {"status": "no_cd", "summary": "No CD workflows configured"}
+
+    # Check the most recent CD run
+    latest = cd_runs[0]
+    status = (latest.get("status") or "").lower()
+    conclusion = (latest.get("conclusion") or "").lower()
+    name = latest.get("name", "deploy")
+    run_url = latest.get("url", "")
+
+    if status == "completed":
+        if conclusion in ("success",):
+            return {"status": "passed", "summary": f"CD '{name}' passed"}
+        elif conclusion in ("failure", "timed_out", "cancelled"):
+            return {
+                "status": "failed",
+                "summary": f"CD '{name}' failed on {base_branch} — all merges blocked until deploy is green",
+                "run_url": run_url,
+            }
+        else:
+            return {"status": "passed", "summary": f"CD '{name}' completed ({conclusion})"}
+
+    if status in ("in_progress", "queued", "waiting", "requested", "pending"):
+        return {"status": "pending", "summary": f"CD '{name}' is running on {base_branch}"}
+
+    return {"status": "no_cd", "summary": f"CD '{name}' status unknown ({status})"}
+
+
 def get_failed_log(clone_path: str, gh_token: str = "", max_lines: int = 80) -> str:
     """Fetch the failed CI run log for the most recent failed workflow run."""
     # Find the most recent failed run
@@ -235,6 +307,17 @@ async def wait_for_ci_and_merge(
         logger.info("CI status for %s: %s", ticket_id, ci["summary"])
 
         if ci["status"] == "passed":
+            # Check CD (deploy) status on main — CD failure blocks ALL merges
+            cd = get_cd_status(clone_path, gh_token)
+            if cd["status"] == "failed":
+                from claude_hub.routers.tickets import process_queue
+                reason = f"CI passed but deploy is failing on main: {cd['summary']}"
+                updated = await transition(ticket_id, TicketStatus.FAILED, failed_reason=reason)
+                await broadcast({"type": "ticket_updated", "ticket_id": ticket_id, "data": updated})
+                logger.warning("CD blocked merge for %s: %s", ticket_id, cd["summary"])
+                await process_queue()
+                return
+
             # Check PR reviews before merging
             review = get_pr_review_status(clone_path, pr_number, gh_token)
             if review["status"] == "changes_requested":

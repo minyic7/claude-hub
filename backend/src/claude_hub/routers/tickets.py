@@ -1998,7 +1998,7 @@ async def merge_ticket(ticket_id: str, force: bool = Query(False)):
     import asyncio
     from claude_hub.services import session_manager
     from claude_hub.services.ticket_service import InvalidTransition, transition
-    from claude_hub.services.ci_check import get_ci_status, merge_pr, wait_for_ci_and_merge
+    from claude_hub.services.ci_check import get_ci_status, get_cd_status, merge_pr, wait_for_ci_and_merge
 
     ticket = await redis_client.get_ticket(ticket_id)
     if not ticket:
@@ -2044,25 +2044,31 @@ async def merge_ticket(ticket_id: str, force: bool = Query(False)):
                         f"Resolve them on GitHub before merging."
                     )
 
-        # Check CI status before merging
+        # Check CD (deploy) status on base branch — CD failure blocks ALL merges
+        base_branch = project.get("base_branch", "main")
+        cd = get_cd_status(clone_path, gh_token, base_branch=base_branch)
+        if cd["status"] == "failed":
+            raise HTTPException(400, f"Deploy blocked: {cd['summary']}")
+
+        # Check CI status before merging (per-branch — only blocks this ticket)
         ci = get_ci_status(clone_path, branch, gh_token, pr_number=pr_number)
 
         if ci["status"] == "failed":
             raise HTTPException(400, f"CI check failed: {ci['summary']}")
 
-    if ci["status"] == "pending" and not force:
-        # CI still running — transition to MERGING and poll in background
-        try:
-            updated = await transition(ticket_id, TicketStatus.MERGING)
-        except InvalidTransition as e:
-            raise HTTPException(409, str(e))
-        await broadcast({"type": "ticket_updated", "ticket_id": ticket_id, "data": updated})
-        asyncio.create_task(
-            wait_for_ci_and_merge(ticket_id, clone_path, branch, pr_number, gh_token)
-        )
-        return updated
+        if ci["status"] == "pending":
+            # CI still running — transition to MERGING and poll in background
+            try:
+                updated = await transition(ticket_id, TicketStatus.MERGING)
+            except InvalidTransition as e:
+                raise HTTPException(409, str(e))
+            await broadcast({"type": "ticket_updated", "ticket_id": ticket_id, "data": updated})
+            asyncio.create_task(
+                wait_for_ci_and_merge(ticket_id, clone_path, branch, pr_number, gh_token)
+            )
+            return updated
 
-    # CI passed or no CI — merge immediately
+    # CI passed, no CI, or force — merge immediately
     try:
         await merge_pr(ticket_id, clone_path, pr_number, gh_token)
     except RuntimeError as e:
