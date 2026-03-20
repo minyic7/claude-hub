@@ -333,19 +333,9 @@ async def send_pilot_message(project_id: str, body: dict):
     from claude_hub.services.pilot_agent import queue_user_message, nudge
     await queue_user_message(project_id, message)
 
-    # Also record as supervisor event so it shows in the UI log
-    await broadcast({
-        "type": "supervisor_event",
-        "data": {
-            "project_id": project_id,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "cc_summary": "",
-            "action": "user_message",
-            "message": message,
-            "reason": "Message from user to pilot",
-        },
-    })
-
-    # Nudge pilot to process immediately
+    # Nudge pilot to process immediately — this will pop the message,
+    # relay it to CC, and broadcast a "user_relay" supervisor event.
+    # No separate "user_message" broadcast needed (the frontend adds
+    # an optimistic local event for instant feedback).
     event = await nudge(project_id)
     return {"status": "queued", "event": event}

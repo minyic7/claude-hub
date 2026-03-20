@@ -181,9 +181,19 @@ export function PilotStatusBar({ projectId, pilotMode, onNudge }: PilotStatusBar
     const text = messageText.trim()
     if (!text || sending) return
     setSending(true)
+    // Optimistic local event for instant feedback (the backend will
+    // broadcast a "user_relay" event once the pilot relays to CC)
+    const optimistic: SupervisorEvent = {
+      timestamp: new Date().toISOString(),
+      cc_summary: '',
+      action: 'user_message',
+      message: text,
+      reason: 'Message from user to pilot',
+    }
+    setEvents(prev => [...prev.slice(-199), optimistic])
+    setMessageText('')
     try {
       await api.projects.sendPilotMessage(projectId, text)
-      setMessageText('')
     } catch {
       // Error will show via supervisor event
     } finally {
@@ -318,7 +328,7 @@ export function PilotStatusBar({ projectId, pilotMode, onNudge }: PilotStatusBar
               type="text"
               value={messageText}
               onChange={(e) => setMessageText(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage() } }}
+              onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); handleSendMessage() } }}
               placeholder="Message pilot..."
               disabled={sending}
               className="flex-1 bg-[#2a2b3d] text-xs text-gray-100 placeholder-gray-500 rounded px-2 py-1.5 border border-[#3a3b4d] outline-none focus:ring-1 focus:ring-emerald-500/50 focus:border-emerald-500/50 disabled:opacity-50"
