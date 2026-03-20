@@ -112,6 +112,22 @@ def start_session(
     with open(task_file, "w") as f:
         f.write(task)
 
+    # Ensure launcher files are gitignored so CC doesn't commit them
+    gitignore_path = os.path.join(clone_path, ".gitignore")
+    _entries = [".claude-hub-task.md", ".claude-hub-run.sh", ".claude-hub.jsonl"]
+    try:
+        existing = open(gitignore_path).read() if os.path.exists(gitignore_path) else ""
+        missing = [e for e in _entries if e not in existing]
+        if missing:
+            with open(gitignore_path, "a") as gi:
+                if existing and not existing.endswith("\n"):
+                    gi.write("\n")
+                gi.write("# claude-hub session files\n")
+                for entry in missing:
+                    gi.write(f"{entry}\n")
+    except Exception:
+        pass  # best-effort, don't block session start
+
     # Build claude command parts
     parts = [
         settings.claude_bin,
