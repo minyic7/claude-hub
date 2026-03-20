@@ -61,9 +61,11 @@ async def github_webhook(
                 try:
                     from datetime import datetime, timezone
                     from claude_hub.services import session_manager, clone_manager
+                    from claude_hub.routers.tickets import _cleanup_remote_branch
                     # Stop any running session first
                     session_manager.stop_session(ticket["id"])
                     clone_manager.cleanup_clone(ticket["id"])
+                    _cleanup_remote_branch(ticket)
                     # Force transition: add MERGED as valid target from any state
                     updated = await transition(
                         ticket["id"], TicketStatus.MERGED,
