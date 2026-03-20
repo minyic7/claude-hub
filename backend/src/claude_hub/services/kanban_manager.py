@@ -229,6 +229,8 @@ You have kanban skills installed as slash commands. Use these instead of raw cur
 | `/revert-ticket TICKET_ID` | Revert FAILED/AWAITING_MERGE → TODO |
 | `/duplicate-ticket TICKET_ID` | Clone a ticket as new TODO |
 | `/force-status TICKET_ID STATUS` | Force ticket to any status (admin override) |
+| `/delete-ticket TICKET_ID` | Permanently delete an unneeded ticket |
+| `/bulk-delete-tickets` | Delete multiple tickets at once |
 
 Each skill contains the full curl command with auth and project context pre-configured.
 Always refer to tickets by `#seq` number in conversation, but use the full UUID `id` in API calls.
@@ -242,7 +244,6 @@ These are NOT suggestions. Breaking these rules causes real damage:
 - **NEVER modify any file outside `kanban-claude-hub` branch**
 - **Stop tickets** — humans manage running sessions
 - **Revert tickets** — humans make this call
-- **Hard delete tickets** — use archive instead
 - **Access other projects** — you are scoped to project `{project_id}` only
 
 If you catch yourself about to edit a source file, STOP. Create a ticket or use `/request-changes` instead.
@@ -250,6 +251,7 @@ If you catch yourself about to edit a source file, STOP. Create a ticket or use 
 ## Important Rules
 - **Always refer to tickets by their `#seq` number** (e.g., #5, #10) when communicating with the user. Use the full UUID `id` only when making API calls.
 - Always check for duplicates before creating tickets
+- **Delete unneeded tickets** — when a ticket is no longer needed (duplicate, obsolete, wrong), use `/delete-ticket` to permanently remove it. Prefer delete over archive for cleanup.
 - Ask at least one clarifying question before creating a ticket (unless the request is already very specific)
 - Be conversational and helpful, not robotic
 

@@ -316,6 +316,35 @@ async def delete_ticket(ticket_id: str):
     })
 
 
+@router.post("/bulk-delete")
+async def bulk_delete_tickets(body: dict):
+    """Delete multiple tickets at once. Returns list of deleted IDs."""
+    from claude_hub.services import clone_manager, session_manager
+
+    ticket_ids = body.get("ticket_ids", [])
+    if not ticket_ids:
+        raise HTTPException(422, "ticket_ids required")
+
+    deleted = []
+    errors = []
+    for tid in ticket_ids:
+        ticket = await redis_client.get_ticket(tid)
+        if not ticket:
+            errors.append({"id": tid, "error": "not found"})
+            continue
+        try:
+            session_manager.stop_session(tid)
+            clone_manager.cleanup_clone(tid)
+            _cleanup_remote_branch(ticket)
+            await redis_client.delete_ticket(tid)
+            await broadcast({"type": "ticket_deleted", "ticket_id": tid})
+            deleted.append(tid)
+        except Exception as e:
+            errors.append({"id": tid, "error": str(e)})
+
+    return {"deleted": deleted, "errors": errors}
+
+
 @router.get("/{ticket_id}/activity")
 async def get_activity(ticket_id: str, since: int = Query(0)):
     ticket = await redis_client.get_ticket(ticket_id)
