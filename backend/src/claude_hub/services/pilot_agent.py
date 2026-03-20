@@ -430,7 +430,7 @@ class PilotAgent(BaseAgent):
         vision_path = os.path.join(self.working_dir, "VISION.md")
         try:
             with open(vision_path) as f:
-                return f.read()[:3000]
+                return f.read()
         except FileNotFoundError:
             return "(no VISION.md found)"
         except Exception as e:

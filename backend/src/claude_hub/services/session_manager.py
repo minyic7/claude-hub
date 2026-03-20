@@ -105,11 +105,16 @@ def start_session(
     if _tmux_exists(name):
         subprocess.run(["tmux", "kill-session", "-t", name], capture_output=True)
 
-    # Build claude command
-    task_escaped = shlex.quote(task)
+    # Write task to file to avoid tmux send-keys length limits.
+    # tmux send-keys has a ~500-char practical limit; large VISION.md
+    # injections easily exceed this. We write a launcher script instead.
+    task_file = os.path.join(clone_path, ".claude-hub-task.md")
+    with open(task_file, "w") as f:
+        f.write(task)
+
+    # Build claude command parts
     parts = [
         settings.claude_bin,
-        "-p", task_escaped,
         "--output-format", "stream-json",
         "--verbose",
         "--dangerously-skip-permissions",
@@ -122,7 +127,15 @@ def start_session(
     if disallowed:
         parts.extend(["--disallowedTools", shlex.quote(disallowed)])
 
-    claude_cmd = " ".join(parts) + f" 2>&1 | tee {shlex.quote(log_path)}"
+    claude_args = " ".join(parts)
+
+    # Write a launcher script that reads the task from file
+    launcher_file = os.path.join(clone_path, ".claude-hub-run.sh")
+    with open(launcher_file, "w") as f:
+        f.write(f'#!/bin/bash\n{claude_args} -p "$(cat {shlex.quote(task_file)})" 2>&1 | tee {shlex.quote(log_path)}\n')
+    os.chmod(launcher_file, 0o755)
+
+    claude_cmd = shlex.quote(launcher_file)
 
     # Create tmux session with clean env
     env = _clean_env()
