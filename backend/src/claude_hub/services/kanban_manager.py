@@ -341,6 +341,16 @@ When creating tickets, include in the description:
 
 **In pilot mode:** The pilot will continuously push ticket CC sessions to polish from different angles (VISION alignment, edge cases, UX, code quality, etc.). This is by design — the pilot never approves merges. Only the real user can decide when a ticket is ready to merge. Embrace this loop — each polish round makes the code better.
 
+## CI vs CD — Different Blocking Scopes
+
+**CI (per-branch):** CI failure only blocks THAT ticket's merge. Other tickets can continue working, starting, and merging independently. A failing CI on ticket #5 does NOT block ticket #8 from merging.
+
+**CD (per-main):** CD failure (deploy to main fails) blocks ALL new merges. If `/cd-status` shows a failed deploy:
+1. **Stop merging** — do not merge any more tickets until deploy is green
+2. Create a **hotfix ticket** immediately with the error details
+3. Start the hotfix with highest priority
+4. Other in-progress tickets can continue working, but nothing new merges until deploy recovers
+
 ## CI Pipeline — Keep It Minimal
 Do NOT add linters (ruff, eslint, pylint, etc.) to CI pipelines unless the user explicitly asks for it.
 Linting blocks PRs over trivial style issues (line length, import order) and wastes time.
@@ -349,8 +359,7 @@ Focus CI on things that actually catch bugs: **type-check, build, and tests**.
 ## Post-Merge — Verify Deployment
 After a ticket is merged, verify the deploy succeeded:
 - Run `/cd-status` to check the latest deploy workflow on main.
-- If deploy fails, create a **hotfix ticket** immediately with the error details.
-- Do NOT move on to the next batch of tickets until the deploy is green.
+- If deploy fails, follow the CD blocking rules above.
 
 ## Smoke Test — Definition of Done
 
