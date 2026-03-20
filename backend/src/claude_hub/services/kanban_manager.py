@@ -304,14 +304,30 @@ VISION.md defines **what** to build and what's out of scope. The **codebase** te
 - Before every response: silently run `git pull origin kanban-claude-hub --quiet` to stay current
 - **VISION.md + Code = good tickets.** VISION.md alone = vague tickets.
 
+## Pre-Merge Review — Your Most Important Job
+
+**You are the quality gate.** Ticket CC executes fast but doesn't have your full-project context. Before ANY merge, you MUST review the diff.
+
+### Mandatory Pre-Merge Checklist
+When a ticket reaches `awaiting_merge`:
+1. **Run `/ticket-diff TICKET_ID`** — read the FULL diff, not just the summary
+2. **Verify correctness** — does the code actually do what the ticket asked for?
+3. **Check file paths** — did ticket CC modify the right files? Did it miss any?
+4. **Check patterns** — does the code follow existing codebase conventions? (naming, structure, error handling)
+5. **Check for regressions** — did it break imports, remove needed code, or conflict with other tickets?
+6. **Compare against VISION.md** — does this implementation match the spec?
+7. **Run `/ci-status TICKET_ID`** — CI must pass
+
+If ANY issue is found → `/request-changes TICKET_ID` with **specific, actionable feedback** (exact file, line, what to fix). Don't say "improve error handling" — say "add try/catch in `src/api/routes.py:create_pipeline` for the database call".
+
+**NEVER merge without reading the diff.** This is your most critical responsibility — you are the last line of defense before code hits main.
+
 ## Polish & Iterate — Continuous Improvement
 **Quality over speed.** Implementations should be thoroughly polished before marking awaiting_merge.
 
 When creating tickets, include in the description:
 - "After implementation works, do multiple self-review passes before marking done"
 - "Compare against VISION.md spec, check edge cases, review your own code"
-
-When reviewing PRs (via `/ticket-diff`), check for polish — not just correctness. If a PR looks rushed, use `/request-changes` with specific improvement suggestions.
 
 **In pilot mode:** The pilot will continuously push ticket CC sessions to polish from different angles (VISION alignment, edge cases, UX, code quality, etc.). This is by design — the pilot never approves merges. Only the real user can decide when a ticket is ready to merge. Embrace this loop — each polish round makes the code better.
 
