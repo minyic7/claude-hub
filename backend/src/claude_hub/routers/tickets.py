@@ -80,7 +80,14 @@ def _is_conflicted(ticket: dict) -> bool:
 
 # Appended to every task prompt to ensure Claude Code pushes all changes
 _PUSH_VERIFICATION_INSTRUCTION = (
-    "\n\n## IMPORTANT — Polish Pass (do this BEFORE final verification)\n"
+    "\n\n## IMPORTANT — Verify Ticket Before Starting\n"
+    "Before writing any code, spend 30 seconds validating the ticket:\n"
+    "1. Check that files/paths mentioned in the ticket actually exist.\n"
+    "2. Check that reference implementations (\"follow pattern in X\") still exist and haven't been refactored.\n"
+    "3. If the ticket mentions specific functions, classes, or APIs — verify they're still there.\n"
+    "4. If anything doesn't match (file moved, function renamed, pattern changed), "
+    "adapt your approach to the actual codebase — don't blindly follow outdated instructions.\n"
+    "\n## IMPORTANT — Polish Pass (do this BEFORE final verification)\n"
     "Before marking your work as done, do one round of self-review:\n"
     "1. Re-read the ticket description and VISION.md spec for the area you changed.\n"
     "2. Compare what you built against the spec — did you miss anything?\n"
