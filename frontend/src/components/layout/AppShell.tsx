@@ -180,10 +180,10 @@ export function AppShell({
                   ? 'border-purple-500/40 bg-purple-500/10 text-purple-400'
                   : 'border-[var(--color-border)] text-[var(--color-text-muted)] hover:border-purple-500/40'
               }`}
-              title={activeProject.pilot_mode ? 'Pilot Mode active — click to disable' : 'Enable Pilot Mode'}
+              title={activeProject.pilot_mode ? `Pilot Mode (${activeProject.pilot_mode}) — click to disable` : 'Enable Pilot Mode'}
             >
               <span className={`inline-block h-1.5 w-1.5 rounded-full ${activeProject.pilot_mode ? 'bg-purple-400 animate-pulse' : 'bg-[var(--color-text-muted)]'}`} />
-              Pilot
+              {activeProject.pilot_mode === 'semi' ? 'Semi' : activeProject.pilot_mode === 'auto' ? 'Auto' : 'Pilot'}
             </button>
           )}
 
@@ -435,27 +435,65 @@ export function AppShell({
 
 function PilotConfirmDialog({ activeProject, onClose }: { activeProject: Project; onClose: () => void }) {
   const [missingKey, setMissingKey] = useState(false)
-  const [checked, setChecked] = useState(activeProject.pilot_mode) // skip check when disabling
+  const isActive = !!activeProject.pilot_mode
+  const [checked, setChecked] = useState(isActive) // skip check when disabling
 
   useEffect(() => {
-    if (activeProject.pilot_mode) return // disabling — no check needed
+    if (isActive) return // disabling — no check needed
     api.settings.getProjectAgent(activeProject.id).then((s) => {
       if (!s.pilot_api_key) setMissingKey(true)
       setChecked(true)
     }).catch(() => setChecked(true))
-  }, [activeProject.id, activeProject.pilot_mode])
+  }, [activeProject.id, isActive])
+
+  const enable = async (mode: 'semi' | 'auto') => {
+    onClose()
+    try {
+      await api.projects.update(activeProject.id, { pilot_mode: mode })
+    } catch { /* ignore */ }
+  }
+
+  const disable = async () => {
+    onClose()
+    try {
+      await api.projects.update(activeProject.id, { pilot_mode: false })
+    } catch { /* ignore */ }
+  }
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50">
       <div className="w-80 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-panel)] p-5 shadow-xl">
         <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">
-          {activeProject.pilot_mode ? 'Disable Pilot Mode' : 'Enable Pilot Mode'}
+          {isActive ? 'Disable Pilot Mode' : 'Enable Pilot Mode'}
         </h3>
-        <p className="mt-2 text-xs text-[var(--color-text-muted)]">
-          {activeProject.pilot_mode
-            ? 'Disabling Pilot Mode will restore manual terminal input. The kanban session will continue running.'
-            : 'Enabling Pilot Mode gives the kanban CC full autonomy to create and manage tickets. Terminal input will be disabled.'}
-        </p>
+        {isActive ? (
+          <p className="mt-2 text-xs text-[var(--color-text-muted)]">
+            Disabling Pilot Mode will restore manual terminal input. The kanban session will continue running.
+          </p>
+        ) : (
+          <div className="mt-3 space-y-2">
+            <button
+              disabled={!checked}
+              onClick={() => enable('semi')}
+              className="w-full rounded-md border border-purple-500/30 bg-purple-500/5 px-3 py-2.5 text-left hover:bg-purple-500/10 disabled:opacity-50 transition-colors"
+            >
+              <div className="text-xs font-medium text-purple-400">Semi-Auto</div>
+              <div className="mt-0.5 text-[10px] text-[var(--color-text-muted)]">
+                You give instructions, pilot relays to CC. Handles CI/CD/merge reminders automatically.
+              </div>
+            </button>
+            <button
+              disabled={!checked}
+              onClick={() => enable('auto')}
+              className="w-full rounded-md border border-[var(--color-border)] px-3 py-2.5 text-left hover:bg-[var(--color-bg-secondary)] disabled:opacity-50 transition-colors"
+            >
+              <div className="text-xs font-medium text-[var(--color-text-primary)]">Full Auto</div>
+              <div className="mt-0.5 text-[10px] text-[var(--color-text-muted)]">
+                Reads VISION.md, creates tickets, pushes for polish. Full autonomy.
+              </div>
+            </button>
+          </div>
+        )}
         {missingKey && (
           <div className="mt-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-400">
             PilotAgent API Key is not configured. Go to Settings → Agent → PilotAgent to set it up.
@@ -468,21 +506,14 @@ function PilotConfirmDialog({ activeProject, onClose }: { activeProject: Project
           >
             Cancel
           </button>
-          <button
-            disabled={!checked}
-            onClick={async () => {
-              const newVal = !activeProject.pilot_mode
-              onClose()
-              try {
-                await api.projects.update(activeProject.id, { pilot_mode: newVal })
-              } catch { /* ignore */ }
-            }}
-            className={`rounded-md px-3 py-1.5 text-xs font-medium text-white hover:opacity-90 disabled:opacity-50 ${
-              activeProject.pilot_mode ? 'bg-[var(--color-text-muted)]' : 'bg-purple-500'
-            }`}
-          >
-            {activeProject.pilot_mode ? 'Disable' : 'Enable'}
-          </button>
+          {isActive && (
+            <button
+              onClick={disable}
+              className="rounded-md bg-[var(--color-text-muted)] px-3 py-1.5 text-xs font-medium text-white hover:opacity-90"
+            >
+              Disable
+            </button>
+          )}
         </div>
       </div>
     </div>

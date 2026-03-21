@@ -25,7 +25,7 @@ export interface Project {
   repo_url: string
   gh_token: string  // masked in API responses
   base_branch: string
-  pilot_mode: boolean
+  pilot_mode: false | 'semi' | 'auto'
   max_board_tickets: number
   max_tickets_per_cycle: number
   vision_mode: 'readonly' | 'writable'
@@ -37,7 +37,7 @@ export interface ProjectCreate {
   repo_url: string
   gh_token?: string
   base_branch?: string
-  pilot_mode?: boolean
+  pilot_mode?: false | 'semi' | 'auto'
   max_board_tickets?: number
   max_tickets_per_cycle?: number
   vision_mode?: 'readonly' | 'writable'

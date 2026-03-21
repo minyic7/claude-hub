@@ -47,16 +47,26 @@ async def save_project(project_dict: dict) -> None:
     await r.sadd("projects:all", pid)
 
 
-_PROJECT_BOOL_FIELDS = {"pilot_mode"}
 _PROJECT_INT_FIELDS = {"max_board_tickets", "max_tickets_per_cycle"}
 _PROJECT_INT_DEFAULTS = {"max_board_tickets": 10, "max_tickets_per_cycle": 2}
+
+
+def _deserialize_pilot_mode(v: str) -> bool | str:
+    """Deserialize pilot_mode: False, 'semi', or 'auto'. Backward compat: 'True'→'auto'."""
+    if not v or v.lower() in ("false", "0", ""):
+        return False
+    if v.lower() in ("true", "1"):
+        return "auto"  # backward compat
+    if v in ("semi", "auto"):
+        return v
+    return False
 
 
 def _deserialize_project(data: dict) -> dict:
     result = {}
     for k, v in data.items():
-        if k in _PROJECT_BOOL_FIELDS:
-            result[k] = v.lower() in ("true", "1") if v else False
+        if k == "pilot_mode":
+            result[k] = _deserialize_pilot_mode(v)
         elif k in _PROJECT_INT_FIELDS:
             try:
                 result[k] = int(v) if v and v != "" else _PROJECT_INT_DEFAULTS.get(k, 0)
@@ -70,6 +80,8 @@ def _deserialize_project(data: dict) -> dict:
             result[field] = default
     if "pilot_mode" not in result:
         result["pilot_mode"] = False
+    else:
+        result["pilot_mode"] = _deserialize_pilot_mode(str(result["pilot_mode"]))
     if "vision_mode" not in result:
         result["vision_mode"] = "readonly"
     return result

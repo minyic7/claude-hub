@@ -31,7 +31,7 @@ interface KanbanTerminalProps {
   tabBar?: React.ReactNode
   overlayContent?: React.ReactNode
   bottomContent?: React.ReactNode
-  pilotMode?: boolean
+  pilotMode?: false | 'semi' | 'auto'
 }
 
 export function KanbanTerminal({ projectId, projectName, visible, onClose, tabBar, overlayContent, bottomContent, pilotMode }: KanbanTerminalProps) {

@@ -61,6 +61,53 @@ async def pop_user_messages(project_id: str) -> list[dict]:
             pass
     return messages
 
+PILOT_SEMI_PROMPT = """You are the Board Manager — a lightweight assistant that keeps the kanban CC session productive without micromanaging.
+
+## Your role
+You manage board hygiene and relay user messages. You do NOT read VISION.md, plan features, or push for polish. You keep CC moving through its workflow efficiently.
+
+## Board state:
+{board}
+
+## Your last message to CC:
+{last_message_context}
+
+## CC terminal output (newest at bottom):
+{pane_output}
+
+## Your decision
+
+Respond with a JSON object (no markdown fences):
+{{
+  "cc_summary": "2-3 sentences describing what CC has been doing",
+  "action": "wait" | "message",
+  "wait_seconds": <number>,
+  "message": "text to send (if action=message), else null",
+  "reason": "why you chose this action"
+}}
+
+## What you do:
+1. **CC is working** → wait. Don't interrupt.
+2. **Ticket awaiting_merge + CI passed** → remind CC to merge: "#{seq} looks ready — can you merge it?"
+3. **Just merged** → remind CC: "Nice, #{seq} merged! Run /cd-status to verify deploy."
+4. **CD green + TODO tickets exist** → "Deploy is green. Ready to start the next ticket?"
+5. **Failed ticket** → "#{seq} failed — can you check what went wrong?"
+6. **CC is idle, nothing to do** → ask the user: "Board is clear — waiting for your instructions. What should we work on next?" (set wait_seconds to 60)
+7. **CC asked a question** → say "Let me check with the user" and wait (the user will respond via the pilot panel)
+
+## What you do NOT do:
+- Read or reference VISION.md
+- Create tickets or suggest features
+- Push for code review, polish, or improvements
+- Approve or block merges on quality grounds (CI/CD checks handle that)
+- Send messages when CC is actively working
+
+## Wait times:
+- CC working → 30-60s
+- Just sent a message → 30-45s
+- Board clear, waiting for user → 60-120s
+"""
+
 PILOT_SYSTEM_PROMPT = """You are the Pilot Agent — a simulated user interacting with a Claude Code (CC) session that manages a project's kanban board.
 
 ## Your role
@@ -254,9 +301,10 @@ class SupervisorEvent(dict):
 class PilotAgent(BaseAgent):
     """Tick-driven agent that acts as a simulated user for a Kanban CC session."""
 
-    def __init__(self, project_id: str, project: dict, agent_settings: dict | None = None):
+    def __init__(self, project_id: str, project: dict, agent_settings: dict | None = None, mode: str = "auto"):
         self.project_id = project_id
         self.project = project
+        self.mode = mode  # "auto" or "semi"
         self._next_tick_at: datetime | None = None  # LLM-decided next check time
         self._last_message: str | None = None       # what we last sent (for context)
         self._last_message_at: datetime | None = None
@@ -328,8 +376,8 @@ class PilotAgent(BaseAgent):
         if not pane_output:
             return None
 
-        # 2. Read VISION.md
-        vision = self._read_vision()
+        # 2. Read VISION.md (skip in semi mode)
+        vision = self._read_vision() if self.mode == "auto" else ""
 
         # 3. Read board state
         board = await self._read_board()
@@ -363,12 +411,19 @@ class PilotAgent(BaseAgent):
             last_message_context = "(this is your first check-in — no prior messages sent)"
 
         # 6. Build system prompt with fresh context
-        self.system_prompt = PILOT_SYSTEM_PROMPT.format(
-            vision=vision,
-            board=board,
-            pane_output=pane_output,
-            last_message_context=last_message_context,
-        )
+        if self.mode == "semi":
+            self.system_prompt = PILOT_SEMI_PROMPT.format(
+                board=board,
+                pane_output=pane_output,
+                last_message_context=last_message_context,
+            )
+        else:
+            self.system_prompt = PILOT_SYSTEM_PROMPT.format(
+                vision=vision,
+                board=board,
+                pane_output=pane_output,
+                last_message_context=last_message_context,
+            )
 
         # 7. Single LLM call (no conversation history — each tick is independent)
         self.messages = [{"role": "user", "content": "Check on the Claude Code session and decide whether to send a message or wait."}]
@@ -626,15 +681,19 @@ async def tick_all_pilots() -> None:
     projects = await redis_client.list_projects()
     for project in projects:
         project_id = project.get("id", "")
-        if not project.get("pilot_mode") or not is_alive(project_id):
+        pilot_mode = project.get("pilot_mode")
+        if not pilot_mode or not is_alive(project_id):
             _active_pilots.pop(project_id, None)
             continue
 
+        mode = pilot_mode if pilot_mode in ("semi", "auto") else "auto"
+
         # Check if board is complete — all tickets merged/archived, none active
-        if await _check_board_complete(project_id, project):
+        # Skip board-complete check in semi mode (user drives decisions)
+        if mode == "auto" and await _check_board_complete(project_id, project):
             continue
 
-        if project_id not in _active_pilots:
+        if project_id not in _active_pilots or _active_pilots[project_id].mode != mode:
             agent_settings_raw = project.get("agent_settings", "{}")
             if isinstance(agent_settings_raw, str):
                 try:
@@ -647,7 +706,7 @@ async def tick_all_pilots() -> None:
             pilot_key = agent_settings.get("pilot_api_key", "")
             if not pilot_key:
                 # No API key — use QA Agent CC session as fallback
-                await _tick_via_qa_agent(project_id, project, agent_settings)
+                await _tick_via_qa_agent(project_id, project, agent_settings, mode=mode)
                 continue
 
             _api_key_warned.discard(project_id)
@@ -655,6 +714,7 @@ async def tick_all_pilots() -> None:
                 project_id=project_id,
                 project=project,
                 agent_settings=agent_settings,
+                mode=mode,
             )
 
         try:
@@ -678,6 +738,9 @@ async def nudge(project_id: str) -> dict | None:
         if not project or not project.get("pilot_mode") or not is_alive(project_id):
             return None
 
+        pilot_mode = project.get("pilot_mode")
+        mode = pilot_mode if pilot_mode in ("semi", "auto") else "auto"
+
         agent_settings_raw = project.get("agent_settings", "{}")
         if isinstance(agent_settings_raw, str):
             try:
@@ -690,12 +753,13 @@ async def nudge(project_id: str) -> dict | None:
         pilot_key = agent_settings.get("pilot_api_key", "")
         if not pilot_key:
             # Use QA Agent CC fallback
-            return await _tick_via_qa_agent(project_id, project, agent_settings, force=True)
+            return await _tick_via_qa_agent(project_id, project, agent_settings, force=True, mode=mode)
 
         _active_pilots[project_id] = PilotAgent(
             project_id=project_id,
             project=project,
             agent_settings=agent_settings,
+            mode=mode,
         )
 
     try:
@@ -718,7 +782,7 @@ _qa_last_pane_hash: dict[str, str] = {}  # detect stale pane output
 
 
 async def _tick_via_qa_agent(
-    project_id: str, project: dict, agent_settings: dict, force: bool = False,
+    project_id: str, project: dict, agent_settings: dict, force: bool = False, mode: str = "auto",
 ) -> dict | None:
     """Run a PilotAgent tick using QA Agent CC (-p one-shot) instead of API call."""
     if not is_alive(project_id):
@@ -736,13 +800,13 @@ async def _tick_via_qa_agent(
 
     _qa_in_flight.add(project_id)
     try:
-        return await _tick_via_qa_agent_inner(project_id, project, agent_settings, force)
+        return await _tick_via_qa_agent_inner(project_id, project, agent_settings, force, mode)
     finally:
         _qa_in_flight.discard(project_id)
 
 
 async def _tick_via_qa_agent_inner(
-    project_id: str, project: dict, agent_settings: dict, force: bool = False,
+    project_id: str, project: dict, agent_settings: dict, force: bool = False, mode: str = "auto",
 ) -> dict | None:
     from claude_hub.services.qa_session import ask_qa
     now = datetime.now(timezone.utc)
@@ -764,13 +828,15 @@ async def _tick_via_qa_agent_inner(
     if not pane_output:
         return None
 
-    # 2. Vision
-    vision_path = os.path.join(kanban_dir, "VISION.md")
-    try:
-        with open(vision_path) as f:
-            vision = f.read()[:3000]
-    except FileNotFoundError:
-        vision = "(no VISION.md found)"
+    # 2. Vision (skip in semi mode)
+    vision = ""
+    if mode == "auto":
+        vision_path = os.path.join(kanban_dir, "VISION.md")
+        try:
+            with open(vision_path) as f:
+                vision = f.read()[:3000]
+        except FileNotFoundError:
+            vision = "(no VISION.md found)"
 
     # 3. Board
     tickets = await redis_client.list_tickets_by_project(project_id)
@@ -848,7 +914,33 @@ async def _tick_via_qa_agent_inner(
 CC is likely idle and waiting for you. You MUST send a message — do NOT return action "wait" again."""
 
     # Build prompt for QA Agent
-    prompt = f"""You are acting as the Pilot Agent — a simulated user for a Claude Code kanban session.
+    if mode == "semi":
+        prompt = f"""You are the Board Manager for a Claude Code kanban session. You manage board hygiene and relay user messages. You do NOT read VISION.md or push for polish.
+
+Board state:
+{board}
+
+Your last message to CC:
+{last_message_context}
+{staleness_warning}
+
+CC terminal output (newest at bottom):
+{pane_output[-3000:]}
+
+Respond with ONLY a JSON object (no markdown, no commentary):
+{{"cc_summary": "what CC has been doing", "action": "wait" or "message", "wait_seconds": <number>, "message": "text to send (if action=message, else null)", "reason": "why"}}
+
+Rules:
+- CC working → action: "wait", wait_seconds: 30-60
+- Ticket awaiting_merge + CI passed → remind CC to merge
+- Just merged → remind CC to run /cd-status
+- CD green + TODO tickets → suggest starting next ticket
+- Failed ticket → remind CC to check
+- CC idle, nothing to do → "Board is clear — waiting for your instructions." wait_seconds: 60-120
+- CC asked a question → "Let me check with the user" wait_seconds: 60
+- Do NOT suggest features, polish, or improvements. Do NOT reference VISION.md."""
+    else:
+        prompt = f"""You are acting as the Pilot Agent — a simulated user for a Claude Code kanban session.
 
 VISION.md:
 {vision}
